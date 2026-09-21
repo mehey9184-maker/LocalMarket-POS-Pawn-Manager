@@ -1,0 +1,21 @@
+{
+  "short_name": "LocalMarket",
+  "name": "LocalMarket POS & Pawn Manager",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#121212",
+  "theme_color": "#C85A32",
+  "display": "standalone",
+  "orientation": "landscape"
+}

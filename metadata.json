@@ -1,0 +1,6 @@
+{
+  "name": "LocalMarket POS & Pawn Manager",
+  "description": "Hybrid Retail POS, Second-Hand Goods Buy/Pawn Intake, Vault Stockroom Manager, and SAPS Compliance Register for South African retail hubs.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

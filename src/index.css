@@ -1,0 +1,81 @@
+@theme {
+  @keyframes marquee {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(-100%);
+    }
+  }
+}
+
+@utility animate-marquee {
+  animation: marquee 25s linear infinite;
+}
+
+@utility font-headline {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --brand-terracotta: #C85A32;
+    --brand-orange: #E87A5D;
+    --brand-dark: #121212;
+    --brand-card: #1E1E1E;
+    --brand-border: #2A2A2A;
+    --brand-accent: #291813;
+  }
+
+  body {
+    font-family: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: #121212;
+    color: #f3f4f6;
+  }
+
+  h1, h2, h3, h4, .font-headline {
+    font-family: 'Chivo', sans-serif;
+    letter-spacing: -0.015em;
+  }
+
+  code, pre, .font-mono, .barcode-font {
+    font-family: 'JetBrains Mono', monospace;
+    font-feature-settings: "tnum" 1;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #141414;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3e3e3e;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
