@@ -216,20 +216,25 @@ export const Header: React.FC<HeaderProps> = ({ onOpenTestProtocol }) => {
           <button 
             type="button"
             onClick={() => setActiveTab('profile')}
-            className="flex items-center gap-2.5 hover:opacity-80 transition"
-            title="View Cashier Profile"
+            className={`flex items-center gap-2.5 p-1.5 rounded-xl border transition-all duration-300 group ${
+              activeTab === 'profile' 
+                ? 'bg-[#C85A32]/10 border-[#C85A32] shadow-[0_0_15px_rgba(200,90,50,0.2)]' 
+                : 'bg-transparent border-transparent hover:bg-[#252525] hover:border-[#333333]'
+            }`}
+            title="View Cashier Profile & Shift Tools"
           >
             <div className="hidden lg:block text-right">
-              <p className="text-[10px] font-bold text-gray-100 uppercase tracking-widest leading-tight">Cashier 01</p>
-              <p className="text-[9px] text-gray-500 font-mono">Soweto Main</p>
+              <p className="text-[10px] font-black text-white uppercase tracking-[0.1em] leading-tight group-hover:text-[#E87A5D] transition-colors">Shift Hub</p>
+              <p className="text-[9px] text-gray-500 font-mono tracking-tighter">CS-01 · Soweto</p>
             </div>
-            <div className={`w-8 h-8 rounded-xl border flex items-center justify-center text-xs font-bold shadow-inner transition ${
+            <div className={`w-8 h-8 rounded-lg border flex items-center justify-center text-xs font-black shadow-inner transition-transform group-hover:scale-105 ${
               activeTab === 'profile' 
                 ? 'bg-[#C85A32] border-[#C85A32] text-white' 
                 : 'bg-[#141414] border-[#2A2A2A] text-[#E87A5D]'
             }`}>
               CS
             </div>
+            <ChevronDown className={`w-3.5 h-3.5 text-gray-600 transition-transform ${activeTab === 'profile' ? 'rotate-180 text-[#E87A5D]' : 'group-hover:translate-y-0.5'}`} />
           </button>
         )}
       </div>

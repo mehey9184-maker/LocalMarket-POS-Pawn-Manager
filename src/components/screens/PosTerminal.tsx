@@ -28,6 +28,7 @@ import {
   History,
   Edit3
 } from 'lucide-react';
+import { OnboardingOverlay } from '../common/OnboardingOverlay';
 
 const CartItemRow: React.FC<{ ci: any; onRemove: (id: string) => void; onUpdatePrice: (id: string, price: number) => void }> = ({ ci, onRemove, onUpdatePrice }) => {
   const x = useMotionValue(0);
@@ -44,20 +45,22 @@ const CartItemRow: React.FC<{ ci: any; onRemove: (id: string) => void; onUpdateP
     setIsEditingPrice(false);
   };
 
-  // Dynamic transforms for visual feedback
-  const iconScale = useTransform(x, [0, -60, -100], [0.6, 1.1, 1.3]);
+  // Dynamic transforms for visual feedback (Tactile feel)
+  const iconScale = useTransform(x, [0, -60, -100], [0.6, 1.1, 1.4]);
   const bgOpacity = useTransform(x, [0, -40], [0, 1]);
-  const overlayOpacity = useTransform(x, [0, -100], [0, 0.5]);
-  const buttonOpacity = useTransform(x, [0, -30, -60], [0, 0, 1]);
-  const buttonX = useTransform(x, [0, -60], [20, 0]);
+  const overlayOpacity = useTransform(x, [0, -100], [0, 0.7]);
+  const buttonOpacity = useTransform(x, [0, -30, -70], [0, 0, 1]);
+  const buttonX = useTransform(x, [0, -70], [30, 0]);
+  const contentScale = useTransform(x, [0, -100], [1, 0.96]);
+  const contentBlur = useTransform(x, [0, -100], [0, 2]);
 
   // Haptic Feedback Simulation (Visual Pulse + Browser Vibration)
   React.useEffect(() => {
     return x.on('change', (latest) => {
-      if (latest < -60 && !hasVibrated) {
-        if ('vibrate' in navigator) navigator.vibrate(15);
+      if (latest < -70 && !hasVibrated) {
+        if ('vibrate' in navigator) navigator.vibrate(20);
         setHasVibrated(true);
-      } else if (latest > -50 && hasVibrated) {
+      } else if (latest > -60 && hasVibrated) {
         setHasVibrated(false);
       }
     });
@@ -68,22 +71,22 @@ const CartItemRow: React.FC<{ ci: any; onRemove: (id: string) => void; onUpdateP
       layout
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -100 }}
+      exit={{ opacity: 0, scale: 0.8, x: -100, transition: { duration: 0.2 } }}
       className="relative group overflow-hidden rounded-2xl h-[80px]"
     >
-      {/* Swipe Background (Action reveal) */}
+      {/* Swipe Background (Tactile Action Reveal) */}
       <motion.div 
         style={{ opacity: bgOpacity }}
-        className="absolute inset-0 bg-red-600 flex items-center justify-end px-4 rounded-xl border border-red-500/30"
+        className="absolute inset-0 bg-red-600/90 flex items-center justify-end px-6 rounded-2xl border border-red-500/30 shadow-[inset_0_2px_20px_rgba(0,0,0,0.3)]"
       >
         <motion.div 
           style={{ x: buttonX, opacity: buttonOpacity }}
-          className="flex items-center gap-2"
+          className="flex flex-col items-center gap-1"
         >
-          <span className="text-[10px] font-bold text-white uppercase tracking-wider font-mono">Delete Item</span>
-          <motion.div style={{ scale: iconScale }} className="p-2 bg-white/10 rounded-lg">
+          <motion.div style={{ scale: iconScale }} className="p-2.5 bg-white/20 rounded-full backdrop-blur-md shadow-lg">
             <Trash2 className="w-5 h-5 text-white" />
           </motion.div>
+          <span className="text-[9px] font-black text-white uppercase tracking-[0.2em] font-mono">Delete</span>
         </motion.div>
       </motion.div>
 
@@ -91,31 +94,38 @@ const CartItemRow: React.FC<{ ci: any; onRemove: (id: string) => void; onUpdateP
         drag="x"
         dragConstraints={{ left: -100, right: 0 }}
         dragSnapToOrigin
-        style={{ x }}
+        dragElastic={0.1}
+        style={{ x, scale: contentScale }}
         onDragEnd={(_, info) => {
-          if (info.offset.x < -60) {
+          if (info.offset.x < -70) {
             onRemove(ci.item.id);
           }
         }}
         whileDrag={{ 
-          scale: 0.98,
-          transition: { type: "spring", stiffness: 400, damping: 25 } 
+          cursor: 'grabbing',
+          transition: { type: "spring", stiffness: 600, damping: 30 } 
         }}
-        animate={hasVibrated ? { scale: 0.97, transition: { duration: 0.1 } } : { scale: 1 }}
-        className="p-4 rounded-2xl bg-[#1A1A1A] border border-[#2A2A2A] flex items-center justify-between gap-4 transition hover:border-[#383838] relative z-10 cursor-grab active:cursor-grabbing shadow-xl"
+        animate={hasVibrated ? { scale: 0.98, transition: { duration: 0.1 } } : { scale: 1 }}
+        className="p-4 rounded-2xl bg-[#1A1A1A] border border-[#2A2A2A] flex items-center justify-between gap-4 transition-colors hover:border-[#383838] relative z-10 cursor-grab active:cursor-grabbing shadow-xl"
       >
-        {/* Tactile Overlay */}
+        {/* Tactile Overlay - Darkens content as you swipe */}
         <motion.div 
-          style={{ opacity: overlayOpacity }}
-          className="absolute inset-0 bg-black/60 pointer-events-none rounded-xl"
+          style={{ 
+            opacity: overlayOpacity,
+            backdropFilter: `blur(${contentBlur}px)`
+          }}
+          className="absolute inset-0 bg-black/80 pointer-events-none rounded-2xl z-30"
         />
 
         {/* Left side: Item Title + minimal serial number snippet */}
-        <div className="min-w-0 flex-1 relative z-20">
-          <p className="text-sm font-medium text-gray-100 truncate">{ci.item.title}</p>
-          <p className="text-[10px] text-gray-500 font-mono tracking-tighter truncate">
-            {ci.item.sku}
-          </p>
+        <div className="min-w-0 flex-1 relative z-20 flex items-center gap-3">
+          <div className="w-1.5 h-6 bg-gray-800 rounded-full shrink-0 group-active:bg-[#C85A32] transition-colors" title="Swipe to delete" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-gray-100 truncate">{ci.item.title}</p>
+            <p className="text-[10px] text-gray-500 font-mono tracking-tighter truncate">
+              {ci.item.sku}
+            </p>
+          </div>
         </div>
 
         {/* Right side: Price and single trash bin icon */}
@@ -192,11 +202,37 @@ export const PosTerminal: React.FC = () => {
   const [customerMobile, setCustomerMobile] = useState('+27 82 491 0023');
   const [cashTendered, setCashTendered] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [selectedItemForDetail, setSelectedItemForDetail] = useState<InventoryItem | null>(null);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
 
-  // Available floor inventory
+  React.useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const [selectedItemForDetail, setSelectedItemForDetail] = useState<InventoryItem | null>(null);
+  const [isEditingRecord, setIsEditingRecord] = useState(false);
+  const [editFormData, setEditFormData] = useState<Partial<InventoryItem>>({});
+
+  const startEditing = (item: InventoryItem) => {
+    setEditFormData({ ...item });
+    setIsEditingRecord(true);
+  };
+
+  const handleSaveEdit = () => {
+    // In a real app, this would call a context method to update the inventory
+    showToast('Record Updated', `Changes to ${editFormData.sku} have been committed to the vault registry.`, 'success');
+    setIsEditingRecord(false);
+    setSelectedItemForDetail({ ...selectedItemForDetail, ...editFormData } as InventoryItem);
+  };
+
+  // Available floor inventory (Including active floor stock, reserved, and flagged alerts)
   const floorItems = useMemo(() => {
-    return inventory.filter(item => item.status === 'Retail Floor');
+    return inventory.filter(item => 
+      item.status === 'Retail Floor' || 
+      item.status === 'Reserved' || 
+      item.status === 'Flagged'
+    );
   }, [inventory]);
 
   // Counts for pills
@@ -295,15 +331,20 @@ export const PosTerminal: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row h-full w-full overflow-hidden bg-[#121212]">
+    <div className="flex-1 flex flex-col lg:flex-row h-full w-full overflow-hidden bg-[#121212] relative">
+      <OnboardingOverlay screenId="pos" />
       {/* ============================================================
           LEFT PANE: HIGH-VELOCITY COMMAND CENTER (DYNAMIC WIDTH)
          ============================================================ */}
       <motion.section 
         layout
         initial={false}
-        animate={{ width: cart.length === 0 ? '100%' : '60%' }}
-        transition={{ duration: 0.3, ease: "circOut" }}
+        animate={{ 
+          width: windowWidth < 1024 
+            ? '100%' 
+            : (cart.length === 0 ? '100%' : '60%') 
+        }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
         className="flex flex-col h-full overflow-hidden border-r border-[#2A2A2A] bg-[#0A0A0A]"
       >
         {/* HERO COMMAND BAR: SEARCH IS THE MAIN CHARACTER */}
@@ -349,27 +390,45 @@ export const PosTerminal: React.FC = () => {
           </form>
 
           {/* COMPACT FILTER PILLS */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-            {[
-              { id: 'all', label: 'All Stock', count: counts.all },
-              { id: 'forfeited', label: 'Forfeited', count: counts.forfeited },
-              { id: 'buy', label: 'Direct Buys', count: counts.buy },
-              { id: 'general', label: 'General', count: counts.general }
-            ].map(p => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => setFilterPill(p.id as any)}
-                className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center gap-2 border ${
-                  filterPill === p.id
-                    ? 'bg-[#C85A32] text-white border-[#C85A32] shadow-md shadow-[#C85A32]/10'
-                    : 'bg-[#141414] text-gray-500 border-[#2A2A2A] hover:text-gray-300 hover:border-[#383838]'
-                }`}
-              >
-                <span>{p.label}</span>
-                <span className="opacity-60 font-mono">[{p.count}]</span>
-              </button>
-            ))}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+              {[
+                { id: 'all', label: 'All Stock', count: counts.all },
+                { id: 'forfeited', label: 'Forfeited', count: counts.forfeited },
+                { id: 'buy', label: 'Direct Buys', count: counts.buy },
+                { id: 'general', label: 'General', count: counts.general }
+              ].map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setFilterPill(p.id as any)}
+                  className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center gap-2 border ${
+                    filterPill === p.id
+                      ? 'bg-[#C85A32] text-white border-[#C85A32] shadow-md shadow-[#C85A32]/10'
+                      : 'bg-[#141414] text-gray-500 border-[#2A2A2A] hover:text-gray-300 hover:border-[#383838]'
+                  }`}
+                >
+                  <span>{p.label}</span>
+                  <span className="opacity-60 font-mono">[{p.count}]</span>
+                </button>
+              ))}
+            </div>
+            
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+              {['New', 'Like New', 'Excellent', 'Good', 'Fair'].map((cond) => (
+                <button
+                  key={cond}
+                  onClick={() => setSearchQuery(prev => prev === cond ? '' : cond)}
+                  className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${
+                    searchQuery === cond 
+                      ? 'bg-white/10 border-white/20 text-white' 
+                      : 'bg-transparent border-[#2A2A2A] text-gray-600 hover:border-gray-600'
+                  }`}
+                >
+                  {cond}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -389,28 +448,51 @@ export const PosTerminal: React.FC = () => {
             }`}>
               {filteredItems.map(item => {
                 const inCart = cart.some(c => c.item.id === item.id);
+                
+                // Dynamic Status Color Mapping
+                const statusConfig = {
+                  'Retail Floor': { border: 'border-emerald-500/30', bg: 'bg-emerald-500/5', text: 'text-emerald-400', label: 'In Stock' },
+                  'Reserved': { border: 'border-amber-500/40', bg: 'bg-amber-500/5', text: 'text-amber-400', label: 'Reserved' },
+                  'Flagged': { border: 'border-red-500/50', bg: 'bg-red-500/10', text: 'text-red-400', label: 'SAPS Flagged' },
+                  'Vault Hold': { border: 'border-indigo-500/30', bg: 'bg-indigo-500/5', text: 'text-indigo-400', label: 'On Pawn' },
+                  'Sold': { border: 'border-gray-500/20', bg: 'bg-gray-500/5', text: 'text-gray-500', label: 'Sold' },
+                  'Redeemed': { border: 'border-blue-500/30', bg: 'bg-blue-500/5', text: 'text-blue-400', label: 'Redeemed' }
+                };
+
+                const config = statusConfig[item.status] || statusConfig['Retail Floor'];
+
                 return (
                   <article
                     key={item.id}
                     onClick={() => setSelectedItemForDetail(item)}
-                    className={`bg-[#1E1E1E] border rounded-xl p-3 flex flex-col justify-between transition cursor-pointer group ${
+                    className={`bg-[#1E1E1E] border rounded-xl p-3 flex flex-col justify-between transition cursor-pointer group relative overflow-hidden ${
                       inCart
                         ? 'border-[#C85A32] bg-[#221714]'
-                        : 'border-[#2A2A2A] hover:border-[#C85A32]'
+                        : `${config.border} hover:border-[#C85A32] ${config.bg}`
                     }`}
                   >
+                    {/* Status Ribbon (Subtle) */}
+                    <div className={`absolute top-0 left-0 w-full h-0.5 ${config.text.replace('text', 'bg')}`} />
+
                     <div>
                       {/* Acquisition Badge & SKU */}
                       <div className="flex items-center justify-between mb-2">
-                        {item.acquisitionType === 'Forfeited' ? (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-400 border border-amber-800/40 font-mono">
-                            Forfeited Pawn
+                        <div className="flex items-center gap-1.5">
+                          {item.acquisitionType === 'Forfeited' ? (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-400 border border-amber-800/40 font-mono">
+                              Forfeited
+                            </span>
+                          ) : (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-950/70 text-blue-400 border border-blue-800/40 font-mono">
+                              Direct Buy
+                            </span>
+                          )}
+                          
+                          {/* Item Status Badge */}
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-tighter ${config.bg} ${config.text} border ${config.border.replace('/30', '/20').replace('/40', '/20').replace('/50', '/20')}`}>
+                            {config.label}
                           </span>
-                        ) : (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-950/70 text-blue-400 border border-blue-800/40 font-mono">
-                            Direct Buy
-                          </span>
-                        )}
+                        </div>
                         <span className="text-[10px] text-gray-500 font-mono">#{item.sku}</span>
                       </div>
 
@@ -673,7 +755,7 @@ export const PosTerminal: React.FC = () => {
                 ) : (
                   <>
                     <CheckCircle2 className="w-5 h-5" />
-                    <span>Process Session</span>
+                    <span>Complete Sale & Print</span>
                   </>
                 )}
               </button>
@@ -749,123 +831,208 @@ export const PosTerminal: React.FC = () => {
                 </div>
               </div>
 
-              {/* Scrollable Content Area */}
-              <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
-                {/* Core Metrics Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-                  <div className="space-y-1.5">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest flex items-center gap-2">
-                      <Calendar className="w-3 h-3 text-[#C85A32]" />
-                      Acquired
-                    </span>
-                    <p className="text-sm text-gray-100 font-mono font-bold">
-                      {new Date(selectedItemForDetail.addedAt).toLocaleDateString('en-ZA')}
-                    </p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest flex items-center gap-2">
-                      <User className="w-3 h-3 text-[#C85A32]" />
-                      Source
-                    </span>
-                    <p className="text-sm text-gray-100 font-bold truncate">
-                      {selectedItemForDetail.acquisitionType === 'Forfeited' ? 'Vault Liquidation' : 'Walk-in Intake'}
-                    </p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest flex items-center gap-2">
-                      <Tag className="w-3 h-3 text-[#C85A32]" />
-                      Floor Price
-                    </span>
-                    <p className="text-xl font-black text-[#E87A5D] font-mono">
-                      R {selectedItemForDetail.retailPrice.toLocaleString('en-ZA')}
-                    </p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest flex items-center gap-2">
-                      <ShieldCheck className="w-3 h-3 text-[#C85A32]" />
-                      Grade
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                      <p className="text-sm text-gray-100 font-black uppercase italic">{selectedItemForDetail.condition}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Technical Specs & Metadata */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                    <div className="p-5 bg-[#141414] border border-[#2A2A2A] rounded-2xl space-y-3 shadow-inner">
-                      <h4 className="text-[10px] text-[#C85A32] uppercase font-black tracking-widest flex items-center gap-2">
-                        <Cpu className="w-3.5 h-3.5" />
-                        Technical Specifications
-                      </h4>
-                      <p className="text-xs text-gray-300 leading-relaxed font-medium">
-                        {selectedItemForDetail.specs || "Standard manufacturer specifications apply for this inventory model. Verified for retail resale compliance."}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3 p-4 bg-[#1A1A1A] rounded-xl border border-[#2A2A2A]">
-                      <Fingerprint className="w-5 h-5 text-gray-500" />
-                      <div>
-                        <span className="text-[9px] text-gray-600 uppercase font-bold block">Asset Serial / IMEI</span>
-                        <span className="text-xs text-gray-300 font-mono tracking-wider">{selectedItemForDetail.serialOrImei}</span>
+              {/* Modal Body: Scrollable Content Area */}
+              <div className="flex-1 overflow-y-auto p-8 lg:p-10 space-y-10 custom-scrollbar">
+                <AnimatePresence mode="wait">
+                  {isEditingRecord ? (
+                    <motion.div
+                      key="edit-form"
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="space-y-8"
+                    >
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Retail Price (ZAR)</label>
+                          <input 
+                            type="number"
+                            value={editFormData.retailPrice}
+                            onChange={(e) => setEditFormData({ ...editFormData, retailPrice: Number(e.target.value) })}
+                            className="w-full bg-[#0A0A0A] border border-[#2A2A2A] rounded-2xl py-4 px-6 text-xl font-mono text-white focus:outline-none focus:border-[#C85A32]"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Item Condition</label>
+                          <select 
+                            value={editFormData.condition}
+                            onChange={(e) => setEditFormData({ ...editFormData, condition: e.target.value as any })}
+                            className="w-full bg-[#0A0A0A] border border-[#2A2A2A] rounded-2xl py-4 px-6 text-sm font-bold text-white focus:outline-none focus:border-[#C85A32] appearance-none"
+                          >
+                            <option value="New">New</option>
+                            <option value="Like New">Like New</option>
+                            <option value="Excellent">Excellent</option>
+                            <option value="Good">Good</option>
+                            <option value="Fair">Fair</option>
+                          </select>
+                        </div>
                       </div>
-                    </div>
-                  </div>
 
-                  {/* Audit / History Timeline */}
-                  <div className="space-y-4">
-                    <h4 className="text-[10px] text-gray-400 uppercase font-black tracking-widest flex items-center gap-2 px-1">
-                      <History className="w-3.5 h-3.5" />
-                      Lifecycle Audit
-                    </h4>
-                    <div className="space-y-4 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[1px] before:bg-[#2A2A2A]">
-                      {[
-                        { date: '2026-09-10', event: 'Initial Intake', status: 'Completed', detail: 'ID Verified & Appraised' },
-                        { date: '2026-09-11', event: 'Vault Transfer', status: 'Stored', detail: 'Unit Secure in Bay-12' },
-                        { date: '2026-09-21', event: 'Retail Listing', status: 'Active', detail: 'Moved to Sales Floor' }
-                      ].map((h, i) => (
-                        <div key={i} className="relative pl-7 group">
-                          <div className="absolute left-[3px] top-1.5 w-2 h-2 rounded-full bg-[#C85A32] border-2 border-[#1E1E1E] z-10"></div>
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="text-[11px] font-bold text-gray-200">{h.event}</p>
-                              <p className="text-[10px] text-gray-500">{h.detail}</p>
-                            </div>
-                            <span className="text-[9px] font-mono text-gray-600">{h.date}</span>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Technical Specifications</label>
+                        <textarea 
+                          rows={4}
+                          value={editFormData.specs || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, specs: e.target.value })}
+                          className="w-full bg-[#0A0A0A] border border-[#2A2A2A] rounded-2xl py-4 px-6 text-xs text-gray-300 focus:outline-none focus:border-[#C85A32] resize-none"
+                          placeholder="Enter hardware specifications, storage, condition details..."
+                        />
+                      </div>
+
+                      <div className="p-6 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex items-start gap-4">
+                        <ShieldCheck className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                        <p className="text-[11px] text-amber-200/60 leading-relaxed">
+                          <span className="font-bold text-amber-400">Audit Warning:</span> Modifying inventory metadata will create a permanent entry in the system audit log. Ensure changes are verified against the physical asset.
+                        </p>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="detail-view"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      className="space-y-10"
+                    >
+                      {/* Core Metrics Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-8">
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] text-gray-500 uppercase font-black tracking-widest flex items-center gap-2">
+                            <Calendar className="w-3.5 h-3.5 text-[#C85A32]" />
+                            Acquired
+                          </span>
+                          <p className="text-sm text-gray-100 font-mono font-bold">
+                            {new Date(selectedItemForDetail.addedAt).toLocaleDateString('en-ZA')}
+                          </p>
+                        </div>
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] text-gray-500 uppercase font-black tracking-widest flex items-center gap-2">
+                            <User className="w-3.5 h-3.5 text-[#C85A32]" />
+                            Source
+                          </span>
+                          <p className="text-sm text-gray-100 font-bold truncate">
+                            {selectedItemForDetail.acquisitionType === 'Forfeited' ? 'Vault Liquidation' : 'Walk-in Intake'}
+                          </p>
+                        </div>
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] text-gray-500 uppercase font-black tracking-widest flex items-center gap-2">
+                            <Tag className="w-3.5 h-3.5 text-[#C85A32]" />
+                            Floor Price
+                          </span>
+                          <p className="text-xl font-black text-[#E87A5D] font-mono">
+                            R {selectedItemForDetail.retailPrice.toLocaleString('en-ZA')}
+                          </p>
+                        </div>
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] text-gray-500 uppercase font-black tracking-widest flex items-center gap-2">
+                            <ShieldCheck className="w-3.5 h-3.5 text-[#C85A32]" />
+                            Grade
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                            <p className="text-sm text-gray-100 font-black uppercase italic">{selectedItemForDetail.condition}</p>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                      </div>
+
+                      {/* Technical Specs & Metadata */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                        <div className="space-y-4">
+                          <div className="p-6 bg-[#141414] border border-[#2A2A2A] rounded-2xl space-y-3 shadow-inner">
+                            <h4 className="text-[10px] text-[#C85A32] uppercase font-black tracking-widest flex items-center gap-2">
+                              <Cpu className="w-4 h-4" />
+                              Technical Specifications
+                            </h4>
+                            <p className="text-xs text-gray-300 leading-relaxed font-medium">
+                              {selectedItemForDetail.specs || "Standard manufacturer specifications apply for this inventory model. Verified for retail resale compliance."}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-4 p-5 bg-[#1A1A1A] rounded-2xl border border-[#2A2A2A]">
+                            <Fingerprint className="w-6 h-6 text-gray-600" />
+                            <div>
+                              <span className="text-[10px] text-gray-600 uppercase font-black block">Asset Serial / IMEI</span>
+                              <span className="text-xs text-gray-300 font-mono tracking-widest">{selectedItemForDetail.serialOrImei}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Audit / History Timeline */}
+                        <div className="space-y-6">
+                          <h4 className="text-[10px] text-gray-400 uppercase font-black tracking-widest flex items-center gap-2 px-1">
+                            <History className="w-4 h-4" />
+                            Lifecycle Audit
+                          </h4>
+                          <div className="space-y-6 relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-[#2A2A2A]">
+                            {[
+                              { date: '2026-09-10', event: 'Initial Intake', status: 'Completed', detail: 'ID Verified & Appraised' },
+                              { date: '2026-09-11', event: 'Vault Transfer', status: 'Stored', detail: 'Unit Secure in Bay-12' },
+                              { date: '2026-09-21', event: 'Retail Listing', status: 'Active', detail: 'Moved to Sales Floor' }
+                            ].map((h, i) => (
+                              <div key={i} className="relative pl-10 group">
+                                <div className="absolute left-0 top-1.5 w-[24px] h-[24px] rounded-full bg-[#1A1A1A] border-2 border-[#2A2A2A] flex items-center justify-center z-10 group-hover:border-[#C85A32] transition-colors">
+                                  <div className="w-2 h-2 rounded-full bg-[#C85A32]" />
+                                </div>
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <p className="text-xs font-bold text-gray-200">{h.event}</p>
+                                    <p className="text-[10px] text-gray-500 mt-0.5">{h.detail}</p>
+                                  </div>
+                                  <span className="text-[10px] font-mono text-gray-600">{h.date}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               {/* Action Power-Footer */}
               <div className="p-8 bg-[#161616] border-t border-[#2A2A2A] flex gap-4 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    addToCart(selectedItemForDetail);
-                    setSelectedItemForDetail(null);
-                  }}
-                  className="flex-1 py-5 bg-[#C85A32] hover:bg-[#b04d29] text-white rounded-2xl text-xs font-black uppercase tracking-[0.1em] transition flex items-center justify-center gap-3 shadow-xl shadow-[#C85A32]/20 active:scale-[0.98]"
-                >
-                  <ShoppingBag className="w-6 h-6" />
-                  <span>PROCESS SALE (ADD TO CART)</span>
-                </button>
-                
-                <button
-                  type="button"
-                  onClick={() => {
-                    showToast('Edit Mode Enabled', `Adjusting inventory metadata for ${selectedItemForDetail.sku}`, 'info');
-                  }}
-                  className="px-8 py-5 bg-[#2A2A2A] hover:bg-[#383838] text-white rounded-2xl text-xs font-black uppercase tracking-[0.1em] transition flex items-center justify-center gap-3 active:scale-[0.98]"
-                >
-                  <Edit3 className="w-6 h-6" />
-                  <span>EDIT RECORD</span>
-                </button>
+                {isEditingRecord ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingRecord(false)}
+                      className="flex-1 py-5 bg-[#1E1E1E] text-gray-400 hover:text-white rounded-2xl text-xs font-black uppercase tracking-widest transition"
+                    >
+                      DISCARD CHANGES
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveEdit}
+                      className="flex-1 py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition shadow-xl shadow-emerald-900/20"
+                    >
+                      COMMIT RECORD
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        addToCart(selectedItemForDetail);
+                        setSelectedItemForDetail(null);
+                      }}
+                      className="flex-1 py-5 bg-[#C85A32] hover:bg-[#b04d29] text-white rounded-2xl text-xs font-black uppercase tracking-[0.1em] transition flex items-center justify-center gap-3 shadow-xl shadow-[#C85A32]/20 active:scale-[0.98]"
+                    >
+                      <ShoppingBag className="w-6 h-6" />
+                      <span>PROCESS SALE</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => startEditing(selectedItemForDetail)}
+                      className="px-8 py-5 bg-[#2A2A2A] hover:bg-[#383838] text-white rounded-2xl text-xs font-black uppercase tracking-[0.1em] transition flex items-center justify-center gap-3 active:scale-[0.98]"
+                    >
+                      <Edit3 className="w-6 h-6" />
+                      <span>EDIT RECORD</span>
+                    </button>
+                  </>
+                )}
               </div>
             </motion.div>
           </div>

@@ -20,25 +20,28 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import { OnboardingOverlay } from '../common/OnboardingOverlay';
 
 const VaultItemRow: React.FC<{ loan: PawnLoan; onArchive: (id: string) => void }> = ({ loan, onArchive }) => {
   const x = useMotionValue(0);
   const [hasVibrated, setHasVibrated] = React.useState(false);
 
-  // Dynamic transforms for visual feedback
-  const iconScale = useTransform(x, [0, -40, -80], [0.6, 1.1, 1.3]);
-  const bgOpacity = useTransform(x, [0, -40], [0.2, 1]);
-  const overlayOpacity = useTransform(x, [0, -80], [0, 0.4]);
-  const buttonOpacity = useTransform(x, [0, -20, -40], [0, 0, 1]);
-  const buttonX = useTransform(x, [0, -40], [20, 0]);
+  // Dynamic transforms for visual feedback (Tactile feel)
+  const iconScale = useTransform(x, [0, -40, -100], [0.6, 1.1, 1.4]);
+  const bgOpacity = useTransform(x, [0, -40], [0.4, 1]);
+  const overlayOpacity = useTransform(x, [0, -100], [0, 0.6]);
+  const buttonOpacity = useTransform(x, [0, -20, -50], [0, 0, 1]);
+  const buttonX = useTransform(x, [0, -50], [30, 0]);
+  const contentScale = useTransform(x, [0, -100], [1, 0.97]);
+  const contentBlur = useTransform(x, [0, -100], [0, 1.5]);
 
   // Haptic Feedback Simulation
   React.useEffect(() => {
     return x.on('change', (latest) => {
-      if (latest < -40 && !hasVibrated) {
-        if ('vibrate' in navigator) navigator.vibrate(10);
+      if (latest < -50 && !hasVibrated) {
+        if ('vibrate' in navigator) navigator.vibrate(12);
         setHasVibrated(true);
-      } else if (latest > -30 && hasVibrated) {
+      } else if (latest > -40 && hasVibrated) {
         setHasVibrated(false);
       }
     });
@@ -52,19 +55,19 @@ const VaultItemRow: React.FC<{ loan: PawnLoan; onArchive: (id: string) => void }
       exit={{ opacity: 0, scale: 0.5, transition: { duration: 0.2 } }}
       className="relative group overflow-hidden rounded-xl h-full min-h-[140px]"
     >
-      {/* Swipe Background (Archive Action) */}
+      {/* Swipe Background (Tactile Archive Action Reveal) */}
       <motion.div 
         style={{ opacity: bgOpacity }}
-        className="absolute inset-0 bg-[#C85A32] flex items-center justify-end px-4 rounded-xl border border-[#C85A32]/40"
+        className="absolute inset-0 bg-[#C85A32] flex items-center justify-end px-6 rounded-xl border border-[#C85A32]/40 shadow-[inset_0_2px_15px_rgba(0,0,0,0.2)]"
       >
         <motion.div 
           style={{ x: buttonX, opacity: buttonOpacity }}
-          className="flex items-center gap-2"
+          className="flex flex-col items-center gap-1"
         >
-          <span className="text-[10px] font-bold text-white uppercase tracking-wider font-mono">Archive Record</span>
-          <motion.div style={{ scale: iconScale }} className="p-2 bg-white/10 rounded-lg">
+          <motion.div style={{ scale: iconScale }} className="p-2.5 bg-white/20 rounded-full backdrop-blur-md shadow-lg">
             <Archive className="w-6 h-6 text-white" />
           </motion.div>
+          <span className="text-[9px] font-black text-white uppercase tracking-[0.2em] font-mono">Archive</span>
         </motion.div>
       </motion.div>
 
@@ -72,23 +75,27 @@ const VaultItemRow: React.FC<{ loan: PawnLoan; onArchive: (id: string) => void }
         drag="x"
         dragConstraints={{ left: -100, right: 0 }}
         dragSnapToOrigin
-        style={{ x }}
+        dragElastic={0.1}
+        style={{ x, scale: contentScale }}
         onDragEnd={(_, info) => {
-          if (info.offset.x < -40) {
+          if (info.offset.x < -60) {
             onArchive(loan.id);
           }
         }}
         whileDrag={{ 
-          scale: 0.98,
-          transition: { type: "spring", stiffness: 400, damping: 25 } 
+          cursor: 'grabbing',
+          transition: { type: "spring", stiffness: 600, damping: 30 } 
         }}
-        animate={hasVibrated ? { scale: 0.97, transition: { duration: 0.1 } } : { scale: 1 }}
+        animate={hasVibrated ? { scale: 0.98, transition: { duration: 0.1 } } : { scale: 1 }}
         className="bg-[#1E1E1E] border border-[#2A2A2A] rounded-xl p-3.5 flex flex-col justify-between gap-3 shadow-sm relative z-10 cursor-grab active:cursor-grabbing hover:border-[#383838] transition-colors h-full"
       >
         {/* Tactile Overlay */}
         <motion.div 
-          style={{ opacity: overlayOpacity }}
-          className="absolute inset-0 bg-black/50 pointer-events-none rounded-xl"
+          style={{ 
+            opacity: overlayOpacity,
+            backdropFilter: `blur(${contentBlur}px)`
+          }}
+          className="absolute inset-0 bg-black/70 pointer-events-none rounded-xl z-30"
         />
 
         <div className="relative z-20">
@@ -253,7 +260,8 @@ export const VaultManager: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-[#121212] p-3.5 sm:p-5 gap-4">
+    <div className="flex-1 flex flex-col h-full overflow-y-auto bg-[#121212] p-3.5 sm:p-5 gap-4 relative">
+      <OnboardingOverlay screenId="vault" />
       {/* ============================================================
           0. VAULT LOGISTICS & DENSITY (UBER LOGISTICS PATTERN)
          ============================================================ */}

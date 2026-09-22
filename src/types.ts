@@ -1,6 +1,6 @@
 export type AcquisitionType = 'Buy' | 'Pawn' | 'Forfeited' | 'Forfeit';
-export type ItemCondition = 'Mint' | 'Good' | 'Fair' | 'Damaged';
-export type ItemStatus = 'Vault Hold' | 'Retail Floor' | 'Sold' | 'Redeemed';
+export type ItemCondition = 'Mint' | 'Excellent' | 'Good' | 'Fair' | 'Damaged';
+export type ItemStatus = 'Vault Hold' | 'Retail Floor' | 'Sold' | 'Redeemed' | 'Reserved' | 'Flagged';
 export type LoanStatus = 'Active' | 'Extended' | 'Redeemed' | 'Forfeited' | 'Archived';
 export type PaymentMethod = 'cash' | 'card' | 'eft' | 'snapscan';
 export type ReceiptDelivery = 'thermal' | 'whatsapp' | 'sms';

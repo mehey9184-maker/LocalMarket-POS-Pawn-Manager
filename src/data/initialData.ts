@@ -151,6 +151,36 @@ export const INITIAL_INVENTORY: InventoryItem[] = [
     specs: 'Matte Black • 1x DualShock 4 Wireless Controller • Factory Reset Complete',
     addedAt: '2026-09-16'
   },
+  {
+    id: 'INV-011',
+    sku: 'LM-FLAG-01',
+    title: 'Custom Gaming PC (i9/RTX4080)',
+    category: 'Phones & Tech',
+    serialOrImei: 'PC-FLAG-99182',
+    condition: 'Mint',
+    acquisitionType: 'Buy',
+    costBasis: 12000.00,
+    retailPrice: 22500.00,
+    status: 'Flagged',
+    imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAtSe4iCByjD-ZQG0MDOJ64aQJQPsm5-GcvQlMy90ZF6xuRUssoxNWBgEley7x9yevBYvT_aEXo9FwAZxJftacq0k4z9AE0llZr-RheIUng3IlvhqXwyxBFCJ0JjU4uxNR_d5318FOq_HkgIhIUK9fYOKdPnIIgRXmvk7Y3hgyTlTuVijEPIsNf_3Cpvz3-bD6dJ_8OaOaTPX_-9KiMsXJRaqS19kkKB9K0RdT82has1XHjfklBRU9g',
+    specs: 'Intel i9-13900K • 32GB RAM • RTX 4080 • SAPS Investigative Hold',
+    addedAt: '2026-09-20'
+  },
+  {
+    id: 'INV-012',
+    sku: 'LM-RES-02',
+    title: 'Vintage Omega Seamaster',
+    category: 'Fine Jewelry & Gold',
+    serialOrImei: 'OMG-9921-X',
+    condition: 'Excellent',
+    acquisitionType: 'Buy',
+    costBasis: 8500.00,
+    retailPrice: 15500.00,
+    status: 'Reserved',
+    imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC2o7FX9akRcST-7RJ_6erfTjDn5GmI46ViQKp3Df39vRDqSnFbWMkrM35GH64C_DKaOonxzcW3yd9MRjTBLZIdZMnvHC7dVUNnHTH0UxhPOCw0nqQ4-hsHOF5ts0BV407XNdKIn1HCM8CdUh9nRZ2hD5GNFUd4qyjc17qPdYlcsYGexOVxTX9fdYGVTLq3K6WdFJUbUWHw5D09IpXSex4G1MMxK5n_QgbDUuy5uWCC2yTYmdaePSzj',
+    specs: '1960s Automatic • Original Dial • Reserved for VIP Customer',
+    addedAt: '2026-09-19'
+  },
 
   // 2. Active Pawn Holds in Vault
   {
