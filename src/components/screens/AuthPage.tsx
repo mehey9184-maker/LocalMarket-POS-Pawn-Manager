@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { authApi } from '../../services/supabaseApi';
-import { Loader2 } from 'lucide-react';
+import { testSupabaseConnection, ConnectionTestResult } from '../../services/supabase';
+import { Loader2, Database, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export const AuthPage: React.FC = () => {
   const { setActiveTab, showToast } = useApp();
@@ -130,32 +131,66 @@ export const AuthPage: React.FC = () => {
 
   const [dbError, setDbError] = useState(false);
   const [showSql, setShowSql] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
+
+  const checkConnection = async () => {
+    setTestingConnection(true);
+    setTestResult(null);
+    try {
+      const result = await testSupabaseConnection();
+      setTestResult(result);
+      if (result.success && result.hasProfilesTable) {
+        setDbError(false);
+      } else {
+        setDbError(true);
+      }
+    } catch (err) {
+      setTestResult({
+        success: false,
+        message: 'Could not reach Supabase. Check your URL/Key.',
+        hasShopItemsTable: false,
+        hasProfilesTable: false,
+        hasSystemLogsTable: false,
+        itemCount: 0
+      });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
 
   const repairSql = `-- SUPABASE REPAIR SCRIPT
 -- Run this in your Supabase SQL Editor to fix the "Database error saving new user"
 
--- 1. Reset everything related to profiles
+-- 1. Ensure the custom user_role type exists
+DO $$ BEGIN
+    CREATE TYPE public.user_role AS ENUM ('cashier', 'senior_cashier', 'manager', 'admin');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+-- 2. Reset everything related to profiles to ensure clean state
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 DROP FUNCTION IF EXISTS public.handle_new_user();
 
--- 2. Create the profiles table with highly resilient defaults
+-- 3. Create the profiles table with highly resilient defaults
 CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL PRIMARY KEY,
   email text,
-  full_name text DEFAULT 'Operator',
+  full_name text NOT NULL DEFAULT 'Operator',
   cashier_code text UNIQUE DEFAULT 'C-' || upper(substring(gen_random_uuid()::text from 1 for 4)),
-  role text DEFAULT 'cashier',
+  role public.user_role DEFAULT 'cashier'::public.user_role NOT NULL,
   is_active boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now()
 );
 
--- 3. Enable RLS
+-- 4. Enable RLS and add a simple permissive policy for setup
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all for now" ON public.profiles;
 CREATE POLICY "Allow all for now" ON public.profiles FOR ALL USING (true);
 
--- 4. Resilient trigger function
+-- 5. Resilient trigger function with explicit casting
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
@@ -164,14 +199,17 @@ BEGIN
     new.id, 
     new.email, 
     COALESCE(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'fullName', 'Operator'), 
-    COALESCE(new.raw_user_meta_data->>'role', 'cashier')
+    COALESCE((new.raw_user_meta_data->>'role')::public.user_role, 'cashier'::public.user_role)
   )
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = EXCLUDED.full_name,
+    updated_at = now();
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 5. Attach the trigger
+-- 6. Attach the trigger
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();`;
@@ -444,21 +482,51 @@ CREATE TRIGGER on_auth_user_created
                   </button>
 
                   {isLogin && (
-                    <>
-                      <div className="relative py-2.5 flex items-center justify-center">
+                    <div className="flex flex-col gap-4 pt-2">
+                      <div className="relative py-1 flex items-center justify-center">
                         <div className="w-full border-t border-[#282727]"></div>
-                        <span className="absolute bg-[#181717] px-3 text-[11px] font-mono uppercase tracking-wider text-[#a58b83]">or sign in with</span>
+                        <span className="absolute bg-[#181717] px-3 text-[10px] font-mono uppercase tracking-widest text-[#a58b83]/60">Diagnostic Tools</span>
                       </div>
-
+                      
                       <button 
                         type="button"
-                        onClick={simulateBadgeScan}
+                        onClick={checkConnection}
+                        disabled={testingConnection}
                         className="w-full h-11 bg-[#1f1e1e] hover:bg-[#282727] text-[#e5e2e1] text-xs font-medium rounded-lg border border-[#282727] flex items-center justify-center gap-2 transition-colors focus:outline-none"
                       >
-                        <span className="material-symbols-outlined text-base text-[#c85a32]">qr_code_scanner</span>
-                        <span>Tap Staff Badge / Biometric RFID</span>
+                        {testingConnection ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Database className="w-4 h-4 text-[#c85a32]" />
+                            <span>Test Database Connection</span>
+                          </>
+                        )}
                       </button>
-                    </>
+
+                      {testResult && (
+                        <div className={`p-3 rounded-lg border text-[11px] font-medium flex items-start gap-2.5 animate-in fade-in slide-in-from-top-1 ${
+                          testResult.success ? 'bg-green-500/5 border-green-500/20 text-green-400' : 'bg-red-500/5 border-red-500/20 text-red-400'
+                        }`}>
+                          {testResult.success ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />}
+                          <div className="flex flex-col gap-1">
+                            <span>{testResult.message}</span>
+                            {testResult.success && (
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1 opacity-80 font-mono text-[9px] mt-1">
+                                <span className="flex items-center gap-1.5">
+                                  <span className={`w-1.5 h-1.5 rounded-full ${testResult.hasProfilesTable ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                                  Profiles: {testResult.hasProfilesTable ? 'Found' : 'Missing'}
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                  <span className={`w-1.5 h-1.5 rounded-full ${testResult.hasShopItemsTable ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                                  Inventory: {testResult.hasShopItemsTable ? 'Found' : 'Missing'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </form>
 
