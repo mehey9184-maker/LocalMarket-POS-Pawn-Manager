@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Customer,
   InventoryItem,
@@ -22,8 +22,13 @@ import { isSupabaseConfigured } from '../services/supabase';
 import { authApi, profilesApi, shopItemsApi, logsApi, shopProfilesApi } from '../services/supabaseApi';
 import { ProfileRow, SystemLogRow, ShopProfileRow } from '../types/supabase';
 import { DEFAULT_BUSINESS_RULES, roundRetailPrice } from '../utils/pricingRules';
+import { useInventory } from './InventoryContext';
+import { useLoans } from './LoanContext';
+import { useCustomers } from './CustomerContext';
+import { useSales } from './SalesContext';
+import { useSaps } from './SapsContext';
 
-export type NavTab = 'landing' | 'auth' | 'dashboard' | 'pos' | 'intake' | 'vault' | 'registry' | 'profile';
+export type NavTab = 'landing' | 'auth' | 'home' | 'sell' | 'buy-pawn' | 'inventory' | 'customers' | 'profile';
 
 export interface ShopProfile {
   id?: string;
@@ -237,6 +242,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
 
+  // Consume Domain Contexts
+  const { inventory } = useInventory();
+  const { loans: pawnLoans } = useLoans();
+  const { customers } = useCustomers();
+  const { salesHistory, recordSale } = useSales();
+  const { sapsEntries: sapsRegister, exportSapsCsv } = useSaps();
+
+  const total = useMemo(() => {
+    return cart.reduce((sum, ci) => sum + (ci.overridePrice ?? ci.item.retailPrice) * ci.quantity, 0);
+  }, [cart]);
+
   const updateBusinessRules = useCallback((updates: Partial<BusinessRules>) => {
     setBusinessRules(prev => {
       const next = { ...prev, ...updates };
@@ -367,16 +383,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateCartQuantity,
         updateCartItemPrice,
         clearCart,
-        // Legacy Domain placeholders (Redirecting calls is better but would require domain hooks inside AppProvider)
-        // For now, we return empty arrays so components don't crash, but we'll update components to use domain hooks.
-        inventory: [],
-        customers: [],
-        pawnLoans: [],
-        sapsRegister: [],
-        salesHistory: [],
+        // Specialized domain data aggregated into AppContext for backward compatibility
+        inventory,
+        customers,
+        pawnLoans,
+        sapsRegister,
+        salesHistory,
         syncShopItemsWithSupabase: async () => {},
         fetchSupabaseLogs: async () => {},
-        completeCheckout: () => ({} as any),
+        completeCheckout: useCallback((tenderMethod: PaymentMethod, amountTendered: number, receiptType: ReceiptDelivery, customerMobile?: string) => {
+          const subtotal = total;
+          const vatAmount = total * 0.15;
+          const sale: Omit<SaleTransaction, 'id'> = {
+            receiptNumber: `RCPT-${Math.floor(Math.random() * 90000 + 10000)}`,
+            timestamp: new Date().toISOString(),
+            items: [...cart],
+            subtotal,
+            vatAmount,
+            total,
+            tenderMethod,
+            amountTendered,
+            change: Math.max(0, amountTendered - total),
+            receiptType,
+            customerMobile,
+            cashier: currentUserProfile?.full_name || 'System Operator'
+          };
+          recordSale(sale);
+          const finalSale = { ...sale, id: crypto.randomUUID() };
+          setActiveReceiptModal(finalSale as any);
+          setCart([]);
+          showToast('Sale Complete', `Receipt ${finalSale.receiptNumber} generated`, 'success');
+          return finalSale as any;
+        }, [cart, total, recordSale, currentUserProfile, showToast]),
         createIntakeTransaction: () => ({} as any),
         redeemLoan: () => ({} as any),
         extendLoan: () => ({} as any),

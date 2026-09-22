@@ -87,7 +87,7 @@ export const AuthPage: React.FC = () => {
         
         console.log('[Auth] Sign In Successful:', data.user?.id);
         showToast('Operator Verified', 'Welcome to LocalMarket POS Terminal', 'success');
-        setActiveTab('dashboard');
+        setActiveTab('home');
       } else {
         console.log('[Auth] Attempting Sign Up with metadata:', { fullName });
         const { data, error } = await authApi.signUp(email, password, fullName);
@@ -237,7 +237,7 @@ CREATE TRIGGER on_auth_user_created
 
       console.log('[Auth] OTP Verified. Session:', data.session?.user.id);
       showToast('Terminal Provisioned', 'Account verified successfully.', 'success');
-      setActiveTab('dashboard');
+      setActiveTab('home');
     } catch (err: any) {
       console.error('[Auth] Verification Failure:', err);
       showToast('Verification Failed', err.message || 'Invalid or expired security code', 'error');

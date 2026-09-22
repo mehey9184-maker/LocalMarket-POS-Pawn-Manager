@@ -9,21 +9,17 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { Header } from './components/Header';
 import { FloatingActionMenu } from './components/FloatingActionMenu';
 import { Toast } from './components/Toast';
-import { Dashboard } from './components/screens/Dashboard';
-import { PosTerminal } from './components/screens/PosTerminal';
-import { IntakeDesk } from './components/screens/IntakeDesk';
-import { VaultManager } from './components/screens/VaultManager';
-import { Registry } from './components/screens/Registry';
+import { Home } from './components/screens/Home';
+import { Sell } from './components/screens/Sell';
+import { BuyPawn } from './components/screens/BuyPawn';
+import { Inventory } from './components/screens/Inventory';
+import { Customers } from './components/screens/Customers';
 import { CashierProfile } from './components/screens/CashierProfile';
 import { LandingPage } from './components/screens/LandingPage';
 import { AuthPage } from './components/screens/AuthPage';
 import { ScannerModal } from './components/modals/ScannerModal';
 import { ReceiptModal } from './components/modals/ReceiptModal';
 import { ContractModal } from './components/modals/ContractModal';
-import { KeyboardShortcutsGuide } from './components/modals/ShortcutsModal';
-import { SystemTestProtocolModal } from './components/modals/SystemTestProtocolModal';
-import { SupabaseApiModal } from './components/modals/SupabaseApiModal';
-import { DealRulesModal } from './components/modals/DealRulesModal';
 
 import { CompositeProvider } from './context/CompositeProvider';
 
@@ -32,13 +28,6 @@ import { useAuth } from './context/AuthContext';
 const MainLayout: React.FC = () => {
   const { activeTab, setActiveTab } = useApp();
   const { user, isLoading: authLoading } = useAuth();
-  const [isShortcutsHelpOpen, setIsShortcutsHelpOpen] = useState(false);
-  const [isTestProtocolOpen, setIsTestProtocolOpen] = useState(false);
-
-  // Initialize global keyboard shortcuts for fast cashier navigation and POS actions
-  useKeyboardShortcuts({
-    onOpenShortcutsHelp: () => setIsShortcutsHelpOpen(prev => !prev)
-  });
 
   // Session-based navigation enforcement
   React.useEffect(() => {
@@ -47,7 +36,7 @@ const MainLayout: React.FC = () => {
     const isEmailConfirmed = user?.email_confirmed_at || user?.confirmed_at;
 
     if (user && isEmailConfirmed && (activeTab === 'landing' || activeTab === 'auth')) {
-      setActiveTab('dashboard');
+      setActiveTab('home');
     } else if (!user && activeTab !== 'landing' && activeTab !== 'auth') {
       setActiveTab('landing');
     }
@@ -70,19 +59,14 @@ const MainLayout: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#121212] text-gray-100 font-sans selection:bg-[#C85A32] selection:text-white">
-      {/* Streamlined Global Header & Single Navigation System */}
-      <Header 
-        onOpenShortcuts={() => setIsShortcutsHelpOpen(true)} 
-        onOpenTestProtocol={() => setIsTestProtocolOpen(true)}
-      />
+      <Header />
 
-      {/* Clean Single Main Viewport */}
       <main id="app-viewport" className="flex-1 flex overflow-hidden bg-[#121212]">
-        {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'pos' && <PosTerminal />}
-        {activeTab === 'intake' && <IntakeDesk />}
-        {activeTab === 'vault' && <VaultManager />}
-        {activeTab === 'registry' && <Registry />}
+        {activeTab === 'home' && <Home />}
+        {activeTab === 'sell' && <Sell />}
+        {activeTab === 'buy-pawn' && <BuyPawn />}
+        {activeTab === 'inventory' && <Inventory />}
+        {activeTab === 'customers' && <Customers />}
         {activeTab === 'profile' && <CashierProfile />}
       </main>
 
@@ -95,29 +79,8 @@ const MainLayout: React.FC = () => {
       {/* Statutory 30-Day NCR Pledge Contract Modal */}
       <ContractModal />
 
-      {/* Cashier Keyboard Shortcuts Cheat-sheet Modal */}
-      <KeyboardShortcutsGuide
-        isOpen={isShortcutsHelpOpen}
-        onClose={() => setIsShortcutsHelpOpen(false)}
-      />
-
-      {/* Walkthrough & Simulation Protocol Modal */}
-      <SystemTestProtocolModal 
-        isOpen={isTestProtocolOpen}
-        onClose={() => setIsTestProtocolOpen(false)}
-      />
-
-      {/* Supabase Free Tier API, Auth, Database & Logs Center */}
-      <SupabaseApiModal />
-
-      {/* Customizable Deal Rules & Margins Modal */}
-      <DealRulesModal />
-
       {/* Operational Feedback Toast */}
       <Toast />
-
-      {/* UNIVERSAL ACTION BUTTON (UAB) - Facebook/Modern App Pattern */}
-      <FloatingActionMenu />
     </div>
   );
 };
