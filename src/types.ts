@@ -119,3 +119,27 @@ export interface SaleTransaction {
   customerMobile?: string;
   cashier: string;
 }
+
+export type RetailRoundingMode = 'exact' | 'nearest10' | 'charm9' | 'charm99';
+
+export interface BusinessRules {
+  // 30-Day Pawn (NCR Act 34 of 2005)
+  pawnMonthlyInterestRate: number; // e.g. 0.05 (5% legal cap)
+  pawnStorageAdminFeeRate: number; // e.g. 0.08 (8% standard)
+  defaultLoanTermDays: number; // e.g. 30
+  gracePeriodDays: number; // e.g. 7
+  minLoanPrincipal: number; // e.g. 100
+
+  // Outright Buys (Second-Hand Goods Act 06 of 2009)
+  defaultRetailMarkupMultiplier: number; // e.g. 1.8 (1.8x = +80% markup)
+  retailRoundingMode: RetailRoundingMode;
+  storeWarrantyDays: number; // e.g. 7
+  warrantyDescription: string; // e.g. "7-Day Store Test Warranty"
+
+  // Workflow & Hardware preferences
+  defaultIntakeType: 'prompt' | 'pawn' | 'buy';
+  defaultVaultShelf: string;
+  defaultCashierName: string;
+  defaultCategory: string;
+  autoPrintTag: boolean;
+}

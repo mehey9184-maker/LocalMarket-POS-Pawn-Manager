@@ -20,6 +20,8 @@ import { ReceiptModal } from './components/modals/ReceiptModal';
 import { ContractModal } from './components/modals/ContractModal';
 import { KeyboardShortcutsGuide } from './components/modals/ShortcutsModal';
 import { SystemTestProtocolModal } from './components/modals/SystemTestProtocolModal';
+import { SupabaseApiModal } from './components/modals/SupabaseApiModal';
+import { DealRulesModal } from './components/modals/DealRulesModal';
 
 const MainLayout: React.FC = () => {
   const { activeTab } = useApp();
@@ -69,6 +71,12 @@ const MainLayout: React.FC = () => {
         isOpen={isTestProtocolOpen}
         onClose={() => setIsTestProtocolOpen(false)}
       />
+
+      {/* Supabase Free Tier API, Auth, Database & Logs Center */}
+      <SupabaseApiModal />
+
+      {/* Customizable Deal Rules & Margins Modal */}
+      <DealRulesModal />
 
       {/* Operational Feedback Toast */}
       <Toast />

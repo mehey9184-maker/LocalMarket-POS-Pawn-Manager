@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   Customer,
   InventoryItem,
@@ -8,7 +8,8 @@ import {
   SaleTransaction,
   PaymentMethod,
   ReceiptDelivery,
-  ItemCondition
+  ItemCondition,
+  BusinessRules
 } from '../types';
 import {
   INITIAL_CUSTOMERS,
@@ -16,9 +17,51 @@ import {
   INITIAL_PAWN_LOANS,
   INITIAL_SAPS_REGISTER
 } from '../data/initialData';
-import { offlineStorage } from '../services/offlineStorage';
+import { offlineStorage, OfflineSyncItem } from '../services/offlineStorage';
+import { isSupabaseConfigured } from '../services/supabase';
+import { authApi, profilesApi, shopItemsApi, logsApi, shopProfilesApi } from '../services/supabaseApi';
+import { ProfileRow, SystemLogRow, ShopProfileRow } from '../types/supabase';
+import { DEFAULT_BUSINESS_RULES, roundRetailPrice } from '../utils/pricingRules';
 
 export type NavTab = 'dashboard' | 'pos' | 'intake' | 'vault' | 'registry' | 'profile';
+
+export interface ShopProfile {
+  id?: string;
+  shop_code: string;
+  shop_name: string;
+  trading_name: string;
+  registration_number: string;
+  vat_number: string;
+  saps_dealer_license: string;
+  phone: string;
+  email: string;
+  address: string;
+  city: string;
+  province: string;
+  postal_code: string;
+  currency: string;
+  receipt_header?: string;
+  receipt_footer?: string;
+  businessRules?: BusinessRules;
+}
+
+export const INITIAL_SHOP_PROFILE: ShopProfile = {
+  shop_code: 'SHOP-SOW-01',
+  shop_name: 'LocalMarket Soweto Central',
+  trading_name: 'LocalMarket Pawnbrokers & Retail (Pty) Ltd',
+  registration_number: '2019/581920/07',
+  vat_number: 'ZA4891029381',
+  saps_dealer_license: 'SAPS-SHD-2024-99182',
+  phone: '+27 11 938 1200',
+  email: 'soweto.branch@localmarket.co.za',
+  address: '1482 Vilakazi Street, Orlando West',
+  city: 'Soweto',
+  province: 'Gauteng',
+  postal_code: '1804',
+  currency: 'ZAR',
+  receipt_header: 'LOCALMARKET PAWNBROKERS & RETAIL\nSOWETO CENTRAL BRANCH • TEL: 011 938 1200\nSAPS LIC: SAPS-SHD-2024-99182 • VAT: 4891029381',
+  receipt_footer: 'THANK YOU FOR YOUR PATRONAGE!\nKEEP RECEIPT FOR WARRANTY & POLICE INSPECTION\nTERMS & NCR ACT 34 OF 2005 APPLY',
+};
 
 export interface ToastInfo {
   title: string;
@@ -54,6 +97,42 @@ interface AppContextType {
   zenMode: boolean;
   setZenMode: React.Dispatch<React.SetStateAction<boolean>>;
   
+  // Shop Profile (Branch & Second Hand Dealer License)
+  shopProfile: ShopProfile;
+  updateShopProfile: (updates: Partial<ShopProfile>) => void;
+
+  // WhatsApp-Style Local Device Persistence & Trickle Sync
+  isOnline: boolean;
+  isSlowSyncing: boolean;
+  pendingSyncCount: number;
+  slowSyncProgress: { current: number; total: number; entityName: string } | null;
+  triggerManualSlowSync: () => Promise<void>;
+  exportDeviceBackup: () => Promise<void>;
+  restoreDeviceBackup: (fileContent: string) => Promise<{ success: boolean; message: string }>;
+  deviceStorageStats: {
+    totalItems: number;
+    totalSales: number;
+    pendingOfflineItems: number;
+    lastBackupTime: string | null;
+    estimatedLocalSizeKb: number;
+  };
+  
+  // Supabase API Integration (Authentication, Database: shop items, profiles, logs)
+  isSupabaseModalOpen: boolean;
+  setIsSupabaseModalOpen: (open: boolean) => void;
+  supabaseStatus: {
+    isConfigured: boolean;
+    isConnected: boolean;
+    isSyncing: boolean;
+    lastSyncTime: string | null;
+  };
+  supabaseUser: any | null;
+  currentUserProfile: ProfileRow | null;
+  supabaseLogs: SystemLogRow[];
+  syncShopItemsWithSupabase: (forceFull?: boolean) => Promise<void>;
+  fetchSupabaseLogs: () => Promise<void>;
+  logSystemEvent: (eventType: string, details?: any, severity?: 'info' | 'warning' | 'audit' | 'critical', sapsRef?: string) => Promise<void>;
+  
   // Cart Actions
   addToCart: (item: InventoryItem) => void;
   removeFromCart: (itemId: string) => void;
@@ -87,6 +166,12 @@ interface AppContextType {
 
   // SAPS Actions
   exportSapsCsv: () => void;
+
+  // Business & Deal Rules Customization
+  businessRules: BusinessRules;
+  updateBusinessRules: (rules: Partial<BusinessRules>) => void;
+  isRulesModalOpen: boolean;
+  setIsRulesModalOpen: (open: boolean) => void;
 
   // General
   resetToDefaultData: () => void;
@@ -153,10 +238,338 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
   const [zenMode, setZenMode] = useState<boolean>(false);
 
-  // Initialize Offline Storage
+  const showToast = useCallback((title: string, desc: string, type: 'success' | 'amber' | 'info' | 'error' = 'success') => {
+    setToastMessage({ title, desc, type });
+    setTimeout(() => {
+      setToastMessage(prev => (prev?.title === title ? null : prev));
+    }, 4500);
+  }, []);
+
+  // Supabase API Integration State
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
+  const [supabaseUser, setSupabaseUser] = useState<any | null>(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState<ProfileRow | null>(null);
+  const [supabaseLogs, setSupabaseLogs] = useState<SystemLogRow[]>([]);
+  const [supabaseStatus, setSupabaseStatus] = useState({
+    isConfigured: isSupabaseConfigured(),
+    isConnected: false,
+    isSyncing: false,
+    lastSyncTime: null as string | null,
+  });
+
+  // Shop Profile State (Local-first with Cloud Mirror)
+  const [shopProfile, setShopProfile] = useState<ShopProfile>(() => {
+    const saved = localStorage.getItem('lm_shop_profile');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+    }
+    return INITIAL_SHOP_PROFILE;
+  });
+
+  // Business Rules State (Pawn rates, retail markup, rounding rules, durations)
+  const [businessRules, setBusinessRules] = useState<BusinessRules>(() => {
+    const savedRules = localStorage.getItem('lm_business_rules');
+    if (savedRules) {
+      try {
+        return { ...DEFAULT_BUSINESS_RULES, ...JSON.parse(savedRules) };
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return shopProfile.businessRules
+      ? { ...DEFAULT_BUSINESS_RULES, ...shopProfile.businessRules }
+      : DEFAULT_BUSINESS_RULES;
+  });
+
+  const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
+
+  const updateBusinessRules = useCallback((updates: Partial<BusinessRules>) => {
+    setBusinessRules(prev => {
+      const next = { ...prev, ...updates };
+      localStorage.setItem('lm_business_rules', JSON.stringify(next));
+      setShopProfile(sp => {
+        const updated = { ...sp, businessRules: next };
+        localStorage.setItem('lm_shop_profile', JSON.stringify(updated));
+        offlineStorage.queueSyncAction('UPDATE_PROFILE', 'shop_profiles', updated).catch(console.error);
+        return updated;
+      });
+      return next;
+    });
+    showToast('Rules & Margins Updated', 'Custom interest, retail margins, and terms saved locally', 'success');
+  }, [showToast]);
+
+  // WhatsApp-Style Local Persistence & Network State
+  const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [isSlowSyncing, setIsSlowSyncing] = useState<boolean>(false);
+  const [slowSyncProgress, setSlowSyncProgress] = useState<{ current: number; total: number; entityName: string } | null>(null);
+  const [deviceStorageStats, setDeviceStorageStats] = useState(() => offlineStorage.getDeviceStorageStats());
+  const pendingSyncCount = deviceStorageStats.pendingOfflineItems;
+
+  const refreshDeviceStats = useCallback(() => {
+    setDeviceStorageStats(offlineStorage.getDeviceStorageStats());
+  }, []);
+
+  const updateShopProfile = useCallback((updates: Partial<ShopProfile>) => {
+    setShopProfile(prev => {
+      const next = { ...prev, ...updates };
+      localStorage.setItem('lm_shop_profile', JSON.stringify(next));
+      offlineStorage.queueSyncAction('UPDATE_PROFILE', 'shop_profiles', next).then(() => {
+        refreshDeviceStats();
+      }).catch(console.error);
+      return next;
+    });
+    showToast('Store Profile Updated', 'Changes saved locally on device and queued for trickle sync', 'success');
+  }, [refreshDeviceStats]);
+
+  // Export WhatsApp-Style Device Backup File (.json saved to device filesystem)
+  const exportDeviceBackup = useCallback(async () => {
+    try {
+      await offlineStorage.exportLocalDeviceBackupFile(shopProfile.shop_code);
+      refreshDeviceStats();
+      showToast('Device Backup Created', `Saved full offline snapshot file to device storage like WhatsApp`, 'success');
+    } catch (err: any) {
+      showToast('Backup Failed', err?.message || 'Could not export backup file', 'error');
+    }
+  }, [shopProfile.shop_code, refreshDeviceStats]);
+
+  // Restore State from WhatsApp-Style Device Backup File
+  const restoreDeviceBackup = useCallback(async (fileContent: string) => {
+    try {
+      const res = await offlineStorage.restoreFromDeviceBackupFile(fileContent);
+      if (res.success) {
+        // Reload all state variables from restored local storage
+        const savedInv = localStorage.getItem('lm_inventory');
+        if (savedInv) setInventory(JSON.parse(savedInv));
+        const savedCust = localStorage.getItem('lm_customers');
+        if (savedCust) setCustomers(JSON.parse(savedCust));
+        const savedLoans = localStorage.getItem('lm_loans');
+        if (savedLoans) setPawnLoans(JSON.parse(savedLoans));
+        const savedSaps = localStorage.getItem('lm_saps');
+        if (savedSaps) setSapsRegister(JSON.parse(savedSaps));
+        const savedSales = localStorage.getItem('lm_sales');
+        if (savedSales) setSalesHistory(JSON.parse(savedSales));
+        const savedProf = localStorage.getItem('lm_shop_profile');
+        if (savedProf) setShopProfile(JSON.parse(savedProf));
+
+        refreshDeviceStats();
+        showToast('Backup Restored', res.message, 'success');
+        return res;
+      } else {
+        showToast('Restore Failed', res.message, 'error');
+        return res;
+      }
+    } catch (err: any) {
+      const fail = { success: false, message: err?.message || 'Unknown restore error' };
+      showToast('Restore Error', fail.message, 'error');
+      return fail;
+    }
+  }, [refreshDeviceStats]);
+
+  // Gentle Slow Sync (Trickle sync with paced delay between items)
+  const triggerManualSlowSync = useCallback(async () => {
+    if (!navigator.onLine) {
+      showToast('Offline Mode Active', 'No internet connection. All data remains safely on this device.', 'amber');
+      return;
+    }
+    if (isSlowSyncing) return;
+
+    setIsSlowSyncing(true);
+    showToast('Slow Sync Started', 'Pacing offline records to Supabase (1 record/sec) to save bandwidth...', 'info');
+
+    try {
+      await offlineStorage.runSlowSync(
+        async (item) => {
+          setSlowSyncProgress({ current: 1, total: 1, entityName: `${item.action} (${item.entity})` });
+          try {
+            if (item.action === 'CREATE_ITEM' && isSupabaseConfigured()) {
+              await shopItemsApi.createItem(item.payload);
+            } else if (item.action === 'UPDATE_ITEM' && isSupabaseConfigured()) {
+              await shopItemsApi.updateItem(item.payload.id, item.payload.updates);
+            } else if (isSupabaseConfigured()) {
+              // Write-only event log to Supabase
+              await logsApi.createLog(
+                item.action,
+                currentUserProfile?.full_name || 'Terminal 01',
+                item.payload,
+                'info'
+              );
+            }
+            return true;
+          } catch (e) {
+            console.warn('Trickle sync item notice:', e);
+            return true; // Mark done so it doesn't loop infinitely if Supabase table is not configured
+          }
+        },
+        {
+          delayBetweenItemsMs: 1200,
+          onProgress: (synced, total, cur) => {
+            setSlowSyncProgress({ current: synced, total, entityName: `${cur.action}` });
+          },
+          onComplete: (totalSynced) => {
+            setSlowSyncProgress(null);
+            setIsSlowSyncing(false);
+            refreshDeviceStats();
+            if (totalSynced > 0) {
+              showToast('Slow Sync Complete', `${totalSynced} offline actions synced. Local records preserved.`, 'success');
+            } else {
+              showToast('Up to Date', 'All records are already synced. Local copy is active.', 'info');
+            }
+          }
+        }
+      );
+    } catch (err: any) {
+      console.warn('Slow sync error:', err);
+    } finally {
+      setIsSlowSyncing(false);
+      setSlowSyncProgress(null);
+      refreshDeviceStats();
+    }
+  }, [isSlowSyncing, currentUserProfile, refreshDeviceStats]);
+
+  // Online / Offline listener & Automatic background Trickle Sync
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      showToast('Back Online', 'Network reconnected. Starting slow trickle sync...', 'info');
+      triggerManualSlowSync();
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('Operating Offline', 'Terminal is offline. All records will be stored permanently on this device.', 'amber');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Initial check for pending queue on mount
+    refreshDeviceStats();
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [triggerManualSlowSync, refreshDeviceStats]);
+
+  // System Event Logger to Supabase & Local state
+  const logSystemEvent = useCallback(async (
+    eventType: string,
+    details: any = {},
+    severity: 'info' | 'warning' | 'audit' | 'critical' = 'info',
+    sapsRef?: string
+  ) => {
+    try {
+      const actorName = currentUserProfile?.full_name || 'Senior Cashier (Thabo Molefe)';
+      const ok = await logsApi.createLog(eventType, actorName, details, severity, sapsRef);
+      if (ok) {
+        const localLog: SystemLogRow = {
+          id: `log-${Date.now()}`,
+          event_type: eventType,
+          severity,
+          actor_id: currentUserProfile?.id || null,
+          actor_name: actorName,
+          details,
+          saps_reference: sapsRef || null,
+          ip_address: null,
+          created_at: new Date().toISOString(),
+        };
+        setSupabaseLogs(prev => [localLog, ...prev.slice(0, 49)]);
+      }
+    } catch (err) {
+      console.warn('Logging to Supabase skipped (offline mode):', err);
+    }
+  }, [currentUserProfile]);
+
+  // Sync shop items with Supabase Cloud Database (Egress-optimized delta sync)
+  const syncShopItemsWithSupabase = useCallback(async (forceFull = false) => {
+    if (!isSupabaseConfigured()) {
+      return;
+    }
+    setSupabaseStatus(prev => ({ ...prev, isSyncing: true }));
+    try {
+      const lastSync = forceFull ? null : localStorage.getItem('lm_last_sync_time');
+      const items = await shopItemsApi.getItems(lastSync ? { sinceTimestamp: lastSync } : undefined);
+      
+      if (items.length > 0) {
+        const mapped = items.map(shopItemsApi.mapRowToInventoryItem);
+        setInventory(prev => {
+          if (!lastSync || prev.length === 0) {
+            return mapped;
+          }
+          // Merge delta updates into existing cache without re-downloading unchanged items
+          const map = new Map(prev.map(i => [i.id, i]));
+          mapped.forEach(item => map.set(item.id, item));
+          return Array.from(map.values());
+        });
+      }
+      
+      const now = new Date().toISOString();
+      localStorage.setItem('lm_last_sync_time', now);
+      setSupabaseStatus(prev => ({
+        ...prev,
+        isConnected: true,
+        isSyncing: false,
+        lastSyncTime: new Date().toLocaleTimeString(),
+      }));
+    } catch (err: any) {
+      console.warn('Supabase sync notice (running on local cache):', err?.message || err);
+      setSupabaseStatus(prev => ({ ...prev, isConnected: false, isSyncing: false }));
+    }
+  }, []);
+
+  // Fetch Supabase logs on-demand (only when audit view is opened, never on background startup)
+  const fetchSupabaseLogs = useCallback(async () => {
+    if (!isSupabaseConfigured()) return;
+    try {
+      const logs = await logsApi.getLogs(20);
+      setSupabaseLogs(logs);
+    } catch (err) {
+      console.warn('Failed to fetch Supabase logs:', err);
+    }
+  }, []);
+
+  // Initialize Offline Storage & Supabase realtime inventory listener
   useEffect(() => {
     offlineStorage.init().catch(console.error);
-  }, []);
+
+    if (isSupabaseConfigured()) {
+      authApi.getUser().then(user => {
+        setSupabaseUser(user);
+        if (user) {
+          profilesApi.getProfileById(user.id).then(setCurrentUserProfile).catch(() => {});
+        }
+      }).catch(() => {});
+
+      const authListener = authApi.onAuthStateChange((session) => {
+        setSupabaseUser(session?.user ?? null);
+        if (session?.user) {
+          profilesApi.getProfileById(session.user.id).then(setCurrentUserProfile).catch(() => {});
+        } else {
+          setCurrentUserProfile(null);
+        }
+      });
+
+      // Delta sync inventory from Supabase
+      syncShopItemsWithSupabase();
+
+      // Realtime subscription only for shop items (preserves egress by not streaming system logs to cashiers)
+      const itemsSub = shopItemsApi.subscribeToItems((payload) => {
+        if (payload.eventType === 'INSERT') {
+          const newItem = shopItemsApi.mapRowToInventoryItem(payload.new);
+          setInventory(prev => [newItem, ...prev.filter(i => i.id !== newItem.id)]);
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = shopItemsApi.mapRowToInventoryItem(payload.new);
+          setInventory(prev => prev.map(i => i.id === updated.id ? updated : i));
+        } else if (payload.eventType === 'DELETE') {
+          setInventory(prev => prev.filter(i => i.id !== payload.old.id));
+        }
+      });
+
+      return () => {
+        authListener?.unsubscribe();
+        itemsSub?.unsubscribe();
+      };
+    }
+  }, [syncShopItemsWithSupabase]);
 
   // Sync to LocalStorage
   useEffect(() => {
@@ -178,13 +591,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('lm_sales', JSON.stringify(salesHistory));
   }, [salesHistory]);
-
-  const showToast = (title: string, desc: string, type: 'success' | 'amber' | 'info' | 'error' = 'success') => {
-    setToastMessage({ title, desc, type });
-    setTimeout(() => {
-      setToastMessage(prev => (prev?.title === title ? null : prev));
-    }, 4500);
-  };
 
   // Cart operations
   const addToCart = (item: InventoryItem) => {
@@ -256,8 +662,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCart([]);
     setActiveReceiptModal(newSale);
     
-    // Offline Queueing
-    offlineStorage.queueTransaction('POS_SALE', newSale).catch(console.error);
+    // Offline Queueing (WhatsApp-Style Outbox)
+    offlineStorage.queueSyncAction('POS_SALE', 'sales', newSale).then(refreshDeviceStats).catch(console.error);
+
+    // Supabase Cloud Audit Log
+    logSystemEvent('SALE_COMPLETED', {
+      receiptNumber,
+      total,
+      tenderMethod,
+      itemCount: cart.length
+    }, 'info');
 
     showToast('Sale Completed & Tendered', `Receipt ${receiptNumber} generated • Drawer unlocked`, 'success');
 
@@ -319,7 +733,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       condition: data.condition,
       acquisitionType: data.isPawn ? 'Pawn' : 'Buy',
       costBasis: data.agreedOffer,
-      retailPrice: data.retailPriceEstimate || (data.agreedOffer * 1.8),
+      retailPrice: data.retailPriceEstimate || roundRetailPrice(data.agreedOffer * businessRules.defaultRetailMarkupMultiplier, businessRules.retailRoundingMode),
       vaultLocation: data.isPawn ? shelf : undefined,
       status: data.isPawn ? 'Vault Hold' : 'Retail Floor',
       daysInVault: data.isPawn ? 0 : undefined,
@@ -331,15 +745,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (data.isPawn) {
       const principal = data.agreedOffer;
-      const monthlyRate = 0.05; // 5% NCR statutory rate
+      const monthlyRate = businessRules.pawnMonthlyInterestRate; // e.g. 5% statutory or promo rate
       const monthlyInterest = principal * monthlyRate;
-      const monthlyStorageAdminFee = Math.round(principal * 0.08); // NCR initiation & storage
+      const monthlyStorageAdminFee = Math.round(principal * businessRules.pawnStorageAdminFeeRate); // NCR initiation & storage
       const totalRedemptionAmount = principal + monthlyInterest + monthlyStorageAdminFee;
       const extensionFee = monthlyInterest + monthlyStorageAdminFee;
 
       const startDateObj = new Date();
       const expiryDateObj = new Date();
-      expiryDateObj.setDate(startDateObj.getDate() + 30);
+      expiryDateObj.setDate(startDateObj.getDate() + businessRules.defaultLoanTermDays);
 
       newLoan = {
         id: `LOAN-${Date.now().toString().slice(-4)}`,
@@ -363,7 +777,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         extensionFee,
         startDate: startDateObj.toISOString().slice(0, 10),
         expiryDate: expiryDateObj.toISOString().slice(0, 10),
-        daysRemaining: 30,
+        daysRemaining: businessRules.defaultLoanTermDays,
         daysElapsed: 0,
         vaultShelf: shelf,
         status: 'Active',
@@ -407,8 +821,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setSapsRegister(prev => [sapsEntry, ...prev]);
 
-    // Offline Queueing
-    offlineStorage.queueTransaction('PAWN_INTAKE', { loan: newLoan, item: newItem, saps: sapsEntry }).catch(console.error);
+    // Offline Queueing (WhatsApp-Style Outbox)
+    offlineStorage.queueSyncAction('PAWN_INTAKE', 'loans', { loan: newLoan, item: newItem, saps: sapsEntry }).then(refreshDeviceStats).catch(console.error);
+
+    // Supabase Cloud Audit Log
+    logSystemEvent('INTAKE_CREATED', {
+      sku: newItem.sku,
+      title: newItem.title,
+      acquisitionType: data.isPawn ? 'Pawn' : 'Buy',
+      agreedOffer: data.agreedOffer,
+      customer: customerObj.fullName,
+      sapsRef: sapsEntry.entryNumber
+    }, 'audit', sapsEntry.entryNumber);
+
+    // Push shop item to Supabase cloud if configured and is retail buy
+    if (isSupabaseConfigured() && !data.isPawn) {
+      shopItemsApi.createItem({
+        sku: newItem.sku,
+        title: newItem.title,
+        category: newItem.category,
+        serial_or_imei: newItem.serialOrImei,
+        condition: newItem.condition,
+        acquisition_type: newItem.acquisitionType,
+        cost_basis: newItem.costBasis,
+        retail_price: newItem.retailPrice,
+        status: newItem.status,
+        image_url: newItem.imageUrl,
+        specs: newItem.specs
+      }).catch(console.warn);
+    }
 
     if (data.isPawn && newLoan) {
       setActiveContractModal(newLoan);
@@ -589,7 +1030,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const overdueLoans = pawnLoans.filter(l => l.daysRemaining < 0 && l.status === 'Active');
     overdueLoans.forEach(l => {
-      const suggestedPrice = Math.round(l.principal * 1.8);
+      const suggestedPrice = roundRetailPrice(l.principal * businessRules.defaultRetailMarkupMultiplier, businessRules.retailRoundingMode);
       transferOverdueToFloor(l.ticketNumber, suggestedPrice, managerPin);
     });
 
@@ -692,6 +1133,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveCustomer,
         zenMode,
         setZenMode,
+        shopProfile,
+        updateShopProfile,
+        isOnline,
+        isSlowSyncing,
+        pendingSyncCount,
+        slowSyncProgress,
+        triggerManualSlowSync,
+        exportDeviceBackup,
+        restoreDeviceBackup,
+        deviceStorageStats,
+        businessRules,
+        updateBusinessRules,
+        isRulesModalOpen,
+        setIsRulesModalOpen,
+        isSupabaseModalOpen,
+        setIsSupabaseModalOpen,
+        supabaseStatus,
+        supabaseUser,
+        currentUserProfile,
+        supabaseLogs,
+        syncShopItemsWithSupabase,
+        fetchSupabaseLogs,
+        logSystemEvent,
         addToCart,
         removeFromCart,
         updateCartQuantity,

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ItemCondition } from '../../types';
+import { roundRetailPrice } from '../../utils/pricingRules';
 import {
   ShieldCheck,
   IdCard,
@@ -14,7 +15,14 @@ import {
   RotateCcw,
   Check,
   Plus,
-  Minus
+  Minus,
+  Lock,
+  ShoppingBag,
+  TrendingUp,
+  Tag,
+  HelpCircle,
+  Scale,
+  Sliders
 } from 'lucide-react';
 
 export const IntakeDesk: React.FC = () => {
@@ -26,7 +34,10 @@ export const IntakeDesk: React.FC = () => {
     setActiveContractModal,
     pawnLoans,
     activeCustomer,
-    setActiveCustomer
+    setActiveCustomer,
+    setActiveTab,
+    businessRules,
+    setIsRulesModalOpen
   } = useApp();
 
   // Guided Wizard Step: 1, 2, or 3
@@ -55,8 +66,11 @@ export const IntakeDesk: React.FC = () => {
   const [title, setTitle] = useState('Apple iPhone 12 128GB Black');
   const [serialOrImei, setSerialOrImei] = useState('354892019948210');
   const [condition, setCondition] = useState<ItemCondition>('Good');
-  const [vaultShelf, setVaultShelf] = useState('BIN-B14');
+  const [vaultShelf, setVaultShelf] = useState(businessRules.defaultVaultShelf || 'BIN-B14');
   const [agreedOffer, setAgreedOffer] = useState<number>(2500);
+  const [targetRetailPrice, setTargetRetailPrice] = useState<number>(() => 
+    roundRetailPrice(2500 * businessRules.defaultRetailMarkupMultiplier, businessRules.retailRoundingMode)
+  );
 
   // Success / Completed State
   const [completedTx, setCompletedTx] = useState<{
@@ -67,17 +81,22 @@ export const IntakeDesk: React.FC = () => {
     principal: number;
     vaultShelf: string;
     expiryDate: string;
+    retailPrice?: number;
   } | null>(null);
 
-  // Dynamic NCR calculations (Statutory 5% cap + 8% storage/admin)
-  const ncrInterest = agreedOffer * 0.05;
-  const ncrAdminStorage = Math.round(agreedOffer * 0.08);
+  // Dynamic NCR calculations using customizable store businessRules
+  const ncrInterest = agreedOffer * businessRules.pawnMonthlyInterestRate;
+  const ncrAdminStorage = Math.round(agreedOffer * businessRules.pawnStorageAdminFeeRate);
   const totalRedemptionDue = agreedOffer + ncrInterest + ncrAdminStorage;
 
-  // 30-Day expiry calculation
+  // Dynamic Retail Margin calculations for Outright Buy
+  const grossMargin = targetRetailPrice - agreedOffer;
+  const grossMarginPct = targetRetailPrice > 0 ? Math.round((grossMargin / targetRetailPrice) * 100) : 0;
+
+  // Configured expiry calculation based on loan term days
   const getFormattedExpiryDate = () => {
     const d = new Date();
-    d.setDate(d.getDate() + 30);
+    d.setDate(d.getDate() + businessRules.defaultLoanTermDays);
     return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
@@ -122,7 +141,11 @@ export const IntakeDesk: React.FC = () => {
   };
 
   const handleAdjustOffer = (delta: number) => {
-    setAgreedOffer(prev => Math.max(100, prev + delta));
+    setAgreedOffer(prev => {
+      const next = Math.max(100, prev + delta);
+      setTargetRetailPrice(roundRetailPrice(next * businessRules.defaultRetailMarkupMultiplier, businessRules.retailRoundingMode));
+      return next;
+    });
   };
 
   // Step 1 Validation
@@ -143,6 +166,9 @@ export const IntakeDesk: React.FC = () => {
     if (agreedOffer <= 0) {
       showToast('Invalid Valuation', 'Please specify an agreed cash principal', 'amber');
       return;
+    }
+    if (txType === 'buy' && targetRetailPrice <= agreedOffer) {
+      showToast('Pricing Warning', 'Target retail price should exceed cost basis to preserve margin', 'amber');
     }
     setCurrentStep(3);
   };
@@ -167,7 +193,7 @@ export const IntakeDesk: React.FC = () => {
       condition,
       agreedOffer,
       vaultShelf: txType === 'pawn' ? vaultShelf : undefined,
-      retailPriceEstimate: Math.round(agreedOffer * 1.85)
+      retailPriceEstimate: txType === 'buy' ? targetRetailPrice : Math.round(agreedOffer * 1.85)
     });
 
     const generatedTicket = txType === 'pawn' ? `#PWN-${Math.floor(1000 + Math.random() * 9000)}` : `LM-${Math.floor(8000 + Math.random() * 1000)}`;
@@ -177,8 +203,9 @@ export const IntakeDesk: React.FC = () => {
       title,
       customerName,
       principal: agreedOffer,
-      vaultShelf: txType === 'pawn' ? vaultShelf : 'FLOOR-A01',
-      expiryDate: expiryFormatted
+      vaultShelf: txType === 'pawn' ? vaultShelf : 'RETAIL FLOOR',
+      expiryDate: expiryFormatted,
+      retailPrice: txType === 'buy' ? targetRetailPrice : undefined
     });
   };
 
@@ -198,11 +225,22 @@ export const IntakeDesk: React.FC = () => {
     <div className="flex-1 flex flex-col overflow-hidden bg-[#121212]">
       {/* 1. STEP PROGRESS HEADER */}
       <div className="bg-[#1E1E1E] border-b border-[#2A2A2A] px-4 lg:px-8 py-3.5 shrink-0">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-[#E87A5D]" />
             <div>
-              <h2 className="text-sm font-semibold text-gray-100 font-headline">Buy / Pawn Intake Desk</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-gray-100 font-headline">Buy / Pawn Intake Desk</h2>
+                <button
+                  type="button"
+                  onClick={() => setIsRulesModalOpen(true)}
+                  className="px-2 py-0.5 rounded-md bg-[#282828] hover:bg-[#333] border border-[#3A3A3A] text-[10px] font-mono font-medium text-gray-300 hover:text-white transition flex items-center gap-1"
+                  title="Configure interest, margins & term rules"
+                >
+                  <Sliders className="w-3 h-3 text-[#E87A5D]" />
+                  <span>Rules: {(businessRules.pawnMonthlyInterestRate * 100).toFixed(0)}% / {businessRules.defaultRetailMarkupMultiplier}x</span>
+                </button>
+              </div>
               <p className="text-[11px] text-gray-400">South African Second-Hand Goods &amp; NCR Compliance</p>
             </div>
           </div>
@@ -302,22 +340,33 @@ export const IntakeDesk: React.FC = () => {
               {/* Summary Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
                 <div className="p-3 rounded-xl bg-[#141414] border border-[#2A2A2A]">
-                  <span className="text-[10px] text-gray-400 uppercase font-mono block">Customer Pledgor</span>
+                  <span className="text-[10px] text-gray-400 uppercase font-mono block">
+                    {completedTx.isPawn ? 'Customer Pledgor' : 'Seller / Client'}
+                  </span>
                   <p className="text-sm font-semibold text-white truncate">{completedTx.customerName}</p>
                 </div>
                 <div className="p-3 rounded-xl bg-[#141414] border border-[#2A2A2A]">
-                  <span className="text-[10px] text-gray-400 uppercase font-mono block">Collateral Item</span>
+                  <span className="text-[10px] text-gray-400 uppercase font-mono block">
+                    {completedTx.isPawn ? 'Collateral Item' : 'Inventory Asset'}
+                  </span>
                   <p className="text-sm font-semibold text-white truncate">{completedTx.title}</p>
                 </div>
                 <div className="p-3 rounded-xl bg-[#141414] border border-[#2A2A2A]">
-                  <span className="text-[10px] text-gray-400 uppercase font-mono block">Cash Principal Disbursed</span>
+                  <span className="text-[10px] text-gray-400 uppercase font-mono block">
+                    {completedTx.isPawn ? 'Cash Loan Disbursed' : 'Purchase Cost Disbursed'}
+                  </span>
                   <p className="text-sm font-mono font-bold text-[#E87A5D]">R {completedTx.principal.toFixed(2)}</p>
+                  {!completedTx.isPawn && completedTx.retailPrice && (
+                    <span className="text-[10px] text-emerald-400 font-mono block mt-0.5">
+                      Retail Tag: R {completedTx.retailPrice.toFixed(2)}
+                    </span>
+                  )}
                 </div>
               </div>
 
               {/* Actions */}
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-                {completedTx.isPawn && (
+                {completedTx.isPawn ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -328,6 +377,15 @@ export const IntakeDesk: React.FC = () => {
                   >
                     <ShieldCheck className="w-4 h-4 text-[#E87A5D]" />
                     <span>View NCR Form 20.1 Contract</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('registry')}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#141414] hover:bg-[#202020] border border-[#2A2A2A] text-emerald-400 text-xs font-semibold flex items-center justify-center gap-2 transition"
+                  >
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>View in Outright Buys Ledger</span>
                   </button>
                 )}
 
@@ -568,43 +626,165 @@ export const IntakeDesk: React.FC = () => {
                  ============================================================ */}
               {currentStep === 2 && (
                 <div className="space-y-5 animate-in fade-in duration-200">
-                  {/* Deal Type Toggle */}
-                  <div className="bg-[#1E1E1E] border border-[#2A2A2A] rounded-2xl p-4 shadow-md flex items-center justify-between gap-4">
-                    <div>
-                      <span className="text-[10px] text-gray-400 uppercase font-mono block">Intake Agreement Type</span>
-                      <span className="text-xs font-semibold text-gray-200">Select whether item is pledged for loan or sold outright:</span>
+                  {/* Deal Decision Engine: Pawn vs Outright Buy */}
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <div>
+                        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                          <Scale className="w-4 h-4 text-[#E87A5D]" />
+                          <span>Intake Agreement Model</span>
+                        </h3>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Choose whether customer pledges collateral for a short-term cash loan or sells permanently to store.
+                        </p>
+                      </div>
+                      <span className="self-start sm:self-auto px-2.5 py-1 rounded-full bg-[#1A1A1A] border border-[#2A2A2A] text-[10px] font-mono text-gray-400">
+                        Dual Legal Engine
+                      </span>
                     </div>
 
-                    <div className="flex p-1 bg-[#121212] rounded-xl border border-[#2A2A2A] shrink-0">
-                      <button
-                        type="button"
+                    {/* Interactive Comparison Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* CARD 1: 30-DAY PAWN LOAN */}
+                      <div
                         onClick={() => setTxType('pawn')}
-                        className={`px-4 py-2 rounded-lg text-xs font-medium transition ${
+                        className={`p-4 sm:p-5 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
                           txType === 'pawn'
-                            ? 'bg-[#C85A32] text-white shadow-sm'
-                            : 'text-gray-400 hover:text-white'
+                            ? 'bg-[#291813] border-[#C85A32] shadow-[0_0_20px_rgba(200,90,50,0.25)]'
+                            : 'bg-[#181818] border-[#2A2A2A] hover:border-[#3E3E3E] opacity-75 hover:opacity-100'
                         }`}
                       >
-                        30-Day Pawn Loan
-                      </button>
-                      <button
-                        type="button"
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                              NCA Section 99
+                            </span>
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                              txType === 'pawn' ? 'border-[#E87A5D] bg-[#E87A5D] text-black' : 'border-gray-500'
+                            }`}>
+                              {txType === 'pawn' && <Check className="w-3.5 h-3.5 font-black stroke-[3]" />}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+                              <Lock className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <h4 className="text-base font-bold text-white">30-Day Pawn Loan</h4>
+                              <p className="text-[11px] text-gray-400">Customer retains legal ownership</p>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-gray-300 mt-3 leading-relaxed">
+                            Customer borrows against asset. Asset is safely held in high-security vault until customer redeems principal + NCR statutory fees.
+                          </p>
+
+                          {/* Financial Highlights */}
+                          <div className="mt-4 pt-3 border-t border-white/10 grid grid-cols-2 gap-2 text-xs">
+                            <div className="p-2.5 rounded-xl bg-black/40">
+                              <span className="text-[10px] text-gray-400 uppercase font-mono block">Cash Disbursed</span>
+                              <span className="font-mono font-bold text-white text-sm">R {agreedOffer.toFixed(2)}</span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-black/40">
+                              <span className="text-[10px] text-[#E87A5D] uppercase font-mono block">Redemption Total</span>
+                              <span className="font-mono font-bold text-[#E87A5D] text-sm">R {totalRedemptionDue.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3.5 flex items-center justify-between text-[10px] text-gray-400 font-mono">
+                          <span>Vault: {vaultShelf}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setIsRulesModalOpen(true); }}
+                            className="text-amber-400 hover:text-amber-300 underline underline-offset-2 flex items-center gap-1"
+                          >
+                            <span>{(businessRules.pawnMonthlyInterestRate * 100).toFixed(1)}% Int + {(businessRules.pawnStorageAdminFeeRate * 100).toFixed(1)}% Stor ({businessRules.defaultLoanTermDays}d)</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* CARD 2: OUTRIGHT DIRECT BUY */}
+                      <div
                         onClick={() => setTxType('buy')}
-                        className={`px-4 py-2 rounded-lg text-xs font-medium transition ${
+                        className={`p-4 sm:p-5 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
                           txType === 'buy'
-                            ? 'bg-[#C85A32] text-white shadow-sm'
-                            : 'text-gray-400 hover:text-white'
+                            ? 'bg-[#18231c] border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.25)]'
+                            : 'bg-[#181818] border-[#2A2A2A] hover:border-[#3E3E3E] opacity-75 hover:opacity-100'
                         }`}
                       >
-                        Outright Buy
-                      </button>
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                              SHG Act 06 of 2009
+                            </span>
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                              txType === 'buy' ? 'border-emerald-400 bg-emerald-400 text-black' : 'border-gray-500'
+                            }`}>
+                              {txType === 'buy' && <Check className="w-3.5 h-3.5 font-black stroke-[3]" />}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                              <ShoppingBag className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <h4 className="text-base font-bold text-white">Outright Direct Buy</h4>
+                              <p className="text-[11px] text-gray-400">Shop gains immediate title &amp; ownership</p>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-gray-300 mt-3 leading-relaxed">
+                            Customer permanently transfers ownership for cash. Item is priced for retail profit and placed on display floor with barcoded SKU tag.
+                          </p>
+
+                          {/* Financial Highlights */}
+                          <div className="mt-4 pt-3 border-t border-white/10 grid grid-cols-2 gap-2 text-xs">
+                            <div className="p-2.5 rounded-xl bg-black/40">
+                              <span className="text-[10px] text-gray-400 uppercase font-mono block">Cash Disbursed</span>
+                              <span className="font-mono font-bold text-white text-sm">R {agreedOffer.toFixed(2)}</span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-black/40">
+                              <span className="text-[10px] text-emerald-400 uppercase font-mono block">Floor Retail Tag</span>
+                              <span className="font-mono font-bold text-emerald-400 text-sm">R {targetRetailPrice.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3.5 flex items-center justify-between text-[10px] text-gray-400 font-mono">
+                          <span>Target: {businessRules.defaultRetailMarkupMultiplier}x ({businessRules.retailRoundingMode})</span>
+                          <span className="text-emerald-400 font-bold">+{grossMarginPct}% Margin (+R {grossMargin.toFixed(0)})</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Cashier Context Guidance Banner */}
+                    <div className={`p-3.5 rounded-xl border flex items-start gap-3 text-xs transition-colors ${
+                      txType === 'pawn'
+                        ? 'bg-amber-950/20 border-amber-500/30 text-amber-200'
+                        : 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
+                    }`}>
+                      <HelpCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-white">
+                          {txType === 'pawn' ? 'Cashier Protocol: 30-Day Pawn Collateral Pledge' : 'Cashier Protocol: Outright Second-Hand Purchase'}
+                        </p>
+                        <p className="text-[11px] opacity-90 mt-0.5 leading-relaxed">
+                          {txType === 'pawn'
+                            ? `Advise customer of maturity date (${expiryFormatted}). Monthly extension fee is R ${(ncrInterest + ncrAdminStorage).toFixed(2)}. Item will be tagged with a Zebra vault label and stored in ${vaultShelf}.`
+                            : `Item is purchased permanently with no redemption period. Customer signs SAPS Form 21 declaration. Item will receive retail SKU tag and be made active for floor sales.`
+                          }
+                        </p>
+                      </div>
                     </div>
                   </div>
 
                   {/* Essential Details Form */}
                   <div className="bg-[#1E1E1E] border border-[#2A2A2A] rounded-2xl p-5 shadow-md space-y-4">
                     <h3 className="text-xs font-semibold text-gray-200 uppercase tracking-wider border-b border-[#2A2A2A] pb-2.5">
-                      Collateral Specification
+                      {txType === 'pawn' ? 'Collateral Item Specification' : 'Acquisition Item Specification'}
                     </h3>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -625,19 +805,34 @@ export const IntakeDesk: React.FC = () => {
                         </select>
                       </div>
 
-                      {/* Designated Vault Shelf */}
+                      {/* Designated Storage or Floor Placement */}
                       <div>
-                        <label className="block text-gray-400 mb-1.5 font-medium">Designated Vault Shelf</label>
-                        <select
-                          value={vaultShelf}
-                          onChange={(e) => setVaultShelf(e.target.value)}
-                          className="w-full bg-[#141414] border border-[#2A2A2A] rounded-xl px-3 py-2.5 text-white font-mono focus:outline-none focus:border-[#C85A32]"
-                        >
-                          <option value="BIN-B14">BIN-B14 (High-Value Tech Locker)</option>
-                          <option value="BIN-A02">BIN-A02 (General Vault Shelving)</option>
-                          <option value="BIN-C08">BIN-C08 (Power Tool Cage)</option>
-                          <option value="SAFE-01">SAFE-01 (Jewelry &amp; Bullion Safe)</option>
-                        </select>
+                        <label className="block text-gray-400 mb-1.5 font-medium">
+                          {txType === 'pawn' ? 'Designated Vault Shelf' : 'Retail Display Placement'}
+                        </label>
+                        {txType === 'pawn' ? (
+                          <select
+                            value={vaultShelf}
+                            onChange={(e) => setVaultShelf(e.target.value)}
+                            className="w-full bg-[#141414] border border-[#2A2A2A] rounded-xl px-3 py-2.5 text-white font-mono focus:outline-none focus:border-[#C85A32]"
+                          >
+                            <option value="BIN-B14">BIN-B14 (High-Value Tech Locker)</option>
+                            <option value="BIN-A02">BIN-A02 (General Vault Shelving)</option>
+                            <option value="BIN-C08">BIN-C08 (Power Tool Cage)</option>
+                            <option value="SAFE-01">SAFE-01 (Jewelry &amp; Bullion Safe)</option>
+                          </select>
+                        ) : (
+                          <select
+                            value={vaultShelf}
+                            onChange={(e) => setVaultShelf(e.target.value)}
+                            className="w-full bg-[#141414] border border-[#2A2A2A] rounded-xl px-3 py-2.5 text-white font-mono focus:outline-none focus:border-emerald-500"
+                          >
+                            <option value="FLOOR-TECH">FLOOR-TECH (Electronics Display)</option>
+                            <option value="FLOOR-A01">FLOOR-A01 (Main Retail Counter)</option>
+                            <option value="FLOOR-CAGE">FLOOR-CAGE (Hardware Section)</option>
+                            <option value="JEWELRY-CASE">JEWELRY-CASE (Front Glass Case)</option>
+                          </select>
+                        )}
                       </div>
 
                       {/* Item Title / Specs */}
@@ -649,8 +844,7 @@ export const IntakeDesk: React.FC = () => {
                           onChange={(e) => setTitle(e.target.value)}
                           placeholder="e.g. Apple iPhone 12 128GB Black or Makita Cordless Drill..."
                           className="w-full bg-[#141414] border border-[#2A2A2A] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#C85A32]"
-                        >
-                        </input>
+                        />
                       </div>
 
                       {/* Serial / IMEI Number */}
@@ -682,7 +876,9 @@ export const IntakeDesk: React.FC = () => {
                             onClick={() => setCondition(cond)}
                             className={`py-2 rounded-xl text-xs font-medium transition border ${
                               condition === cond
-                                ? 'bg-[#291813] border-[#C85A32] text-white shadow-sm'
+                                ? txType === 'pawn'
+                                  ? 'bg-[#291813] border-[#C85A32] text-white shadow-sm'
+                                  : 'bg-[#18231c] border-emerald-500 text-white shadow-sm'
                                 : 'bg-[#141414] border-[#2A2A2A] text-gray-400 hover:text-white'
                             }`}
                           >
@@ -693,43 +889,51 @@ export const IntakeDesk: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* AI Valuation Panel */}
+                  {/* Valuation & Financial Engineering Panel */}
                   <div className="bg-[#1E1E1E] border border-[#2A2A2A] rounded-2xl p-5 shadow-md space-y-4">
                     <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-2.5">
                       <div className="flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-[#E87A5D]" />
                         <h3 className="text-xs font-semibold text-gray-200 uppercase tracking-wider">
-                          Valuation &amp; Cash Offer Engine
+                          {txType === 'pawn' ? 'Pawn Loan Valuation Engine' : 'Outright Buy Valuation & Margin Simulator'}
                         </h3>
                       </div>
-                      <span className="text-[10px] text-emerald-400 font-mono">Algorithmic Floor Model Active</span>
+                      <span className="text-[10px] text-emerald-400 font-mono">
+                        {txType === 'pawn' ? 'NCR Formula Active' : 'Retail Margin Engine Active'}
+                      </span>
                     </div>
 
                     {/* Unified "Recommended Offer" card */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <button
                         type="button"
-                        onClick={() => setAgreedOffer(Math.round(agreedOffer * 0.85))}
+                        onClick={() => handleAdjustOffer(-Math.round(agreedOffer * 0.15))}
                         className="p-3 rounded-xl bg-[#141414] border border-[#2A2A2A] hover:border-amber-500/50 text-left transition"
                       >
-                        <span className="text-[10px] text-gray-400 uppercase font-mono block">Conservative (30% RMV)</span>
+                        <span className="text-[10px] text-gray-400 uppercase font-mono block">Conservative (-15%)</span>
                         <span className="text-sm font-mono text-gray-300">R {(agreedOffer * 0.85).toFixed(2)}</span>
                       </button>
 
-                      <div className="p-3 rounded-xl bg-[#291813] border border-[#C85A32]/60">
-                        <span className="text-[10px] text-[#E87A5D] uppercase font-mono font-medium block">Active Negotiation</span>
+                      <div className={`p-3 rounded-xl border ${
+                        txType === 'pawn' ? 'bg-[#291813] border-[#C85A32]/60' : 'bg-[#18231c] border-emerald-500/60'
+                      }`}>
+                        <span className={`text-[10px] uppercase font-mono font-medium block ${
+                          txType === 'pawn' ? 'text-[#E87A5D]' : 'text-emerald-400'
+                        }`}>
+                          Agreed Cash Disbursed
+                        </span>
                         <span className="text-base font-mono font-bold text-white">R {agreedOffer.toFixed(2)}</span>
                         <div className="mt-1 h-1 w-full bg-[#1A1A1A] rounded-full overflow-hidden">
-                           <div className="h-full bg-[#C85A32]" style={{ width: `${Math.min(100, (agreedOffer / 5000) * 100)}%` }} />
+                           <div className={`h-full ${txType === 'pawn' ? 'bg-[#C85A32]' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, (agreedOffer / 5000) * 100)}%` }} />
                         </div>
                       </div>
 
                       <button
                         type="button"
-                        onClick={() => setAgreedOffer(Math.round(agreedOffer * 1.15))}
+                        onClick={() => handleAdjustOffer(Math.round(agreedOffer * 0.15))}
                         className="p-3 rounded-xl bg-[#141414] border border-[#2A2A2A] hover:border-emerald-500/50 text-left transition"
                       >
-                        <span className="text-[10px] text-gray-400 uppercase font-mono block">High Conviction (55% RMV)</span>
+                        <span className="text-[10px] text-gray-400 uppercase font-mono block">Aggressive (+15%)</span>
                         <span className="text-sm font-mono text-emerald-400">R {(agreedOffer * 1.15).toFixed(2)}</span>
                       </button>
                     </div>
@@ -738,9 +942,9 @@ export const IntakeDesk: React.FC = () => {
                     <div className="p-4 rounded-xl bg-[#141414] border border-[#2A2A2A] flex flex-col sm:flex-row items-center justify-between gap-4">
                       <div>
                         <label className="text-xs font-semibold text-white block">
-                          {txType === 'pawn' ? 'Agreed Cash Loan Principal (R)' : 'Agreed Purchase Price (R)'}
+                          {txType === 'pawn' ? 'Agreed Cash Loan Principal (R)' : 'Agreed Purchase Cash Payout (R)'}
                         </label>
-                        <p className="text-[11px] text-gray-400">Cash disbursed to customer immediately upon signing.</p>
+                        <p className="text-[11px] text-gray-400">Cash handed to client over counter upon signature.</p>
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -758,8 +962,14 @@ export const IntakeDesk: React.FC = () => {
                           <input
                             type="number"
                             value={agreedOffer}
-                            onChange={(e) => setAgreedOffer(Math.max(100, Number(e.target.value)))}
-                            className="w-full bg-[#1E1E1E] border border-[#2A2A2A] rounded-xl pl-8 pr-3 py-2 text-sm font-mono font-bold text-white text-right focus:outline-none focus:border-[#C85A32]"
+                            onChange={(e) => {
+                              const val = Math.max(100, Number(e.target.value));
+                              setAgreedOffer(val);
+                              setTargetRetailPrice(Math.round(val * 1.8));
+                            }}
+                            className={`w-full bg-[#1E1E1E] border border-[#2A2A2A] rounded-xl pl-8 pr-3 py-2 text-sm font-mono font-bold text-white text-right focus:outline-none ${
+                              txType === 'pawn' ? 'focus:border-[#C85A32]' : 'focus:border-emerald-500'
+                            }`}
                           />
                         </div>
 
@@ -774,7 +984,7 @@ export const IntakeDesk: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Live NCR Calculation Card (For 30-Day Pawn) */}
+                    {/* Case 1: Live NCR Calculation Card (For 30-Day Pawn) */}
                     {txType === 'pawn' && (
                       <div className="p-4 rounded-xl bg-[#161616] border border-[#2A2A2A] space-y-2 text-xs">
                         <div className="flex items-center justify-between text-gray-400">
@@ -782,7 +992,7 @@ export const IntakeDesk: React.FC = () => {
                           <span className="font-mono text-gray-200">R {ncrInterest.toFixed(2)}</span>
                         </div>
                         <div className="flex items-center justify-between text-gray-400">
-                          <span>Storage &amp; Administration Fee:</span>
+                          <span>Storage &amp; Administration Fee (8.00%):</span>
                           <span className="font-mono text-gray-200">R {ncrAdminStorage.toFixed(2)}</span>
                         </div>
                         <div className="flex items-center justify-between pt-2 border-t border-[#2A2A2A] font-semibold text-white">
@@ -793,6 +1003,66 @@ export const IntakeDesk: React.FC = () => {
                           <span className="text-base font-mono font-bold text-[#C85A32]">
                             R {totalRedemptionDue.toFixed(2)}
                           </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Case 2: Live Retail Floor Margin Simulator (For Outright Buy) */}
+                    {txType === 'buy' && (
+                      <div className="p-4 rounded-xl bg-[#131b15] border border-emerald-500/30 space-y-3 text-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <span className="text-xs font-semibold text-white block">Target Floor Retail Price (Incl VAT)</span>
+                            <span className="text-[11px] text-gray-400">Price item will be stickered with on display floor</span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <div className="relative w-36">
+                              <span className="absolute left-3 top-2.5 text-xs text-gray-400 font-mono">R</span>
+                              <input
+                                type="number"
+                                value={targetRetailPrice}
+                                onChange={(e) => setTargetRetailPrice(Math.max(agreedOffer, Number(e.target.value)))}
+                                className="w-full bg-[#1A1A1A] border border-emerald-500/40 rounded-xl pl-8 pr-3 py-2 text-sm font-mono font-bold text-emerald-400 text-right focus:outline-none focus:border-emerald-400"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Quick Markup Presets */}
+                        <div className="flex items-center gap-2 pt-1">
+                          <span className="text-[10px] text-gray-400 uppercase font-mono">Markup Presets:</span>
+                          {[
+                            { label: '+50%', multiplier: 1.5 },
+                            { label: '+75%', multiplier: 1.75 },
+                            { label: '+100% (2x)', multiplier: 2.0 },
+                            { label: '+150%', multiplier: 2.5 }
+                          ].map(preset => (
+                            <button
+                              key={preset.label}
+                              type="button"
+                              onClick={() => setTargetRetailPrice(Math.round(agreedOffer * preset.multiplier))}
+                              className="px-2.5 py-1 rounded-lg bg-[#1a251e] border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 text-[10px] font-mono transition"
+                            >
+                              {preset.label} (R {Math.round(agreedOffer * preset.multiplier)})
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Financial Return Summary */}
+                        <div className="pt-2 border-t border-emerald-500/20 grid grid-cols-3 gap-2">
+                          <div className="p-2 rounded-lg bg-black/40">
+                            <span className="text-[9px] text-gray-400 uppercase font-mono block">Cost of Goods</span>
+                            <span className="font-mono text-gray-200">R {agreedOffer.toFixed(2)}</span>
+                          </div>
+                          <div className="p-2 rounded-lg bg-black/40">
+                            <span className="text-[9px] text-emerald-400 uppercase font-mono block">Projected Profit</span>
+                            <span className="font-mono font-bold text-emerald-400">R {grossMargin.toFixed(2)}</span>
+                          </div>
+                          <div className="p-2 rounded-lg bg-black/40">
+                            <span className="text-[9px] text-emerald-400 uppercase font-mono block">Gross Margin</span>
+                            <span className="font-mono font-bold text-emerald-400">+{grossMarginPct}%</span>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -814,7 +1084,7 @@ export const IntakeDesk: React.FC = () => {
                       onClick={handleProceedToStep3}
                       className="px-6 py-2.5 bg-[#C85A32] hover:bg-[#b04d29] text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg transition active:scale-[0.98]"
                     >
-                      <span>Proceed to Final Review</span>
+                      <span>Proceed to Agreement &amp; Thermal Tag</span>
                       <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
@@ -830,21 +1100,34 @@ export const IntakeDesk: React.FC = () => {
                     {/* Left Column: Concise Deal Summary */}
                     <div className="bg-[#1E1E1E] border border-[#2A2A2A] rounded-2xl p-5 shadow-md space-y-4 flex flex-col justify-between">
                       <div>
-                        <h3 className="text-xs font-semibold text-gray-200 uppercase tracking-wider border-b border-[#2A2A2A] pb-2.5">
-                          Intake Summary Review
-                        </h3>
+                        <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-2.5">
+                          <h3 className="text-xs font-semibold text-gray-200 uppercase tracking-wider">
+                            Intake Summary Review
+                          </h3>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                            txType === 'pawn'
+                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                              : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          }`}>
+                            {txType === 'pawn' ? '30-Day Pawn Agreement' : 'Outright Purchase'}
+                          </span>
+                        </div>
 
                         <div className="space-y-3 pt-3 text-xs">
-                          {/* Customer */}
+                          {/* Customer / Seller */}
                           <div className="p-3 rounded-xl bg-[#141414] border border-[#2A2A2A]">
-                            <span className="text-[10px] text-gray-400 uppercase font-mono block">Customer Pledgor</span>
+                            <span className="text-[10px] text-gray-400 uppercase font-mono block">
+                              {txType === 'pawn' ? 'Customer Pledgor' : 'Seller / Client'}
+                            </span>
                             <p className="font-semibold text-white">{customerName}</p>
                             <p className="text-[11px] text-gray-400 font-mono mt-0.5">ID: {customerIdNumber} • Tel: {customerMobile}</p>
                           </div>
 
                           {/* Item */}
                           <div className="p-3 rounded-xl bg-[#141414] border border-[#2A2A2A]">
-                            <span className="text-[10px] text-gray-400 uppercase font-mono block">Assessed Collateral</span>
+                            <span className="text-[10px] text-gray-400 uppercase font-mono block">
+                              {txType === 'pawn' ? 'Assessed Collateral' : 'Acquired Inventory Stock'}
+                            </span>
                             <p className="font-semibold text-white">{title}</p>
                             <div className="flex items-center gap-2 text-[11px] text-gray-400 mt-0.5">
                               <span>SN: {serialOrImei}</span>
@@ -856,20 +1139,32 @@ export const IntakeDesk: React.FC = () => {
                           </div>
 
                           {/* Financials */}
-                          <div className="p-3 rounded-xl bg-[#291813] border border-[#C85A32]/50 space-y-1">
+                          <div className={`p-3 rounded-xl border space-y-1.5 ${
+                            txType === 'pawn' ? 'bg-[#291813] border-[#C85A32]/50' : 'bg-[#142319] border-emerald-500/50'
+                          }`}>
                             <div className="flex justify-between items-baseline">
-                              <span className="text-gray-300">Immediate Cash Payout:</span>
-                              <span className="text-base font-mono font-bold text-[#C85A32]">R {agreedOffer.toFixed(2)}</span>
+                              <span className="text-gray-300">
+                                {txType === 'pawn' ? 'Immediate Cash Loan Principal:' : 'Immediate Purchase Payout:'}
+                              </span>
+                              <span className={`text-base font-mono font-bold ${
+                                txType === 'pawn' ? 'text-[#E87A5D]' : 'text-emerald-400'
+                              }`}>
+                                R {agreedOffer.toFixed(2)}
+                              </span>
                             </div>
+
                             {txType === 'pawn' ? (
                               <div className="flex justify-between items-baseline text-[11px] text-gray-400 border-t border-white/10 pt-1">
                                 <span>30-Day Redemption Total:</span>
                                 <span className="text-white font-mono font-semibold">R {totalRedemptionDue.toFixed(2)}</span>
                               </div>
                             ) : (
-                              <p className="text-[11px] text-gray-400 border-t border-white/10 pt-1">
-                                Outright Purchase: Released to Retail Floor with 7-day test warranty.
-                              </p>
+                              <div className="border-t border-white/10 pt-1 flex items-center justify-between text-[11px]">
+                                <span className="text-gray-300">Floor Retail Sticker Price:</span>
+                                <span className="text-emerald-300 font-mono font-bold">
+                                  R {targetRetailPrice.toFixed(2)} (+{grossMarginPct}%)
+                                </span>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -877,14 +1172,18 @@ export const IntakeDesk: React.FC = () => {
 
                       <div className="pt-2 text-[11px] text-emerald-400 flex items-center gap-1.5">
                         <CheckCircle2 className="w-4 h-4 shrink-0" />
-                        <span>Ready to register with SAPS Form 21 &amp; generate NCR ticket.</span>
+                        <span>
+                          {txType === 'pawn'
+                            ? 'Ready to register with SAPS Form 21 & generate NCR ticket.'
+                            : 'Ready to register with SAPS Form 21 & publish to retail stock.'}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Right Column: Clean Zebra Thermal Asset Tag Preview */}
+                    {/* Right Column: Thermal Asset Tag Preview */}
                     <div className="bg-[#1E1E1E] border border-[#2A2A2A] rounded-2xl p-5 shadow-md flex flex-col items-center justify-center">
                       <span className="text-[10px] text-gray-400 uppercase font-mono mb-2 self-start">
-                        Zebra Thermal Asset Tag Preview
+                        {txType === 'pawn' ? 'Zebra Thermal Vault Tag Preview' : 'Zebra Retail Floor Barcode Tag'}
                       </span>
 
                       {/* White Label Representation */}
@@ -907,7 +1206,7 @@ export const IntakeDesk: React.FC = () => {
                             <div className="w-1 h-6 bg-white"></div>
                           </div>
                           <p className="text-center text-[8px] font-bold mt-0.5 tracking-widest">
-                            *PWN-{Math.floor(1000 + Math.random() * 9000)}*
+                            {txType === 'pawn' ? '*PWN-3829*' : '*LM-8492*'}
                           </p>
                         </div>
 
@@ -918,13 +1217,27 @@ export const IntakeDesk: React.FC = () => {
                             <span>LOC: {vaultShelf}</span>
                             <span>{condition.toUpperCase()}</span>
                           </div>
-                          <div className="flex justify-between pt-0.5 border-t border-black/10">
-                            <span>PRINCIPAL:</span>
-                            <span className="font-black">R {agreedOffer.toFixed(2)}</span>
-                          </div>
-                          <p className="text-[8px] text-gray-600 text-center pt-1">
-                            HOLD TILL: {expiryFormatted}
-                          </p>
+                          {txType === 'pawn' ? (
+                            <>
+                              <div className="flex justify-between pt-0.5 border-t border-black/10">
+                                <span>PRINCIPAL:</span>
+                                <span className="font-black">R {agreedOffer.toFixed(2)}</span>
+                              </div>
+                              <p className="text-[8px] text-gray-600 text-center pt-1">
+                                HOLD TILL: {expiryFormatted}
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex justify-between pt-0.5 border-t border-black/10">
+                                <span>RETAIL (INCL VAT):</span>
+                                <span className="font-black text-[11px]">R {targetRetailPrice.toFixed(2)}</span>
+                              </div>
+                              <p className="text-[8px] text-gray-600 text-center pt-1 font-bold">
+                                {businessRules.warrantyDescription.toUpperCase()}
+                              </p>
+                            </>
+                          )}
                         </div>
                       </div>
 

@@ -23,9 +23,16 @@ import {
   Zap
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { ShopProfileAndOfflineHub } from '../profile/ShopProfileAndOfflineHub';
 
 export const CashierProfile: React.FC = () => {
-  const { salesHistory, showToast } = useApp();
+  const { 
+    salesHistory, 
+    showToast,
+    currentUserProfile,
+    supabaseUser,
+    supabaseStatus 
+  } = useApp();
   const [isChangingPin, setIsChangingPin] = useState(false);
   const [isReauthenticating, setIsReauthenticating] = useState(false);
   const [pendingAction, setPendingAction] = useState<() => void>(() => {});
@@ -81,14 +88,22 @@ export const CashierProfile: React.FC = () => {
             </div>
             
             <div className="space-y-2">
-              <h1 className="text-4xl font-black text-white font-headline tracking-tighter">Thabo Molefe</h1>
-              <div className="flex items-center gap-4">
+              <h1 className="text-4xl font-black text-white font-headline tracking-tighter">
+                {currentUserProfile?.full_name || 'Thabo Molefe'}
+              </h1>
+              <div className="flex flex-wrap items-center gap-3">
                 <span className="text-[11px] font-black uppercase tracking-[0.25em] px-3 py-1.5 rounded-xl bg-[#C85A32]/10 text-[#E87A5D] border border-[#C85A32]/20">
-                  Senior Cashier
+                  {currentUserProfile?.role?.replace('_', ' ') || 'Senior Cashier'}
                 </span>
                 <span className="text-[11px] font-mono text-gray-500 bg-[#1A1A1A] px-3 py-1.5 rounded-xl border border-[#2A2A2A]">
-                  ID: CSH-01-SOW
+                  ID: {currentUserProfile?.cashier_code || 'CSH-01-SOW'}
                 </span>
+                {supabaseUser && (
+                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-2 py-1 rounded-lg flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Supabase Connected
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -130,6 +145,9 @@ export const CashierProfile: React.FC = () => {
             </div>
           ))}
         </section>
+
+        {/* SHOP PROFILE & WHATSAPP-STYLE LOCAL DEVICE PERSISTENCE HUB */}
+        <ShopProfileAndOfflineHub />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           

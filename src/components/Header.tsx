@@ -14,9 +14,15 @@ export const Header: React.FC<HeaderProps> = ({ onOpenTestProtocol }) => {
     activeCustomer,
     setActiveCustomer,
     setIsScannerModalOpen,
+    setIsSupabaseModalOpen,
+    supabaseStatus,
     resetToDefaultData,
     customers,
-    showToast
+    showToast,
+    shopProfile,
+    isOnline,
+    isSlowSyncing,
+    pendingSyncCount
   } = useApp();
 
   const [selectedBranch, setSelectedBranch] = useState('Soweto Main Branch');
@@ -177,12 +183,45 @@ export const Header: React.FC<HeaderProps> = ({ onOpenTestProtocol }) => {
           RIGHT: UTILITY & PROFILE / ACTIVE SESSION
          ============================================================ */}
       <div className="flex items-center gap-3 shrink-0">
-        {/* Quick Utilities Dropdown */}
+        {/* Offline / Trickle Sync Status Pill */}
+        {!isOnline ? (
+          <button
+            type="button"
+            onClick={() => setActiveTab('profile')}
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-mono font-bold hover:bg-amber-500/20 transition"
+            title="Offline mode: Data safely stored on local device"
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span>Offline (Device DB)</span>
+          </button>
+        ) : isSlowSyncing ? (
+          <button
+            type="button"
+            onClick={() => setActiveTab('profile')}
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/30 text-cyan-400 text-[10px] font-mono font-bold animate-pulse hover:bg-blue-500/20 transition"
+            title="Trickle sync active"
+          >
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+            <span>Trickle Syncing...</span>
+          </button>
+        ) : pendingSyncCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => setActiveTab('profile')}
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#252525] border border-[#3A3A3A] text-gray-300 text-[10px] font-mono font-bold hover:border-[#C85A32]/40 transition"
+            title={`${pendingSyncCount} mutations in local queue`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-[#E87A5D]"></span>
+            <span>{pendingSyncCount} in Outbox</span>
+          </button>
+        ) : null}
+
+        {/* Quick Utilities */}
         <div className="flex items-center gap-1.5 pr-2 border-r border-[#2A2A2A]">
           <button
             type="button"
             onClick={() => setIsScannerModalOpen(true)}
-            className="p-2 rounded-xl bg-[#141414] border border-[#2A2A2A] text-gray-400 hover:text-[#E87A5D] transition relative"
+            className="p-2 rounded-xl bg-[#141414] hover:bg-[#1E1E1E] border border-[#2A2A2A] text-gray-400 hover:text-[#E87A5D] transition relative"
             title="Scan Barcode / ID"
           >
             <Camera className="w-4 h-4" />
@@ -225,7 +264,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenTestProtocol }) => {
           >
             <div className="hidden lg:block text-right">
               <p className="text-[10px] font-black text-white uppercase tracking-[0.1em] leading-tight group-hover:text-[#E87A5D] transition-colors">Shift Hub</p>
-              <p className="text-[9px] text-gray-500 font-mono tracking-tighter">CS-01 · Soweto</p>
+              <p className="text-[9px] text-gray-500 font-mono tracking-tighter truncate max-w-[130px]">{shopProfile.shop_code} · {shopProfile.city}</p>
             </div>
             <div className={`w-8 h-8 rounded-lg border flex items-center justify-center text-xs font-black shadow-inner transition-transform group-hover:scale-105 ${
               activeTab === 'profile' 
