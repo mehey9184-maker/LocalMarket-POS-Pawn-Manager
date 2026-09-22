@@ -1,7 +1,7 @@
 export type AcquisitionType = 'Buy' | 'Pawn' | 'Forfeited' | 'Forfeit';
 export type ItemCondition = 'Mint' | 'Excellent' | 'Good' | 'Fair' | 'Damaged';
-export type ItemStatus = 'Vault Hold' | 'Retail Floor' | 'Sold' | 'Redeemed' | 'Reserved' | 'Flagged';
-export type LoanStatus = 'Active' | 'Extended' | 'Redeemed' | 'Forfeited' | 'Archived';
+export type ItemStatus = 'Vault Hold' | 'Retail Floor' | 'Sold' | 'Redeemed' | 'Reserved' | 'Flagged' | 'InStock' | 'Forfeited' | 'Pending Forfeit';
+export type LoanStatus = 'Active' | 'Extended' | 'Redeemed' | 'Forfeited' | 'Archived' | 'Pending Forfeit';
 export type PaymentMethod = 'cash' | 'card' | 'eft' | 'snapscan';
 export type ReceiptDelivery = 'thermal' | 'whatsapp' | 'sms';
 
@@ -41,7 +41,7 @@ export interface InventoryItem {
 
 export interface LoanHistoryEntry {
   date: string;
-  action: 'Created' | 'Interest Paid & Extended' | 'Full Redemption' | 'Forfeited to Floor';
+  action: 'Created' | 'Interest Paid & Extended' | 'Full Redemption' | 'Forfeited to Floor' | 'Extension';
   amount: number;
   note: string;
   receiptNumber?: string;
@@ -96,6 +96,9 @@ export interface SapsEntry {
   policeStationRef: string;
   verificationStatus: 'VERIFIED' | 'PENDING';
   barcodeRef: string;
+  isCancelled?: boolean;
+  cancelledAt?: string;
+  cancelReason?: string;
 }
 
 export interface CartItem {
@@ -142,4 +145,24 @@ export interface BusinessRules {
   defaultCashierName: string;
   defaultCategory: string;
   autoPrintTag: boolean;
+}
+
+export interface SyncLog {
+  id?: number;
+  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules';
+  entityId: string;
+  action: 'create' | 'update' | 'delete';
+  payload: any;
+  status: 'pending' | 'syncing' | 'failed' | 'completed';
+  error?: string;
+  createdAt: string;
+  syncedAt?: string;
+  retryCount: number;
+}
+
+export interface SyncStatus {
+  isOnline: boolean;
+  isSyncing: boolean;
+  pendingCount: number;
+  lastSyncTime: string | null;
 }

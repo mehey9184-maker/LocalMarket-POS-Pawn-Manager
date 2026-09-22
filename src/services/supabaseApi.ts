@@ -18,35 +18,34 @@ export const authApi = {
     const supabase = getSupabase();
     if (!supabase) throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your environment.');
 
-    const { data, error } = await supabase.auth.signUp({
+    return await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
           full_name: fullName,
+          fullName: fullName,
+          display_name: fullName,
           role,
         },
       },
     });
-
-    if (error) throw error;
-    return data;
   },
 
   async signIn(email: string, password: string) {
     const supabase = getSupabase();
     if (!supabase) throw new Error('Supabase is not configured.');
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const response = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) throw error;
+    const { data } = response;
 
     // Log sign-in event
-    if (data.user) {
-      await logsApi.createLog(
+    if (data?.user) {
+      logsApi.createLog(
         'AUTH_SIGN_IN',
         data.user.user_metadata?.full_name || email,
         { email: data.user.email, role: data.user.user_metadata?.role || 'cashier' },
@@ -54,7 +53,7 @@ export const authApi = {
       ).catch(() => {});
     }
 
-    return data;
+    return response;
   },
 
   async signOut() {
@@ -81,6 +80,17 @@ export const authApi = {
     const { data, error } = await supabase.auth.getUser();
     if (error) return null;
     return data.user;
+  },
+
+  async verifyEmailOtp(email: string, token: string) {
+    const supabase = getSupabase();
+    if (!supabase) throw new Error('Supabase is not configured.');
+
+    return await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'signup',
+    });
   },
 
   onAuthStateChange(callback: (session: any) => void) {

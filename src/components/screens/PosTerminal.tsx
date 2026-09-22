@@ -450,13 +450,15 @@ export const PosTerminal: React.FC = () => {
                 const inCart = cart.some(c => c.item.id === item.id);
                 
                 // Dynamic Status Color Mapping
-                const statusConfig = {
+                const statusConfig: Record<string, { border: string; bg: string; text: string; label: string }> = {
                   'Retail Floor': { border: 'border-emerald-500/30', bg: 'bg-emerald-500/5', text: 'text-emerald-400', label: 'In Stock' },
+                  'InStock': { border: 'border-emerald-500/30', bg: 'bg-emerald-500/5', text: 'text-emerald-400', label: 'In Stock' },
                   'Reserved': { border: 'border-amber-500/40', bg: 'bg-amber-500/5', text: 'text-amber-400', label: 'Reserved' },
                   'Flagged': { border: 'border-red-500/50', bg: 'bg-red-500/10', text: 'text-red-400', label: 'SAPS Flagged' },
                   'Vault Hold': { border: 'border-indigo-500/30', bg: 'bg-indigo-500/5', text: 'text-indigo-400', label: 'On Pawn' },
                   'Sold': { border: 'border-gray-500/20', bg: 'bg-gray-500/5', text: 'text-gray-500', label: 'Sold' },
-                  'Redeemed': { border: 'border-blue-500/30', bg: 'bg-blue-500/5', text: 'text-blue-400', label: 'Redeemed' }
+                  'Redeemed': { border: 'border-blue-500/30', bg: 'bg-blue-500/5', text: 'text-blue-400', label: 'Redeemed' },
+                  'Forfeited': { border: 'border-amber-500/30', bg: 'bg-amber-500/5', text: 'text-amber-400', label: 'Forfeited' }
                 };
 
                 const config = statusConfig[item.status] || statusConfig['Retail Floor'];

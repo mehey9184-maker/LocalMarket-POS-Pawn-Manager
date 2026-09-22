@@ -46,6 +46,8 @@ export const useKeyboardShortcuts = (options?: KeyboardShortcutOptions) => {
           e.preventDefault();
           setActiveTab(targetTab);
           const tabNames: Record<NavTab, string> = {
+            landing: 'System Overview',
+            auth: 'Authentication Portal',
             dashboard: 'Command Center Dashboard',
             pos: 'Front POS Terminal',
             intake: 'Buy / Pawn Intake Desk',

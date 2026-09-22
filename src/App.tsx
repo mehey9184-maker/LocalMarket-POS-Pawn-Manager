@@ -15,6 +15,8 @@ import { IntakeDesk } from './components/screens/IntakeDesk';
 import { VaultManager } from './components/screens/VaultManager';
 import { Registry } from './components/screens/Registry';
 import { CashierProfile } from './components/screens/CashierProfile';
+import { LandingPage } from './components/screens/LandingPage';
+import { AuthPage } from './components/screens/AuthPage';
 import { ScannerModal } from './components/modals/ScannerModal';
 import { ReceiptModal } from './components/modals/ReceiptModal';
 import { ContractModal } from './components/modals/ContractModal';
@@ -23,8 +25,13 @@ import { SystemTestProtocolModal } from './components/modals/SystemTestProtocolM
 import { SupabaseApiModal } from './components/modals/SupabaseApiModal';
 import { DealRulesModal } from './components/modals/DealRulesModal';
 
+import { CompositeProvider } from './context/CompositeProvider';
+
+import { useAuth } from './context/AuthContext';
+
 const MainLayout: React.FC = () => {
-  const { activeTab } = useApp();
+  const { activeTab, setActiveTab } = useApp();
+  const { user, isLoading: authLoading } = useAuth();
   const [isShortcutsHelpOpen, setIsShortcutsHelpOpen] = useState(false);
   const [isTestProtocolOpen, setIsTestProtocolOpen] = useState(false);
 
@@ -32,6 +39,34 @@ const MainLayout: React.FC = () => {
   useKeyboardShortcuts({
     onOpenShortcutsHelp: () => setIsShortcutsHelpOpen(prev => !prev)
   });
+
+  // Session-based navigation enforcement
+  React.useEffect(() => {
+    if (authLoading) return;
+
+    const isEmailConfirmed = user?.email_confirmed_at || user?.confirmed_at;
+
+    if (user && isEmailConfirmed && (activeTab === 'landing' || activeTab === 'auth')) {
+      setActiveTab('dashboard');
+    } else if (!user && activeTab !== 'landing' && activeTab !== 'auth') {
+      setActiveTab('landing');
+    }
+  }, [user, authLoading, activeTab, setActiveTab]);
+
+  if (authLoading) {
+    return (
+      <div className="h-screen w-screen bg-[#121212] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-[#c85a32] border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-[#a58b83] font-mono text-xs uppercase tracking-widest animate-pulse">Initializing Secure Terminal...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Handle full-screen screens that don't need the standard header/layout
+  if (activeTab === 'landing') return <LandingPage />;
+  if (activeTab === 'auth') return <AuthPage />;
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#121212] text-gray-100 font-sans selection:bg-[#C85A32] selection:text-white">
@@ -89,8 +124,10 @@ const MainLayout: React.FC = () => {
 
 export default function App() {
   return (
-    <AppProvider>
-      <MainLayout />
-    </AppProvider>
+    <CompositeProvider>
+      <AppProvider>
+        <MainLayout />
+      </AppProvider>
+    </CompositeProvider>
   );
 }

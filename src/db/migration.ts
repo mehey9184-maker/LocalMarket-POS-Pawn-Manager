@@ -1,0 +1,54 @@
+import { db } from './index';
+import { 
+  Customer, 
+  InventoryItem, 
+  PawnLoan, 
+  SapsEntry, 
+  SaleTransaction 
+} from '../types';
+
+export async function runMigration() {
+  const isMigrated = localStorage.getItem('lm_dexie_migration_complete');
+  if (isMigrated === 'true') return;
+
+  console.log('Starting data migration from localStorage to Dexie...');
+
+  try {
+    const getLocal = (key: string) => {
+      const data = localStorage.getItem(key);
+      try {
+        return data ? JSON.parse(data) : null;
+      } catch (e) {
+        console.error(`Failed to parse localStorage key: ${key}`, e);
+        return null;
+      }
+    };
+
+    const inventory = getLocal('lm_inventory') as InventoryItem[] | null;
+    const customers = getLocal('lm_customers') as Customer[] | null;
+    const loans = getLocal('lm_loans') as PawnLoan[] | null;
+    const saps = getLocal('lm_saps') as SapsEntry[] | null;
+    const sales = getLocal('lm_sales') as SaleTransaction[] | null;
+
+    if (inventory && inventory.length > 0) {
+      await db.inventory.bulkPut(inventory);
+    }
+    if (customers && customers.length > 0) {
+      await db.customers.bulkPut(customers);
+    }
+    if (loans && loans.length > 0) {
+      await db.loans.bulkPut(loans);
+    }
+    if (saps && saps.length > 0) {
+      await db.saps.bulkPut(saps);
+    }
+    if (sales && sales.length > 0) {
+      await db.sales.bulkPut(sales);
+    }
+
+    localStorage.setItem('lm_dexie_migration_complete', 'true');
+    console.log('Migration to Dexie completed successfully.');
+  } catch (error) {
+    console.error('Migration failed:', error);
+  }
+}

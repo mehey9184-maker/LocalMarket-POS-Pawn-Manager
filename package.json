@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
@@ -14,13 +14,19 @@
     "@google/genai": "^2.4.0",
     "@supabase/supabase-js": "^2.116.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@types/react-window": "^2.0.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "dexie": "^4.4.6",
+    "dexie-react-hooks": "^4.4.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "fuse.js": "^7.5.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "react-virtualized-auto-sizer": "^2.0.3",
+    "react-window": "^2.3.2",
     "vite": "^8.3.0"
   },
   "devDependencies": {

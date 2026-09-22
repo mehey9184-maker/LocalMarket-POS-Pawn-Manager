@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Building2, 
@@ -25,6 +25,7 @@ import {
   ShoppingBag
 } from 'lucide-react';
 import { useApp, ShopProfile } from '../../context/AppContext';
+import { BusinessRules } from '../../types';
 
 export const ShopProfileAndOfflineHub: React.FC = () => {
   const {
@@ -40,11 +41,14 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
     deviceStorageStats,
     showToast,
     businessRules,
+    updateBusinessRules,
+    isRulesModalOpen,
     setIsRulesModalOpen
   } = useApp();
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState<ShopProfile>(shopProfile);
+  const [rulesForm, setRulesForm] = useState<BusinessRules>(businessRules);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -54,6 +58,18 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
     e.preventDefault();
     updateShopProfile(profileForm);
     setIsEditingProfile(false);
+  };
+  
+  useEffect(() => {
+    if (isRulesModalOpen) {
+      setRulesForm(businessRules);
+    }
+  }, [isRulesModalOpen, businessRules]);
+
+  const handleSaveRules = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateBusinessRules(rulesForm);
+    setIsRulesModalOpen(false);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -490,7 +506,178 @@ INSERT INTO public.shop_profiles (
         </div>
       </div>
 
+      {/* MODAL: DEAL RULES & PRICING CONFIGURATION */}
+      <AnimatePresence>
+        {isRulesModalOpen && (
+          <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-2xl bg-[#121212] border border-[#2A2A2A] rounded-3xl p-8 space-y-6 shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-[#2A2A2A]">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-[#C85A32]/15 rounded-xl border border-[#C85A32]/30 text-[#E87A5D]">
+                    <Sliders className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white font-headline">Deal Rules & Margins</h3>
+                    <p className="text-xs text-gray-400">Configure interest rates, retail markups, and statutory terms</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsRulesModalOpen(false)}
+                  className="p-2 text-gray-400 hover:text-white rounded-xl hover:bg-[#1E1E1E] transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveRules} className="space-y-6">
+                {/* Pawn Rules Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-[#E87A5D] font-bold text-xs uppercase tracking-widest px-1">
+                    <History className="w-4 h-4" />
+                    <span>Pawn Loan Rules (NCR Regulated)</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-2xl bg-[#181818] border border-[#2A2A2A] space-y-3">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase block">Monthly Interest Rate (%)</label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={rulesForm.pawnMonthlyInterestRate * 100}
+                          onChange={e => setRulesForm({ ...rulesForm, pawnMonthlyInterestRate: parseFloat(e.target.value) / 100 })}
+                          className="w-full bg-transparent border-b border-[#333] py-1 text-white font-mono text-sm focus:border-[#C85A32] outline-none"
+                        />
+                        <span className="text-xs text-gray-500">%</span>
+                      </div>
+                      <p className="text-[9px] text-gray-500 italic">NCR statutory cap is 5.0% for first loans</p>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-[#181818] border border-[#2A2A2A] space-y-3">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase block">Vault Storage Fee (%)</label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={rulesForm.pawnStorageAdminFeeRate * 100}
+                          onChange={e => setRulesForm({ ...rulesForm, pawnStorageAdminFeeRate: parseFloat(e.target.value) / 100 })}
+                          className="w-full bg-transparent border-b border-[#333] py-1 text-white font-mono text-sm focus:border-[#C85A32] outline-none"
+                        />
+                        <span className="text-xs text-gray-500">%</span>
+                      </div>
+                      <p className="text-[9px] text-gray-500 italic">Covers insurance and high-security vaulting</p>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-[#181818] border border-[#2A2A2A] space-y-3">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase block">Loan Duration (Days)</label>
+                      <input
+                        type="number"
+                        value={rulesForm.defaultLoanTermDays}
+                        onChange={e => setRulesForm({ ...rulesForm, defaultLoanTermDays: parseInt(e.target.value) })}
+                        className="w-full bg-transparent border-b border-[#333] py-1 text-white font-mono text-sm focus:border-[#C85A32] outline-none"
+                      />
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-[#181818] border border-[#2A2A2A] space-y-3">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase block">Grace Period (Days)</label>
+                      <input
+                        type="number"
+                        value={rulesForm.gracePeriodDays}
+                        onChange={e => setRulesForm({ ...rulesForm, gracePeriodDays: parseInt(e.target.value) })}
+                        className="w-full bg-transparent border-b border-[#333] py-1 text-white font-mono text-sm focus:border-[#C85A32] outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Retail POS Rules Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-widest px-1">
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>Retail Pricing & Margins</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-2xl bg-[#181818] border border-[#2A2A2A] space-y-3">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase block">Retail Markup (x)</label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          step="0.05"
+                          value={rulesForm.defaultRetailMarkupMultiplier}
+                          onChange={e => setRulesForm({ ...rulesForm, defaultRetailMarkupMultiplier: parseFloat(e.target.value) })}
+                          className="w-full bg-transparent border-b border-[#333] py-1 text-white font-mono text-sm focus:border-[#C85A32] outline-none"
+                        />
+                        <span className="text-xs text-gray-500">x</span>
+                      </div>
+                      <p className="text-[9px] text-gray-500 italic">1.8x multiplier = 80% resale margin</p>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-[#181818] border border-[#2A2A2A] space-y-3">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase block">Rounding Mode</label>
+                      <select
+                        value={rulesForm.retailRoundingMode}
+                        onChange={e => setRulesForm({ ...rulesForm, retailRoundingMode: e.target.value as any })}
+                        className="w-full bg-transparent border-b border-[#333] py-1 text-white text-xs focus:border-[#C85A32] outline-none appearance-none"
+                      >
+                        <option value="exact" className="bg-[#121212]">Exact Amount</option>
+                        <option value="nearest10" className="bg-[#121212]">Nearest R10</option>
+                        <option value="charm9" className="bg-[#121212]">Psychological (Ends in 9)</option>
+                        <option value="charm99" className="bg-[#121212]">Psychological (Ends in 99)</option>
+                      </select>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-[#181818] border border-[#2A2A2A] space-y-3">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase block">Store Warranty (Days)</label>
+                      <input
+                        type="number"
+                        value={rulesForm.storeWarrantyDays}
+                        onChange={e => setRulesForm({ ...rulesForm, storeWarrantyDays: parseInt(e.target.value) })}
+                        className="w-full bg-transparent border-b border-[#333] py-1 text-white font-mono text-sm focus:border-[#C85A32] outline-none"
+                      />
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-[#181818] border border-[#2A2A2A] space-y-3">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase block">Vault Intake Shelf</label>
+                      <input
+                        type="text"
+                        value={rulesForm.defaultVaultShelf}
+                        onChange={e => setRulesForm({ ...rulesForm, defaultVaultShelf: e.target.value })}
+                        className="w-full bg-transparent border-b border-[#333] py-1 text-white font-mono text-sm focus:border-[#C85A32] outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#2A2A2A]">
+                  <button
+                    type="button"
+                    onClick={() => setIsRulesModalOpen(false)}
+                    className="px-5 py-2.5 bg-[#1E1E1E] hover:bg-[#252525] text-gray-300 rounded-xl text-xs font-bold transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center gap-2 px-6 py-2.5 bg-[#C85A32] hover:bg-[#B34D28] text-white rounded-xl text-xs font-bold transition shadow-lg shadow-[#C85A32]/20"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>Apply Rules</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* MODAL: EDIT SHOP PROFILE */}
+
       <AnimatePresence>
         {isEditingProfile && (
           <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
