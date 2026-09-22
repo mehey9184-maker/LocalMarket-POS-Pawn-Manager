@@ -5,12 +5,14 @@ import {
   PawnLoan, 
   SapsEntry, 
   SaleTransaction,
-  BusinessRules
+  BusinessRules,
+  Seller,
+  SellerTransaction
 } from '../types';
 
 export interface SyncLog {
   id?: number;
-  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules';
+  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules' | 'sellers' | 'sellerTransactions';
   entityId: string;
   action: 'create' | 'update' | 'delete';
   payload: any;
@@ -24,6 +26,8 @@ export interface SyncLog {
 export class LocalDatabase extends Dexie {
   inventory!: Table<InventoryItem>;
   customers!: Table<Customer>;
+  sellers!: Table<Seller>;
+  sellerTransactions!: Table<SellerTransaction>;
   loans!: Table<PawnLoan>;
   saps!: Table<SapsEntry>;
   sales!: Table<SaleTransaction>;
@@ -32,9 +36,11 @@ export class LocalDatabase extends Dexie {
 
   constructor() {
     super('LocalMarketDB');
-    this.version(2).stores({
+    this.version(3).stores({
       inventory: 'id, sku, status, pawnTicketId, addedAt',
       customers: 'id, fullName, idNumber, mobile',
+      sellers: 'id, fullName, idNumber, mobile',
+      sellerTransactions: 'id, sellerId, itemId, timestamp',
       loans: 'id, ticketNumber, customerId, status, expiryDate',
       saps: 'id, entryNumber, timestamp, customerId',
       sales: 'id, receiptNumber, timestamp',

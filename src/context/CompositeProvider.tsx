@@ -3,6 +3,7 @@ import { SyncProvider } from './SyncContext';
 import { InventoryProvider } from './InventoryContext';
 import { LoanProvider } from './LoanContext';
 import { CustomerProvider } from './CustomerContext';
+import { SellerProvider } from './SellerContext';
 import { SapsProvider } from './SapsContext';
 import { SalesProvider } from './SalesContext';
 import { AuthProvider } from './AuthContext';
@@ -35,11 +36,13 @@ export const CompositeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         <InventoryProvider>
           <LoanProvider>
             <CustomerProvider>
-              <SapsProvider>
-                <SalesProvider>
-                  {children}
-                </SalesProvider>
-              </SapsProvider>
+              <SellerProvider>
+                <SapsProvider>
+                  <SalesProvider>
+                    {children}
+                  </SalesProvider>
+                </SapsProvider>
+              </SellerProvider>
             </CustomerProvider>
           </LoanProvider>
         </InventoryProvider>

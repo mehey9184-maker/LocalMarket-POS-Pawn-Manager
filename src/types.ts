@@ -20,6 +20,28 @@ export interface Customer {
   isFlagged?: boolean;
 }
 
+export interface Seller {
+  id: string;
+  fullName: string;
+  idNumber: string;
+  idType: 'RSA Smart ID' | 'Green ID Book' | 'Passport';
+  mobile: string;
+  address: string;
+  createdAt: string;
+  verified: boolean;
+}
+
+export interface SellerTransaction {
+  id: string;
+  sellerId: string;
+  itemId: string;
+  itemSku: string;
+  itemTitle: string;
+  amountPaid: number;
+  timestamp: string;
+  sapsRef: string;
+}
+
 export interface InventoryItem {
   id: string;
   sku: string;

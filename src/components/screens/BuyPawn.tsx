@@ -4,8 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useInventory } from '../../context/InventoryContext';
 import { useLoans } from '../../context/LoanContext';
 import { useCustomers } from '../../context/CustomerContext';
+import { useSellers } from '../../context/SellerContext';
 import { useSaps } from '../../context/SapsContext';
-import { ItemCondition, InventoryItem, PawnLoan, Customer } from '../../types';
+import { ItemCondition, InventoryItem, PawnLoan, Customer, Seller } from '../../types';
 import { roundRetailPrice } from '../../utils/pricingRules';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -34,23 +35,55 @@ import {
 
 type WorkflowStep = 'mode' | 'customer' | 'item' | 'valuation' | 'deal' | 'completion';
 
+const SellerHistoryDisplay: React.FC<{ sellerId: string }> = ({ sellerId }) => {
+  const { getSellerTransactions } = useSellers();
+  const [history, setHistory] = useState<any[]>([]);
+
+  useEffect(() => {
+    getSellerTransactions(sellerId).then(setHistory);
+  }, [sellerId, getSellerTransactions]);
+
+  if (history.length === 0) return null;
+
+  return (
+    <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-2xl p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <History className="w-4 h-4 text-emerald-400" />
+        <h5 className="text-[10px] font-black text-white uppercase tracking-widest">Previous Seller History</h5>
+      </div>
+      <div className="space-y-3">
+        {history.map(tx => (
+          <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+            <div>
+              <p className="text-xs font-bold text-gray-200">{tx.itemTitle}</p>
+              <p className="text-[9px] text-gray-500 font-mono">{new Date(tx.timestamp).toLocaleDateString()}</p>
+            </div>
+            <span className="text-xs font-black text-white font-mono">R {tx.amountPaid.toLocaleString()}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const BuyPawn: React.FC = () => {
   const { showToast, businessRules, shopProfile, setActiveContractModal } = useApp();
   const { user } = useAuth();
   const { addItem } = useInventory();
   const { createLoan } = useLoans();
   const { customers, addCustomer } = useCustomers();
+  const { sellers, addSeller, addSellerTransaction } = useSellers();
   const { addSapsEntry } = useSaps();
 
   // State
   const [step, setStep] = useState<WorkflowStep>('mode');
   const [txType, setTxType] = useState<'buy' | 'pawn' | null>(null);
   
-  // Step 1: Customer State
-  const [customerSearch, setCustomerSearch] = useState('');
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({
+  // Step 1: Identity State
+  const [identitySearch, setIdentitySearch] = useState('');
+  const [selectedIdentity, setSelectedIdentity] = useState<Customer | Seller | null>(null);
+  const [isCreatingIdentity, setIsCreatingIdentity] = useState(false);
+  const [newIdentity, setNewIdentity] = useState({
     fullName: '',
     idNumber: '',
     mobile: '',
@@ -102,8 +135,8 @@ export const BuyPawn: React.FC = () => {
   const handleNext = () => {
     if (step === 'mode') setStep('customer');
     else if (step === 'customer') {
-      if (!selectedCustomer) {
-        showToast('Customer Required', 'Please select or create a customer first', 'amber');
+      if (!selectedIdentity) {
+        showToast(`${txType === 'buy' ? 'Seller' : 'Customer'} Required`, `Please select or create a ${txType === 'buy' ? 'seller' : 'customer'} first`, 'amber');
         return;
       }
       setStep('item');
@@ -129,31 +162,42 @@ export const BuyPawn: React.FC = () => {
     else if (step === 'deal') setStep('valuation');
   };
 
-  const selectCustomer = (c: Customer) => {
-    setSelectedCustomer(c);
-    setIsCreatingCustomer(false);
-    showToast('Customer Verified', `${c.fullName} selected`, 'success');
+  const selectIdentity = (identity: Customer | Seller) => {
+    setSelectedIdentity(identity);
+    setIsCreatingIdentity(false);
+    showToast(`${txType === 'buy' ? 'Seller' : 'Customer'} Verified`, `${identity.fullName} selected`, 'success');
   };
 
-  const handleCreateCustomer = async () => {
-    if (!newCustomer.fullName || !newCustomer.idNumber) {
+  const handleCreateIdentity = async () => {
+    if (!newIdentity.fullName || !newIdentity.idNumber) {
       showToast('Error', 'Full name and ID number are required', 'error');
       return;
     }
-    const id = await addCustomer({
-      ...newCustomer,
-      dob: '1990-01-01', // Placeholder
-      gender: 'Other', // Placeholder
-      verified: true
-    });
-    const created = { ...newCustomer, id, createdAt: new Date().toISOString(), verified: true, dob: '1990-01-01', gender: 'Other' } as Customer;
-    setSelectedCustomer(created);
-    setIsCreatingCustomer(false);
-    showToast('Customer Created', created.fullName, 'success');
+
+    if (txType === 'buy') {
+      const id = await addSeller({
+        ...newIdentity,
+        verified: true
+      });
+      const created = { ...newIdentity, id, createdAt: new Date().toISOString(), verified: true } as Seller;
+      setSelectedIdentity(created);
+    } else {
+      const id = await addCustomer({
+        ...newIdentity,
+        dob: '1990-01-01', // Placeholder
+        gender: 'Other', // Placeholder
+        verified: true
+      });
+      const created = { ...newIdentity, id, createdAt: new Date().toISOString(), verified: true, dob: '1990-01-01', gender: 'Other' } as Customer;
+      setSelectedIdentity(created);
+    }
+    
+    setIsCreatingIdentity(false);
+    showToast(`${txType === 'buy' ? 'Seller' : 'Customer'} Created`, newIdentity.fullName, 'success');
   };
 
   const handleFinalize = async () => {
-    if (!selectedCustomer || !txType) return;
+    if (!selectedIdentity || !txType) return;
 
     const sku = `SKU-${Math.floor(Math.random() * 90000 + 10000)}`;
     
@@ -228,11 +272,11 @@ export const BuyPawn: React.FC = () => {
     // 3. Record SAPS Entry
     await addSapsEntry({
       timestamp: new Date().toISOString(),
-      customerId: selectedCustomer.id,
-      customerName: selectedCustomer.fullName,
-      customerIdNumber: selectedCustomer.idNumber,
-      customerAddress: selectedCustomer.address,
-      customerPhone: selectedCustomer.mobile,
+      customerId: selectedIdentity.id,
+      customerName: selectedIdentity.fullName,
+      customerIdNumber: selectedIdentity.idNumber,
+      customerAddress: selectedIdentity.address,
+      customerPhone: selectedIdentity.mobile,
       itemDescription: itemData.title,
       category: itemData.category,
       serialOrImei: itemData.serialOrImei,
@@ -245,6 +289,19 @@ export const BuyPawn: React.FC = () => {
       barcodeRef: sku
     });
 
+    // 4. Record Seller Transaction if Buy
+    if (txType === 'buy') {
+      await addSellerTransaction({
+        sellerId: selectedIdentity.id,
+        itemId,
+        itemSku: sku,
+        itemTitle: itemData.title,
+        amountPaid: agreedOffer,
+        timestamp: new Date().toISOString(),
+        sapsRef: sku // Using SKU as internal SAPS reference link
+      });
+    }
+
     setResult({
       assetTag: sku,
       ticketNumber: loan?.ticketNumber,
@@ -255,21 +312,22 @@ export const BuyPawn: React.FC = () => {
     showToast('Intake Complete', txType === 'buy' ? 'Item added to floor' : 'Loan created and item vaulted', 'success');
   };
 
-  const filteredCustomers = useMemo(() => {
-    if (!customerSearch) return [];
-    const q = customerSearch.toLowerCase();
-    return customers.filter(c => 
+  const filteredIdentities = useMemo(() => {
+    if (!identitySearch) return [];
+    const q = identitySearch.toLowerCase();
+    const source = txType === 'buy' ? sellers : customers;
+    return source.filter(c => 
       c.fullName.toLowerCase().includes(q) || 
       c.idNumber.includes(q) || 
       c.mobile.includes(q)
     ).slice(0, 5);
-  }, [customers, customerSearch]);
+  }, [txType, customers, sellers, identitySearch]);
 
   const resetWorkflow = () => {
     setStep('mode');
     setTxType(null);
-    setSelectedCustomer(null);
-    setIsCreatingCustomer(false);
+    setSelectedIdentity(null);
+    setIsCreatingIdentity(false);
     setAgreedOffer(0);
     setResult(null);
     setItemData({
@@ -286,7 +344,7 @@ export const BuyPawn: React.FC = () => {
   // UI Components
   const ProgressBar = () => (
     <div className="flex items-center gap-2 mb-8 px-2">
-      {['Mode', 'Customer', 'Item', 'Valuation', 'Deal'].map((s, i) => {
+      {['Mode', txType === 'buy' ? 'Seller' : 'Customer', 'Item', 'Valuation', 'Deal'].map((s, i) => {
         const stepMap: Record<WorkflowStep, number> = { mode: 0, customer: 1, item: 2, valuation: 3, deal: 4, completion: 5 };
         const isActive = stepMap[step] === i;
         const isPast = stepMap[step] > i;
@@ -378,7 +436,7 @@ export const BuyPawn: React.FC = () => {
               </motion.div>
             )}
 
-            {/* STEP 1: CUSTOMER */}
+            {/* STEP 1: IDENTITY */}
             {step === 'customer' && (
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
@@ -391,30 +449,41 @@ export const BuyPawn: React.FC = () => {
                     <IdCard className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-white uppercase tracking-tight">Identity Verification</h3>
-                    <p className="text-xs text-gray-500 uppercase font-bold tracking-widest">Compliance Requirement: Second Hand Goods Act</p>
+                    <h3 className="text-xl font-black text-white uppercase tracking-tight">
+                      {txType === 'buy' ? 'Seller' : 'Customer'} Identification
+                    </h3>
+                    <p className="text-xs text-gray-500 uppercase font-bold tracking-widest">
+                      Compliance Requirement: Second Hand Goods Act
+                    </p>
                   </div>
                 </div>
 
-                {!selectedCustomer && !isCreatingCustomer && (
+                {!selectedIdentity && !isCreatingIdentity && (
                   <div className="space-y-6">
                     <div className="relative">
                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                       <input 
                         type="text" 
-                        placeholder="SEARCH BY NAME, RSA ID, OR MOBILE..." 
-                        value={customerSearch}
-                        onChange={e => setCustomerSearch(e.target.value)}
+                        placeholder={`SEARCH PREVIOUS ${txType === 'buy' ? 'SELLERS' : 'CUSTOMERS'}...`}
+                        value={identitySearch}
+                        onChange={e => setIdentitySearch(e.target.value)}
                         className="w-full bg-[#1A1A1A] border-2 border-[#2A2A2A] rounded-2xl pl-12 pr-4 py-4 text-white font-mono focus:border-[#C85A32] outline-none"
                         autoFocus
                       />
                     </div>
 
                     <div className="grid grid-cols-1 gap-3">
-                      {filteredCustomers.map(c => (
+                      {filteredIdentities.length > 0 && (
+                        <div className="mb-2">
+                          <p className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em] mb-2 px-1">
+                            Previous {txType === 'buy' ? 'seller' : 'customer'} found
+                          </p>
+                        </div>
+                      )}
+                      {filteredIdentities.map(c => (
                         <button 
                           key={c.id} 
-                          onClick={() => selectCustomer(c)}
+                          onClick={() => selectIdentity(c)}
                           className="p-4 rounded-2xl bg-[#1A1A1A] border border-[#2A2A2A] hover:border-[#C85A32] transition flex items-center justify-between group"
                         >
                           <div className="flex items-center gap-4">
@@ -433,33 +502,31 @@ export const BuyPawn: React.FC = () => {
 
                     <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-gray-800">
                       <button 
-                        onClick={() => setIsCreatingCustomer(true)}
+                        onClick={() => setIsCreatingIdentity(true)}
                         className="flex-1 p-6 rounded-[2rem] bg-[#1A1A1A] border-2 border-dashed border-[#333] hover:border-[#C85A32]/50 transition flex flex-col items-center gap-3 text-gray-400 hover:text-white"
                       >
                         <UserPlus className="w-8 h-8" />
                         <span className="text-[10px] font-black uppercase tracking-widest">Manual New Entry</span>
                       </button>
-                      <button className="flex-1 p-6 rounded-[2rem] bg-[#1A1A1A] border-2 border-dashed border-[#333] hover:border-blue-500/50 transition flex flex-col items-center gap-3 text-gray-400 hover:text-white">
-                        <Smartphone className="w-8 h-8" />
-                        <span className="text-[10px] font-black uppercase tracking-widest">Request Mobile Link</span>
-                      </button>
                     </div>
                   </div>
                 )}
 
-                {isCreatingCustomer && (
+                {isCreatingIdentity && (
                   <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-3xl p-8 space-y-6">
                     <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-black text-white uppercase tracking-widest">New Identity Record</h4>
-                      <button onClick={() => setIsCreatingCustomer(false)} className="text-xs text-gray-500 hover:text-white">Cancel</button>
+                      <h4 className="text-sm font-black text-white uppercase tracking-widest">
+                        New {txType === 'buy' ? 'Seller' : 'Customer'} Record
+                      </h4>
+                      <button onClick={() => setIsCreatingIdentity(false)} className="text-xs text-gray-500 hover:text-white">Cancel</button>
                     </div>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">ID Type</label>
                         <select 
-                          value={newCustomer.idType}
-                          onChange={e => setNewCustomer({...newCustomer, idType: e.target.value as any})}
+                          value={newIdentity.idType}
+                          onChange={e => setNewIdentity({...newIdentity, idType: e.target.value as any})}
                           className="w-full bg-[#121212] border border-[#2A2A2A] rounded-xl px-4 py-3 text-white focus:border-[#C85A32] outline-none"
                         >
                           <option>RSA Smart ID</option>
@@ -471,8 +538,8 @@ export const BuyPawn: React.FC = () => {
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">RSA ID / Passport Number</label>
                         <input 
                           type="text" 
-                          value={newCustomer.idNumber}
-                          onChange={e => setNewCustomer({...newCustomer, idNumber: e.target.value})}
+                          value={newIdentity.idNumber}
+                          onChange={e => setNewIdentity({...newIdentity, idNumber: e.target.value})}
                           className="w-full bg-[#121212] border border-[#2A2A2A] rounded-xl px-4 py-3 text-white font-mono focus:border-[#C85A32] outline-none"
                         />
                       </div>
@@ -480,8 +547,8 @@ export const BuyPawn: React.FC = () => {
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Legal Full Name</label>
                         <input 
                           type="text" 
-                          value={newCustomer.fullName}
-                          onChange={e => setNewCustomer({...newCustomer, fullName: e.target.value})}
+                          value={newIdentity.fullName}
+                          onChange={e => setNewIdentity({...newIdentity, fullName: e.target.value})}
                           className="w-full bg-[#121212] border border-[#2A2A2A] rounded-xl px-4 py-3 text-white focus:border-[#C85A32] outline-none"
                         />
                       </div>
@@ -489,8 +556,8 @@ export const BuyPawn: React.FC = () => {
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Mobile Number</label>
                         <input 
                           type="text" 
-                          value={newCustomer.mobile}
-                          onChange={e => setNewCustomer({...newCustomer, mobile: e.target.value})}
+                          value={newIdentity.mobile}
+                          onChange={e => setNewIdentity({...newIdentity, mobile: e.target.value})}
                           className="w-full bg-[#121212] border border-[#2A2A2A] rounded-xl px-4 py-3 text-white focus:border-[#C85A32] outline-none"
                         />
                       </div>
@@ -498,15 +565,15 @@ export const BuyPawn: React.FC = () => {
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Address</label>
                         <input 
                           type="text" 
-                          value={newCustomer.address}
-                          onChange={e => setNewCustomer({...newCustomer, address: e.target.value})}
+                          value={newIdentity.address}
+                          onChange={e => setNewIdentity({...newIdentity, address: e.target.value})}
                           className="w-full bg-[#121212] border border-[#2A2A2A] rounded-xl px-4 py-3 text-white focus:border-[#C85A32] outline-none"
                         />
                       </div>
                     </div>
 
                     <button 
-                      onClick={handleCreateCustomer}
+                      onClick={handleCreateIdentity}
                       className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 hover:bg-emerald-500 transition"
                     >
                       Verify & Create Record
@@ -514,19 +581,27 @@ export const BuyPawn: React.FC = () => {
                   </div>
                 )}
 
-                {selectedCustomer && (
-                  <div className="p-8 rounded-[2rem] bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                        <CheckCircle2 className="w-8 h-8" />
+                {selectedIdentity && (
+                  <div className="space-y-4">
+                    <div className="p-8 rounded-[2rem] bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                          <CheckCircle2 className="w-8 h-8" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">
+                            Verified {txType === 'buy' ? 'Seller' : 'Customer'}
+                          </p>
+                          <h4 className="text-xl font-bold text-white">{selectedIdentity.fullName}</h4>
+                          <p className="text-xs text-gray-500 font-mono mt-0.5">{selectedIdentity.idNumber}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Verified Identity</p>
-                        <h4 className="text-xl font-bold text-white">{selectedCustomer.fullName}</h4>
-                        <p className="text-xs text-gray-500 font-mono mt-0.5">{selectedCustomer.idNumber}</p>
-                      </div>
+                      <button onClick={() => setSelectedIdentity(null)} className="text-xs text-gray-500 hover:text-white uppercase font-black tracking-widest">Change</button>
                     </div>
-                    <button onClick={() => setSelectedCustomer(null)} className="text-xs text-gray-500 hover:text-white uppercase font-black tracking-widest">Change</button>
+
+                    {txType === 'buy' && (
+                      <SellerHistoryDisplay sellerId={selectedIdentity.id} />
+                    )}
                   </div>
                 )}
 
@@ -537,7 +612,7 @@ export const BuyPawn: React.FC = () => {
                   </button>
                   <button 
                     onClick={handleNext}
-                    disabled={!selectedCustomer}
+                    disabled={!selectedIdentity}
                     className="flex-1 py-4 bg-[#C85A32] disabled:bg-gray-800 disabled:text-gray-500 text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl shadow-[#C85A32]/20"
                   >
                     <span>Item Assessment</span>
@@ -798,8 +873,8 @@ export const BuyPawn: React.FC = () => {
                           <span className="text-white">{txType === 'buy' ? 'DIRECT PURCHASE' : '30-DAY PAWN LOAN'}</span>
                         </div>
                         <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">
-                          <span>Verified Customer</span>
-                          <span className="text-white">{selectedCustomer?.fullName}</span>
+                          <span>Verified {txType === 'buy' ? 'Seller' : 'Customer'}</span>
+                          <span className="text-white">{selectedIdentity?.fullName}</span>
                         </div>
                         <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">
                           <span>Collateral Asset</span>
