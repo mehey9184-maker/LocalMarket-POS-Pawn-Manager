@@ -184,15 +184,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const shopId = profile?.shop_id || null;
 
   const verifyManagerPin = async (pin: string): Promise<{ success: boolean; error?: string }> => {
-    // 1. If currently logged in profile is manager/owner, verify profile pin if set
-    if (profile && (profile.role === 'manager' || profile.role === 'owner' || profile.role === 'admin')) {
-      if (profile.pin_code && profile.pin_code === pin) {
-        setManagerElevation(true);
-        return { success: true };
-      }
-    }
-
-    // 2. Otherwise verify with backend secure server pin endpoint
     try {
       const session = await authApi.getSession();
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };

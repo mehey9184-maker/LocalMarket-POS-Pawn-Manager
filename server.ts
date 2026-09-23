@@ -30,6 +30,24 @@ function getSupabaseAdminClient() {
   });
 }
 
+// PIN Hashing Helpers
+function hashPin(pin: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(pin, salt, 10000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPinHash(pin: string, storedHash: string): boolean {
+  if (!storedHash || !storedHash.includes(':')) return false;
+  const [salt, originalHash] = storedHash.split(':');
+  try {
+    const hash = crypto.pbkdf2Sync(pin, salt, 10000, 64, 'sha512').toString('hex');
+    return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(originalHash, 'hex'));
+  } catch {
+    return false;
+  }
+}
+
 // Server-side Caller Authentication & Role Verification Helper
 async function authenticateCaller(req: express.Request): Promise<{
   user?: any;
@@ -369,9 +387,16 @@ async function startServer() {
 
       let isPinValid = false;
 
-      // 1. Check if caller profile has a specific pin_code set
-      if (auth.profile.pin_code && String(auth.profile.pin_code) === String(pin)) {
+      // 1. Check if caller profile has pin_hash set or legacy pin_code fallback
+      if (auth.profile.pin_hash) {
+        isPinValid = verifyPinHash(pin, auth.profile.pin_hash);
+      } else if (auth.profile.pin_code && String(auth.profile.pin_code) === String(pin)) {
         isPinValid = true;
+        const newHash = hashPin(pin);
+        await adminSupabase.from('profiles').update({
+          pin_hash: newHash,
+          pin_code: null
+        }).eq('id', auth.profile.id);
       }
 
       // 2. Check if server-side MANAGER_PIN environment variable matches
@@ -446,7 +471,19 @@ async function startServer() {
       const currentAttempts = (lastAttempt && (now.getTime() - lastAttempt.getTime() > 15 * 60 * 1000)) ? 0 : attempts;
 
       // 3. Verify PIN
-      if (profile.pin_code !== pin) {
+      let isPinValid = false;
+      if (profile.pin_hash) {
+        isPinValid = verifyPinHash(pin, profile.pin_hash);
+      } else if (profile.pin_code && String(profile.pin_code) === String(pin)) {
+        isPinValid = true;
+        const newHash = hashPin(pin);
+        await adminSupabase.from('profiles').update({
+          pin_hash: newHash,
+          pin_code: null
+        }).eq('id', profile.id);
+      }
+
+      if (!isPinValid) {
         await adminSupabase.from('profiles').update({
           login_attempts: currentAttempts + 1,
           last_attempt_at: now.toISOString()
@@ -525,15 +562,28 @@ async function startServer() {
         return res.status(400).json({ success: false, error: "Target ID and updates are required." });
       }
 
-      const adminSupabase = getSupabaseAdminClient();
-      if (!adminSupabase) {
-        return res.status(503).json({ success: false, error: "Admin client not available." });
+      const token = req.headers.authorization!.split(" ")[1].trim();
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+      const anonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+      const userScopedClient = createClient(supabaseUrl!, anonKey!, {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { headers: { Authorization: `Bearer ${token}` } }
+      });
+
+      const processedUpdates = { ...updates };
+      if (processedUpdates.pinCode) {
+        processedUpdates.pin_hash = hashPin(processedUpdates.pinCode);
+        delete processedUpdates.pinCode;
+        delete processedUpdates.pin_code;
+      } else if (processedUpdates.pin_code) {
+        processedUpdates.pin_hash = hashPin(processedUpdates.pin_code);
+        delete processedUpdates.pin_code;
       }
 
-      // Call the secure RPC
-      const { data, error } = await adminSupabase.rpc('secure_update_staff_profile', {
+      // Call the secure RPC via user-scoped client so auth.uid() resolves to caller
+      const { data, error } = await userScopedClient.rpc('secure_update_staff_profile', {
         p_target_id: targetId,
-        p_updates: updates,
+        p_updates: processedUpdates,
         p_reason: reason || 'Staff profile update via Admin panel'
       });
 
@@ -668,6 +718,7 @@ async function startServer() {
       }
 
       // 8. Upsert Profile record in profiles table
+      const hashedPin = (pinCode || req.body.pin_code) ? hashPin(pinCode || req.body.pin_code) : null;
       const profilePayload = {
         id: userId,
         shop_id: authoritativeShopId,
@@ -675,7 +726,8 @@ async function startServer() {
         full_name: fullName,
         role: role,
         cashier_code: cashierCode,
-        pin_code: pinCode || null,
+        pin_hash: hashedPin,
+        pin_code: null,
         is_active: true,
         updated_at: new Date().toISOString()
       };
