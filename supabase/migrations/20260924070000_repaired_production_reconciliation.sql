@@ -96,6 +96,8 @@ DROP POLICY IF EXISTS "Authenticated users view shop profiles" ON public.profile
 DROP POLICY IF EXISTS "Users update own profile or managers update shop profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Allow all for now" ON public.profiles;
 DROP POLICY IF EXISTS "Allow public read profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Users can view own profile or shop colleagues" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update own profile or managers update branch" ON public.profiles;
 
 CREATE POLICY "Users can view own profile or shop colleagues" ON public.profiles
     FOR SELECT TO authenticated
@@ -178,17 +180,43 @@ BEGIN
     FOR UPDATE;
 
     IF NOT FOUND THEN
-        RETURN jsonb_build_object('locked', false);
+        RETURN jsonb_build_object(
+            'locked', false,
+            'attempt_admitted', false,
+            'attempt_number', 0
+        );
     END IF;
 
     v_attempts := COALESCE(v_attempts, 0);
 
-    IF v_attempts >= 5 AND v_last_attempt IS NOT NULL AND (v_now - v_last_attempt) < (v_lockout_minutes * interval '1 minute') THEN
-        v_remaining := CEIL(EXTRACT(EPOCH FROM ((v_last_attempt + (v_lockout_minutes * interval '1 minute')) - v_now)) / 60.0);
-        RETURN jsonb_build_object('locked', true, 'remaining_minutes', GREATEST(1, v_remaining));
+    -- Reset attempt count if lockout window (15 mins) has expired
+    IF v_last_attempt IS NOT NULL AND (v_now - v_last_attempt) >= (v_lockout_minutes * interval '1 minute') THEN
+        v_attempts := 0;
     END IF;
 
-    RETURN jsonb_build_object('locked', false);
+    -- If 5 or more failed attempts within active window, deny admission
+    IF v_attempts >= 5 AND v_last_attempt IS NOT NULL AND (v_now - v_last_attempt) < (v_lockout_minutes * interval '1 minute') THEN
+        v_remaining := CEIL(EXTRACT(EPOCH FROM ((v_last_attempt + (v_lockout_minutes * interval '1 minute')) - v_now)) / 60.0);
+        RETURN jsonb_build_object(
+            'locked', true,
+            'attempt_admitted', false,
+            'attempt_number', v_attempts,
+            'remaining_minutes', GREATEST(1, v_remaining)
+        );
+    END IF;
+
+    -- Atomically reserve/increment authentication attempt BEFORE PIN verification
+    v_attempts := v_attempts + 1;
+    UPDATE public.profiles
+    SET login_attempts = v_attempts,
+        last_attempt_at = v_now
+    WHERE id = p_user_id;
+
+    RETURN jsonb_build_object(
+        'locked', false,
+        'attempt_admitted', true,
+        'attempt_number', v_attempts
+    );
 END;
 $$;
 
@@ -199,37 +227,15 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-    v_attempts INT;
-    v_last_attempt TIMESTAMPTZ;
     v_now TIMESTAMPTZ := clock_timestamp();
-    v_lockout_minutes INT := 15;
 BEGIN
-    SELECT login_attempts, last_attempt_at INTO v_attempts, v_last_attempt
-    FROM public.profiles
-    WHERE id = p_user_id
-    FOR UPDATE;
-
-    IF NOT FOUND THEN
-        RETURN;
-    END IF;
-
-    v_attempts := COALESCE(v_attempts, 0);
-
-    IF v_last_attempt IS NOT NULL AND (v_now - v_last_attempt) >= (v_lockout_minutes * interval '1 minute') THEN
-        v_attempts := 0;
-    END IF;
-
+    -- Failed attempts were already atomically incremented and reserved by check_pin_lockout.
+    -- On successful verification, reset login attempts, clear lockout timestamp, and update last sign in time.
     IF p_success THEN
         UPDATE public.profiles
         SET login_attempts = 0,
             last_attempt_at = NULL,
             last_sign_in_at = v_now
-        WHERE id = p_user_id;
-    ELSE
-        v_attempts := v_attempts + 1;
-        UPDATE public.profiles
-        SET login_attempts = v_attempts,
-            last_attempt_at = v_now
         WHERE id = p_user_id;
     END IF;
 END;
@@ -340,13 +346,13 @@ BEGIN
 END;
 $$;
 
--- 9. HARDEN SEARCH_PATH ON ALL SECURITY DEFINER FUNCTIONS
-ALTER FUNCTION IF EXISTS public.handle_new_user() SET search_path = public;
-ALTER FUNCTION IF EXISTS public.update_modified_column() SET search_path = public;
-ALTER FUNCTION IF EXISTS public.current_user_role() SET search_path = public;
-ALTER FUNCTION IF EXISTS public.get_current_user_shop_id() SET search_path = public;
-ALTER FUNCTION IF EXISTS public.is_admin() SET search_path = public;
-ALTER FUNCTION IF EXISTS public.is_manager_or_owner() SET search_path = public;
-ALTER FUNCTION IF EXISTS public.is_staff() SET search_path = public;
-ALTER FUNCTION IF EXISTS public.protect_cashier_inventory_fields() SET search_path = public;
-ALTER FUNCTION IF EXISTS public.rls_auto_enable() SET search_path = public;
+-- 9. HARDEN SEARCH_PATH ON ALL SECURITY DEFINER FUNCTIONS (Explicit function signatures)
+ALTER FUNCTION public.handle_new_user() SET search_path = public;
+ALTER FUNCTION public.update_modified_column() SET search_path = public;
+ALTER FUNCTION public.current_user_role() SET search_path = public;
+ALTER FUNCTION public.get_current_user_shop_id() SET search_path = public;
+ALTER FUNCTION public.is_admin() SET search_path = public;
+ALTER FUNCTION public.is_manager_or_owner() SET search_path = public;
+ALTER FUNCTION public.is_staff() SET search_path = public;
+ALTER FUNCTION public.protect_cashier_inventory_fields() SET search_path = public;
+ALTER FUNCTION public.rls_auto_enable() SET search_path = public;

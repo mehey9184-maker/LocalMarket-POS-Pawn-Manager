@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS public.shop_profiles (
     currency TEXT DEFAULT 'ZAR',
     receipt_header TEXT,
     receipt_footer TEXT,
+    timezone TEXT DEFAULT 'Africa/Johannesburg',
+    business_rules JSONB DEFAULT '{}'::jsonb,
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -76,7 +78,12 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     role user_role DEFAULT 'cashier'::user_role NOT NULL,
     phone TEXT,
     avatar_url TEXT,
-    pin_code TEXT DEFAULT '1234',
+    pin_code TEXT,
+    pin_hash TEXT,
+    schedule JSONB,
+    permissions JSONB,
+    login_attempts INTEGER DEFAULT 0,
+    last_attempt_at TIMESTAMPTZ,
     digital_signature TEXT,
     is_active BOOLEAN DEFAULT true,
     last_sign_in_at TIMESTAMPTZ,
@@ -261,6 +268,64 @@ CREATE TABLE IF NOT EXISTS public.system_logs (
     details JSONB DEFAULT '{}'::jsonb,
     saps_reference TEXT,
     ip_address TEXT,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 13. STAFF AUDIT LOGS TABLE
+CREATE TABLE IF NOT EXISTS public.staff_audit_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE CASCADE,
+    actor_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    target_staff_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    event_type TEXT NOT NULL,
+    old_values JSONB,
+    new_values JSONB,
+    reason TEXT,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 14. TERMINAL SESSIONS TABLE
+CREATE TABLE IF NOT EXISTS public.terminal_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE CASCADE,
+    terminal_name TEXT NOT NULL,
+    current_cashier_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    is_locked BOOLEAN DEFAULT false,
+    last_active_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 15. SELLER TRANSACTION ITEMS TABLE
+CREATE TABLE IF NOT EXISTS public.seller_transaction_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE CASCADE,
+    seller_id UUID REFERENCES public.sellers(id) ON DELETE CASCADE,
+    item_id UUID REFERENCES public.shop_items(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    transaction_type TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 16. SELLER REVERSALS TABLE
+CREATE TABLE IF NOT EXISTS public.seller_reversals (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE CASCADE,
+    seller_id UUID REFERENCES public.sellers(id) ON DELETE CASCADE,
+    amount NUMERIC(12,2) NOT NULL,
+    reason TEXT,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 17. BUSINESS RULE AUDIT LOGS TABLE
+CREATE TABLE IF NOT EXISTS public.business_rule_audit_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE CASCADE,
+    actor_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    rule_name TEXT NOT NULL,
+    old_value JSONB,
+    new_value JSONB,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

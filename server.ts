@@ -373,13 +373,18 @@ async function startServer() {
         return res.status(400).json({ success: false, error: "PIN is required." });
       }
 
-      // 1. Atomic Brute Force Lockout Check
+      // 1. Atomic Brute Force Lockout Check & Attempt Reservation
       const { data: lockoutData, error: lockoutErr } = await adminSupabase.rpc('check_pin_lockout', {
         p_user_id: auth.profile.id
       });
 
-      if (!lockoutErr && lockoutData && lockoutData.locked) {
-        return res.status(429).json({ success: false, error: `Too many failed attempts. Try again in ${lockoutData.remaining_minutes} minutes.` });
+      if (!lockoutErr && lockoutData) {
+        if (lockoutData.locked) {
+          return res.status(429).json({ success: false, error: `Too many failed attempts. Try again in ${lockoutData.remaining_minutes || 15} minutes.` });
+        }
+        if (lockoutData.attempt_admitted === false) {
+          return res.status(429).json({ success: false, error: "Authentication attempt denied due to account lockout." });
+        }
       }
 
       let isPinValid = false;
@@ -442,13 +447,18 @@ async function startServer() {
         return res.status(403).json({ success: false, error: "Account is deactivated." });
       }
 
-      // 2. Atomic Brute Force Lockout Check
+      // 2. Atomic Brute Force Lockout Check & Attempt Reservation
       const { data: lockoutData, error: lockoutErr } = await adminSupabase.rpc('check_pin_lockout', {
         p_user_id: profile.id
       });
 
-      if (!lockoutErr && lockoutData && lockoutData.locked) {
-        return res.status(429).json({ success: false, error: `Too many failed attempts. Try again in ${lockoutData.remaining_minutes} minutes.` });
+      if (!lockoutErr && lockoutData) {
+        if (lockoutData.locked) {
+          return res.status(429).json({ success: false, error: `Too many failed attempts. Try again in ${lockoutData.remaining_minutes || 15} minutes.` });
+        }
+        if (lockoutData.attempt_admitted === false) {
+          return res.status(429).json({ success: false, error: "Authentication attempt denied due to account lockout." });
+        }
       }
 
       // 3. Verify PIN
