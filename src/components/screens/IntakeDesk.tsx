@@ -113,31 +113,9 @@ export const IntakeDesk: React.FC = () => {
     showToast('Customer Loaded', `${c.fullName} • RSA ID Verified & Pinned`, 'info');
   };
 
-  // Simulate scanning a new RSA Smart ID
-  const handleSimulateIdScan = () => {
+  // Scan a real RSA Smart ID card using camera
+  const handleScanRSAIdCard = () => {
     setIsScannerModalOpen(true);
-    // After quick simulation, set verified customer
-    setTimeout(() => {
-      const scannedCustomer: typeof customers[0] = {
-        id: 'cust-scanned-01',
-        fullName: 'Thabo Mokoena',
-        idNumber: '881023 5142 08 1',
-        idType: 'RSA Smart ID',
-        mobile: '+27 83 204 9918',
-        address: '419 Pimville Zone 2, Soweto, 1809',
-        dob: '1988-10-23',
-        gender: 'Male',
-        verified: true,
-        createdAt: '2026-01-15'
-      };
-      setActiveCustomer(scannedCustomer);
-      setCustomerName(scannedCustomer.fullName);
-      setCustomerIdNumber(scannedCustomer.idNumber);
-      setCustomerMobile(scannedCustomer.mobile);
-      setCustomerAddress(scannedCustomer.address);
-      setIsScannerModalOpen(false);
-      showToast('RSA ID Scanned', 'Smart Card Optical Check Validated & Pinned', 'success');
-    }, 900);
   };
 
   const handleAdjustOffer = (delta: number) => {
@@ -418,7 +396,7 @@ export const IntakeDesk: React.FC = () => {
                     {/* Action Trigger: Scan RSA ID */}
                     <button
                       type="button"
-                      onClick={handleSimulateIdScan}
+                      onClick={handleScanRSAIdCard}
                       className="px-4 py-2.5 bg-[#C85A32] hover:bg-[#b04d29] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow transition active:scale-95 shrink-0"
                     >
                       <IdCard className="w-4 h-4" />

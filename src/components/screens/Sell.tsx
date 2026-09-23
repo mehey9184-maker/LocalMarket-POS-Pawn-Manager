@@ -148,6 +148,8 @@ export const Sell: React.FC = () => {
   const [cashTendered, setCashTendered] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [receiptType, setReceiptType] = useState<ReceiptDelivery>('thermal');
+  const [isInputFocused, setIsInputFocused] = useState(true);
+  const isSubmittingRef = useRef(false);
   
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -182,25 +184,34 @@ export const Sell: React.FC = () => {
 
   const handleBarcodeSearchSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!searchQuery.trim()) return;
+    const cleanQuery = searchQuery.trim();
+    if (!cleanQuery || isSubmittingRef.current) return;
+
+    isSubmittingRef.current = true;
 
     const exactMatch = floorItems.find(
       item =>
-        item.sku.toLowerCase() === searchQuery.trim().toLowerCase() ||
-        (item.serialOrImei && item.serialOrImei.toLowerCase() === searchQuery.trim().toLowerCase())
+        item.sku.toLowerCase() === cleanQuery.toLowerCase() ||
+        (item.serialOrImei && item.serialOrImei.toLowerCase() === cleanQuery.toLowerCase()) ||
+        (item.pawnTicketId && item.pawnTicketId.toLowerCase() === `#${cleanQuery.toLowerCase()}`)
     );
 
     if (exactMatch) {
       addToCart(exactMatch);
       setSearchQuery('');
+      showToast('Item Scanned', `Added ${exactMatch.title} (${exactMatch.sku}) to basket.`, 'success');
     } else if (filteredItems.length === 1) {
       addToCart(filteredItems[0]);
       setSearchQuery('');
+      showToast('Item Scanned', `Added ${filteredItems[0].title} (${filteredItems[0].sku}) to basket.`, 'success');
     } else if (filteredItems.length === 0) {
-      showToast('Item Not Found', `No available stock matching "${searchQuery}"`, 'error');
+      showToast('Item Not Found', `No available stock matching "${cleanQuery}"`, 'error');
     }
     
-    searchInputRef.current?.focus();
+    setTimeout(() => {
+      isSubmittingRef.current = false;
+      searchInputRef.current?.focus();
+    }, 100);
   };
 
   const handleCompleteSale = () => {
@@ -254,6 +265,10 @@ export const Sell: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-mono font-semibold">
+                <span className={`w-2 h-2 rounded-full ${isInputFocused ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
+                <span>{isInputFocused ? 'USB barcode scanner ready' : 'Click search to enable USB scanner'}</span>
+              </div>
               <button 
                 onClick={() => setIsScannerModalOpen(true)}
                 className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
@@ -271,6 +286,8 @@ export const Sell: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsInputFocused(true)}
+              onBlur={() => setIsInputFocused(false)}
               placeholder="Scan barcode or type SKU / Title..."
               className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#C85A32] focus:bg-white rounded-xl pl-11 pr-4 py-3 text-sm text-gray-900 font-mono placeholder:text-gray-400 transition-all outline-none"
             />
