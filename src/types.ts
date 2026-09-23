@@ -2,7 +2,7 @@ export type AcquisitionType = 'Existing Stock' | 'Buy' | 'Pawn' | 'Forfeited' | 
 export type SourceType = 'existing_stock' | 'seller' | 'pawn' | 'forfeiture' | 'supplier' | 'unknown';
 export type SourceStatus = 'verified' | 'unknown' | 'pending';
 export type ItemCondition = 'Mint' | 'Excellent' | 'Good' | 'Fair' | 'Damaged';
-export type ItemStatus = 'Vault Hold' | 'Retail Floor' | 'Sold' | 'Redeemed' | 'Reserved' | 'Flagged' | 'InStock' | 'Forfeited' | 'Pending Forfeit';
+export type ItemStatus = 'Vault Hold' | 'Retail Floor' | 'Sold' | 'Redeemed' | 'Reserved' | 'Flagged' | 'InStock' | 'Forfeited' | 'Pending Forfeit' | 'Returned' | 'Reversed';
 export type LoanStatus = 'Active' | 'Extended' | 'Redeemed' | 'Forfeited' | 'Archived' | 'Pending Forfeit';
 export type PaymentMethod = 'cash' | 'card' | 'eft' | 'snapscan';
 export type ReceiptDelivery = 'thermal' | 'whatsapp' | 'sms';
@@ -34,12 +34,20 @@ export interface Seller {
 }
 
 export interface SellerTransaction {
-  id: string;
+  id: string; // e.g. ST-000123
+  shopId?: string;
   sellerId: string;
-  itemId: string;
-  itemSku: string;
-  itemTitle: string;
-  amountPaid: number;
+  itemId?: string;
+  itemSku?: string;
+  itemTitle?: string;
+  amountPaid?: number;
+  items?: SellerTransactionItemRef[];
+  totalProposedPayout?: number;
+  totalApprovedPayout?: number;
+  paymentStatus?: SellerPaymentStatus;
+  status?: SellerTransactionStatus;
+  complianceStatus?: 'VERIFIED' | 'PENDING' | 'FLAGGED';
+  staffName?: string;
   timestamp: string;
   sapsRef: string;
 }
@@ -181,7 +189,7 @@ export interface BusinessRules {
 
 export interface SyncLog {
   id?: number;
-  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules' | 'sellers' | 'sellerTransactions' | 'refunds';
+  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules' | 'sellers' | 'sellerTransactions' | 'sellerReversals' | 'refunds';
   entityId: string;
   action: 'create' | 'update' | 'delete';
   payload: any;
@@ -190,6 +198,52 @@ export interface SyncLog {
   createdAt: string;
   syncedAt?: string;
   retryCount: number;
+}
+
+export type SellerTransactionStatus = 'Draft' | 'Proposed' | 'Approved' | 'Paid' | 'Acquired' | 'Rejected' | 'Cancelled';
+export type SellerPaymentStatus = 'Pending' | 'Paid';
+
+export interface SellerTransactionItemRef {
+  itemId: string;
+  itemSku: string;
+  itemTitle: string;
+  amountPaid: number;
+  retailPrice: number;
+  serialOrImei: string;
+  condition: ItemCondition;
+}
+
+
+
+export type SellerReversalStatus = 'Under Review' | 'Returned' | 'Reversed';
+
+export interface SellerReversalRecord {
+  id: string;
+  shopId: string;
+  sellerTransactionId: string;
+  itemId: string;
+  sellerId: string;
+  originalPayout: number;
+  reversalAmount: number;
+  reason: string;
+  actorId: string;
+  actorName: string;
+  approvedBy?: string;
+  timestamp: string;
+  resultingInventoryStatus: 'Returned' | 'Reversed' | 'Under Review';
+  resultingPaymentStatus: string;
+}
+
+export interface TerminalSession {
+  id: string;
+  shopId: string;
+  userId: string;
+  userName: string;
+  deviceId: string;
+  activatedAt: string;
+  lastHeartbeatAt: string;
+  status: 'active' | 'invalidated' | 'expired';
+  invalidatedAt?: string;
 }
 
 export type RefundStatus = 'Pending Approval' | 'Approved' | 'Rejected';

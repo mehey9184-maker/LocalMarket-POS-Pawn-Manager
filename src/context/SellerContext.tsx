@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import { Seller, SellerTransaction } from '../types';
+import { Seller, SellerTransaction, SellerTransactionStatus, SellerPaymentStatus, SellerReversalRecord } from '../types';
 import Fuse from 'fuse.js';
 import { useSync } from './SyncContext';
 
@@ -16,6 +16,8 @@ interface SellerContextType {
   getSellerByIdNumber: (idNumber: string) => Promise<Seller | undefined>;
   getSellerTransactions: (sellerId: string) => Promise<SellerTransaction[]>;
   addSellerTransaction: (tx: Omit<SellerTransaction, 'id'>) => Promise<string>;
+  updateSellerTransactionStatus: (txId: string, status: SellerTransactionStatus, paymentStatus?: SellerPaymentStatus) => Promise<void>;
+  reverseSellerAcquisition: (txId: string, itemId: string, reason: string, actorId: string, actorName: string, approvingManagerId: string) => Promise<boolean>;
 }
 
 const SellerContext = createContext<SellerContextType | undefined>(undefined);
@@ -66,11 +68,62 @@ export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const addSellerTransaction = async (txData: Omit<SellerTransaction, 'id'>) => {
-    const id = crypto.randomUUID();
+    const id = `ST-${Math.floor(Math.random() * 900000 + 100000)}`;
     const newTx = { ...txData, id };
     await db.sellerTransactions.add(newTx);
     await queueSyncAction('sellerTransactions', id, 'create', newTx);
     return id;
+  };
+
+  const updateSellerTransactionStatus = async (txId: string, status: SellerTransactionStatus, paymentStatus?: SellerPaymentStatus) => {
+    const updates: any = { status };
+    if (paymentStatus) updates.paymentStatus = paymentStatus;
+    await db.sellerTransactions.update(txId, updates);
+    await queueSyncAction('sellerTransactions', txId, 'update', updates);
+  };
+
+  const reverseSellerAcquisition = async (
+    txId: string, 
+    itemId: string, 
+    reason: string, 
+    actorId: string, 
+    actorName: string, 
+    approvingManagerId: string
+  ): Promise<boolean> => {
+    if (actorId && approvingManagerId && actorId === approvingManagerId) {
+      throw new Error('Self-Approval Forbidden: Staff member cannot approve their own acquisition reversal.');
+    }
+
+    const tx = await db.sellerTransactions.get(txId);
+    if (!tx) throw new Error('Seller transaction not found.');
+
+    const item = await db.inventory.get(itemId);
+    if (!item) throw new Error('Item not found in inventory.');
+
+    const reversalId = crypto.randomUUID();
+    const reversalRecord: SellerReversalRecord = {
+      id: reversalId,
+      shopId: tx.shopId || 'default-shop',
+      sellerTransactionId: txId,
+      itemId,
+      sellerId: tx.sellerId,
+      originalPayout: item.costBasis,
+      reversalAmount: item.costBasis,
+      reason,
+      actorId,
+      actorName,
+      approvedBy: approvingManagerId,
+      timestamp: new Date().toISOString(),
+      resultingInventoryStatus: 'Returned',
+      resultingPaymentStatus: 'Reversed'
+    };
+
+    await db.sellerReversals.add(reversalRecord);
+    await db.inventory.update(itemId, { status: 'Returned', stockLocation: 'Returned / Quarantined' });
+
+    await queueSyncAction('sellerReversals', reversalId, 'create', reversalRecord);
+    await queueSyncAction('inventory', itemId, 'update', { status: 'Returned' });
+    return true;
   };
 
   return (
@@ -84,7 +137,9 @@ export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       getSellerById,
       getSellerByIdNumber,
       getSellerTransactions,
-      addSellerTransaction
+      addSellerTransaction,
+      updateSellerTransactionStatus,
+      reverseSellerAcquisition
     }}>
       {children}
     </SellerContext.Provider>

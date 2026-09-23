@@ -8,6 +8,8 @@ import {
   BusinessRules,
   Seller,
   SellerTransaction,
+  SellerReversalRecord,
+  TerminalSession,
   RefundRequest,
   SyncLog
 } from '../types';
@@ -19,6 +21,8 @@ export class LocalDatabase extends Dexie {
   customers!: Table<Customer>;
   sellers!: Table<Seller>;
   sellerTransactions!: Table<SellerTransaction>;
+  sellerReversals!: Table<SellerReversalRecord>;
+  terminalSessions!: Table<TerminalSession>;
   loans!: Table<PawnLoan>;
   saps!: Table<SapsEntry>;
   sales!: Table<SaleTransaction>;
@@ -83,6 +87,22 @@ export class LocalDatabase extends Dexie {
       customers: 'id, fullName, idNumber, mobile',
       sellers: 'id, fullName, idNumber, mobile',
       sellerTransactions: 'id, sellerId, itemId, timestamp',
+      loans: 'id, ticketNumber, customerId, status, expiryDate',
+      saps: 'id, entryNumber, timestamp, customerId',
+      sales: 'id, receiptNumber, timestamp',
+      refundRequests: 'id, receiptNumber, itemId, status, createdAt',
+      syncLogs: '++id, entityType, entityId, status, createdAt',
+      counters: 'id'
+    });
+
+    // Version 6: Added sellerReversals and terminalSessions tables
+    this.version(6).stores({
+      inventory: 'id, sku, status, category, acquisitionType, pawnTicketId, addedAt',
+      customers: 'id, fullName, idNumber, mobile',
+      sellers: 'id, fullName, idNumber, mobile',
+      sellerTransactions: 'id, sellerId, timestamp',
+      sellerReversals: 'id, sellerTransactionId, itemId, sellerId, timestamp',
+      terminalSessions: 'id, userId, shopId, deviceId, status',
       loans: 'id, ticketNumber, customerId, status, expiryDate',
       saps: 'id, entryNumber, timestamp, customerId',
       sales: 'id, receiptNumber, timestamp',

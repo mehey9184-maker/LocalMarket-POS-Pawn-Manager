@@ -779,7 +779,7 @@ export const sellerTransactionsApi = {
       item_sku: tx.itemSku || null,
       item_title: tx.itemTitle || null,
       transaction_type: 'Buy',
-      amount_paid: tx.amountPaid,
+      amount_paid: tx.amountPaid ?? 0,
       sku: tx.itemSku || null,
       saps_reference: tx.sapsRef || null,
       status: 'Completed',

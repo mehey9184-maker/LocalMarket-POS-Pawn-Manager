@@ -22,12 +22,25 @@ import { ReceiptModal } from './components/modals/ReceiptModal';
 import { ContractModal } from './components/modals/ContractModal';
 
 import { CompositeProvider } from './context/CompositeProvider';
-
 import { useAuth } from './context/AuthContext';
+import { useTerminalSession } from './hooks/useTerminalSession';
+import { TerminalConflictModal, TerminalInvalidatedModal } from './components/common/TerminalConflictModal';
 
 const MainLayout: React.FC = () => {
   const { activeTab, setActiveTab } = useApp();
   const { user, isLoading: authLoading } = useAuth();
+  
+  const {
+    hasConflict,
+    existingTerminalName,
+    lastActiveTime,
+    isActivating,
+    isInvalidated,
+    invalidationReason,
+    handleSwitchTerminal,
+    handleStayOnCurrent,
+    handleReAuthenticate
+  } = useTerminalSession();
 
   // Session-based navigation enforcement
   React.useEffect(() => {
@@ -78,6 +91,23 @@ const MainLayout: React.FC = () => {
 
       {/* Statutory 30-Day NCR Pledge Contract Modal */}
       <ContractModal />
+
+      {/* Concurrent Terminal Conflict Modal */}
+      <TerminalConflictModal
+        isOpen={hasConflict}
+        existingTerminalName={existingTerminalName}
+        lastActiveTime={lastActiveTime}
+        onStay={handleStayOnCurrent}
+        onSwitch={handleSwitchTerminal}
+        isLoading={isActivating}
+      />
+
+      {/* Terminal Invalidated / Transferred Lock Modal */}
+      <TerminalInvalidatedModal
+        isOpen={isInvalidated}
+        reason={invalidationReason}
+        onReAuthenticate={handleReAuthenticate}
+      />
 
       {/* Operational Feedback Toast */}
       <Toast />

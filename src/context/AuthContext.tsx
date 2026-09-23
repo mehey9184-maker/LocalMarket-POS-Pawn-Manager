@@ -6,6 +6,7 @@ interface AuthContextType {
   user: any | null;
   session: any | null;
   profile: ProfileRow | null;
+  currentUserProfile: ProfileRow | null;
   role: UserRole;
   shopId: string | null;
   isLoading: boolean;
@@ -20,6 +21,7 @@ interface AuthContextType {
     pinCode?: string;
   }) => Promise<{ success: boolean; profile?: ProfileRow; error?: string }>;
   logout: () => Promise<void>;
+  signOut: () => Promise<void>;
   logoutManager: () => void;
   refreshProfile: () => Promise<void>;
 }
@@ -251,6 +253,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       user, 
       session, 
       profile,
+      currentUserProfile: profile,
       role: rawRole,
       shopId,
       isLoading, 
@@ -260,6 +263,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       verifyManagerPin,
       provisionStaff,
       logout,
+      signOut: logout,
       logoutManager,
       refreshProfile
     }}>

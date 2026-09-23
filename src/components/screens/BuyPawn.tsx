@@ -97,6 +97,23 @@ export const BuyPawn: React.FC = () => {
     idType: 'RSA Smart ID' as 'RSA Smart ID' | 'Green ID Book' | 'Passport'
   });
 
+  // Multi-item Batch state for Outright Buys
+  const [buyBatchItems, setBuyBatchItems] = useState<Array<{
+    tempId: string;
+    title: string;
+    category: InventoryItem['category'];
+    brand?: string;
+    model?: string;
+    serialOrImei: string;
+    condition: ItemCondition;
+    costBasis: number;
+    retailPrice: number;
+    imageUrl: string;
+    internalNote?: string;
+  }>>([]);
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'eft' | 'card'>('cash');
+  const [paymentStatus, setPaymentStatus] = useState<'Proposed' | 'Approved' | 'Paid' | 'Acquired'>('Acquired');
+
   // Item Details State (Common to all flows)
   const [itemData, setItemData] = useState({
     title: '',
@@ -122,7 +139,9 @@ export const BuyPawn: React.FC = () => {
   const [result, setResult] = useState<{
     assetTag: string;
     ticketNumber?: string;
+    transactionNumber?: string;
     item: InventoryItem;
+    batchItems?: InventoryItem[];
     loan?: PawnLoan;
   } | null>(null);
 
@@ -407,95 +426,211 @@ export const BuyPawn: React.FC = () => {
     showToast('Stock Added', `${createdItem.title} added to ${existingStockStatus}`, 'success');
   };
 
+  const handleAddItemToBatch = () => {
+    if (!itemData.title.trim()) {
+      showToast('Title Required', 'Please enter a description for this item before adding to batch', 'amber');
+      return;
+    }
+
+    if (agreedOffer <= 0) {
+      showToast('Offer Required', 'Please specify a negotiated offer amount for this item', 'amber');
+      return;
+    }
+
+    const newItem = {
+      tempId: crypto.randomUUID(),
+      title: itemData.title.trim(),
+      category: itemData.category,
+      brand: itemData.brand.trim() || undefined,
+      model: itemData.model.trim() || undefined,
+      serialOrImei: itemData.serialOrImei.trim() || 'N/A',
+      condition: itemData.condition,
+      costBasis: agreedOffer,
+      retailPrice: suggestedRetail || Math.round(agreedOffer * 1.8),
+      imageUrl: itemData.imageUrl,
+      internalNote: itemData.internalNote.trim() || undefined
+    };
+
+    setBuyBatchItems(prev => [...prev, newItem]);
+    showToast('Item Added to Batch', `${newItem.title} added (Total: ${buyBatchItems.length + 1} items)`, 'success');
+
+    // Reset item input for next item
+    setItemData({
+      title: '',
+      category: 'Phones & Tech',
+      brand: '',
+      model: '',
+      serialOrImei: '',
+      condition: 'Good',
+      imageUrl: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&q=80&w=300&h=300',
+      stockLocation: 'Main Floor Display',
+      internalNote: '',
+      sourceNote: `Purchased from ${selectedIdentity?.fullName}`
+    });
+    setAgreedOffer(0);
+    setSuggestedRetail(0);
+    setStep('item');
+  };
+
+  const handleRemoveBatchItem = (tempId: string) => {
+    setBuyBatchItems(prev => prev.filter(i => i.tempId !== tempId));
+    showToast('Item Removed', 'Item removed from current batch', 'info');
+  };
+
   // 2. FINALISE BUY FROM PERSON OR PAWN (Real Identities, Compliance & Transactions)
   const handleFinalize = async () => {
     if (!selectedIdentity || !txType) return;
 
-    const sku = `LM-${Math.floor(Math.random() * 90000 + 10000)}`;
-
     if (txType === 'buy') {
       const seller = selectedIdentity as Seller;
 
-      const itemId = await addItem({
-        sku,
-        title: itemData.title,
-        category: itemData.category,
-        brand: itemData.brand || undefined,
-        model: itemData.model || undefined,
-        serialOrImei: itemData.serialOrImei || 'N/A',
-        condition: itemData.condition,
-        acquisitionType: 'Buy',
-        costBasis: agreedOffer,
-        retailPrice: suggestedRetail,
-        status: 'Retail Floor',
-        stockLocation: 'Retail Floor',
-        imageUrl: itemData.imageUrl,
-        specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
-        sourceType: 'seller',
-        sourceStatus: 'verified',
-        sourceNote: `Purchased from ${seller.fullName} (${seller.idNumber})`,
-        internalNote: itemData.internalNote || undefined
-      });
+      // Consolidate all items to be acquired
+      let itemsToAcquire = [...buyBatchItems];
+      if (itemData.title.trim() && agreedOffer > 0) {
+        itemsToAcquire.push({
+          tempId: 'current',
+          title: itemData.title.trim(),
+          category: itemData.category,
+          brand: itemData.brand.trim() || undefined,
+          model: itemData.model.trim() || undefined,
+          serialOrImei: itemData.serialOrImei.trim() || 'N/A',
+          condition: itemData.condition,
+          costBasis: agreedOffer,
+          retailPrice: suggestedRetail || Math.round(agreedOffer * 1.8),
+          imageUrl: itemData.imageUrl,
+          internalNote: itemData.internalNote.trim() || undefined
+        });
+      }
 
-      const item: InventoryItem = {
-        id: itemId,
-        sku,
-        title: itemData.title,
-        category: itemData.category,
-        brand: itemData.brand || undefined,
-        model: itemData.model || undefined,
-        serialOrImei: itemData.serialOrImei || 'N/A',
-        condition: itemData.condition,
-        acquisitionType: 'Buy',
-        costBasis: agreedOffer,
-        retailPrice: suggestedRetail,
-        status: 'Retail Floor',
-        stockLocation: 'Retail Floor',
-        imageUrl: itemData.imageUrl,
-        specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
-        sourceType: 'seller',
-        sourceStatus: 'verified',
-        addedAt: new Date().toISOString()
-      };
+      if (itemsToAcquire.length === 0) {
+        showToast('No Items in Batch', 'Please add at least one item to this purchase batch', 'error');
+        return;
+      }
 
-      // Record Statutory Seller Transaction
+      const parentTxNumber = `ST-${Math.floor(Math.random() * 900000 + 100000)}`;
+      const timestamp = new Date().toISOString();
+      const totalPayout = itemsToAcquire.reduce((sum, i) => sum + i.costBasis, 0);
+
+      const createdInventoryItems: InventoryItem[] = [];
+      const sellerTxItems: any[] = [];
+
+      for (const itemDraft of itemsToAcquire) {
+        const sku = `LM-${Math.floor(Math.random() * 90000 + 10000)}`;
+
+        const itemId = await addItem({
+          sku,
+          title: itemDraft.title,
+          category: itemDraft.category,
+          brand: itemDraft.brand,
+          model: itemDraft.model,
+          serialOrImei: itemDraft.serialOrImei,
+          condition: itemDraft.condition,
+          acquisitionType: 'Buy',
+          costBasis: itemDraft.costBasis,
+          retailPrice: itemDraft.retailPrice,
+          status: 'Retail Floor',
+          stockLocation: 'Retail Floor',
+          imageUrl: itemDraft.imageUrl,
+          specs: [itemDraft.brand, itemDraft.model].filter(Boolean).join(' • ') || undefined,
+          sourceType: 'seller',
+          sourceStatus: 'verified',
+          sourceNote: `Purchased from ${seller.fullName} (${seller.idNumber}) via Batch ${parentTxNumber}`,
+          internalNote: itemDraft.internalNote
+        });
+
+        const createdItem: InventoryItem = {
+          id: itemId,
+          sku,
+          title: itemDraft.title,
+          category: itemDraft.category,
+          brand: itemDraft.brand,
+          model: itemDraft.model,
+          serialOrImei: itemDraft.serialOrImei,
+          condition: itemDraft.condition,
+          acquisitionType: 'Buy',
+          costBasis: itemDraft.costBasis,
+          retailPrice: itemDraft.retailPrice,
+          status: 'Retail Floor',
+          stockLocation: 'Retail Floor',
+          imageUrl: itemDraft.imageUrl,
+          specs: [itemDraft.brand, itemDraft.model].filter(Boolean).join(' • ') || undefined,
+          sourceType: 'seller',
+          sourceStatus: 'verified',
+          addedAt: timestamp
+        };
+
+        createdInventoryItems.push(createdItem);
+
+        // Record SAPS Form 21 Entry for each individual item
+        await addSapsEntry({
+          timestamp,
+          customerId: seller.id,
+          customerName: seller.fullName,
+          customerIdNumber: seller.idNumber,
+          customerAddress: seller.address,
+          customerPhone: seller.mobile,
+          itemDescription: itemDraft.title,
+          category: itemDraft.category,
+          serialOrImei: itemDraft.serialOrImei,
+          condition: itemDraft.condition,
+          acquisitionType: 'Buy',
+          considerationPaid: itemDraft.costBasis,
+          officerName: user?.user_metadata?.full_name || 'System Operator',
+          policeStationRef: shopProfile.saps_dealer_license,
+          verificationStatus: 'VERIFIED',
+          barcodeRef: sku
+        });
+
+        sellerTxItems.push({
+          itemId,
+          itemSku: sku,
+          itemTitle: itemDraft.title,
+          category: itemDraft.category,
+          brand: itemDraft.brand,
+          model: itemDraft.model,
+          serialOrImei: itemDraft.serialOrImei,
+          condition: itemDraft.condition,
+          costBasis: itemDraft.costBasis,
+          retailPrice: itemDraft.retailPrice,
+          sapsRef: sku,
+          status: 'Acquired'
+        });
+      }
+
+      // Record Consolidated Parent Seller Transaction
       await addSellerTransaction({
+        transactionNumber: parentTxNumber,
         sellerId: seller.id,
-        itemId,
-        itemSku: sku,
-        itemTitle: itemData.title,
-        amountPaid: agreedOffer,
-        timestamp: new Date().toISOString(),
-        sapsRef: sku
-      });
-
-      // Record SAPS Form 21 Entry
-      await addSapsEntry({
-        timestamp: new Date().toISOString(),
-        customerId: seller.id,
-        customerName: seller.fullName,
-        customerIdNumber: seller.idNumber,
-        customerAddress: seller.address,
-        customerPhone: seller.mobile,
-        itemDescription: itemData.title,
-        category: itemData.category,
-        serialOrImei: itemData.serialOrImei || 'N/A',
-        condition: itemData.condition,
-        acquisitionType: 'Buy',
-        considerationPaid: agreedOffer,
-        officerName: user?.user_metadata?.full_name || 'System Operator',
-        policeStationRef: shopProfile.saps_dealer_license,
-        verificationStatus: 'VERIFIED',
-        barcodeRef: sku
+        sellerName: seller.fullName,
+        sellerIdNumber: seller.idNumber,
+        sellerMobile: seller.mobile,
+        staffId: user?.id,
+        staffName: user?.user_metadata?.full_name || 'Cashier',
+        items: sellerTxItems,
+        itemId: createdInventoryItems[0].id,
+        itemSku: createdInventoryItems[0].sku,
+        itemTitle: createdInventoryItems.length > 1
+          ? `${createdInventoryItems[0].title} (+${createdInventoryItems.length - 1} more items)`
+          : createdInventoryItems[0].title,
+        amountPaid: totalPayout,
+        totalProposedPayout: totalPayout,
+        totalApprovedPayout: totalPayout,
+        paymentStatus: 'Acquired',
+        paymentMethod: paymentMethod,
+        paidAt: timestamp,
+        timestamp,
+        sapsRef: parentTxNumber
       });
 
       setResult({
-        assetTag: sku,
-        item
+        assetTag: createdInventoryItems[0].sku,
+        transactionNumber: parentTxNumber,
+        item: createdInventoryItems[0],
+        batchItems: createdInventoryItems
       });
 
       setStep('completion');
-      showToast('Purchase Complete', 'Item added to retail floor and logged to SAPS', 'success');
+      showToast('Batch Purchase Complete', `${createdInventoryItems.length} item(s) acquired under ${parentTxNumber}`, 'success');
       return;
     }
 
@@ -1454,7 +1589,7 @@ export const BuyPawn: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex gap-3 pt-2">
+                <div className="flex items-center justify-between gap-3 pt-2">
                   <button
                     onClick={handleBack}
                     className="flex items-center gap-1.5 px-5 py-3 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-100 transition text-xs font-semibold"
@@ -1462,13 +1597,27 @@ export const BuyPawn: React.FC = () => {
                     <ChevronLeft className="w-4 h-4" />
                     <span>Back</span>
                   </button>
-                  <button
-                    onClick={handleNext}
-                    className="flex-1 py-3 px-6 bg-[#C85A32] text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-xs hover:bg-[#A94725] transition"
-                  >
-                    <span>{txType === 'existing' ? 'Choose Stock Location' : 'Review Deal Terms'}</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
+
+                  <div className="flex items-center gap-3">
+                    {txType === 'buy' && (
+                      <button
+                        type="button"
+                        onClick={handleAddItemToBatch}
+                        className="py-3 px-5 rounded-xl border-2 border-[#C85A32] text-[#C85A32] hover:bg-[#FDF0EA] text-xs font-bold transition flex items-center gap-2 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Item &amp; Continue Batch</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={handleNext}
+                      className="py-3 px-6 bg-[#C85A32] text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-xs hover:bg-[#A94725] transition"
+                    >
+                      <span>{txType === 'existing' ? 'Choose Stock Location' : 'Review Deal Terms'}</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -1585,7 +1734,9 @@ export const BuyPawn: React.FC = () => {
                   <div>
                     <h3 className="text-lg font-bold text-gray-900">Final Deal Review</h3>
                     <p className="text-xs text-gray-500">
-                      Verify transaction terms before recording to SAPS Form 21 register
+                      {txType === 'buy'
+                        ? 'Verify batch payout & payment method before recording to SAPS Form 21 register'
+                        : 'Verify transaction terms before recording to SAPS Form 21 register'}
                     </p>
                   </div>
                 </div>
@@ -1596,7 +1747,7 @@ export const BuyPawn: React.FC = () => {
                       <div className="flex justify-between py-1.5">
                         <span className="text-gray-500">Transaction Type</span>
                         <span className="font-semibold text-gray-900">
-                          {txType === 'buy' ? 'Direct Purchase (Outright)' : '30-Day Pawn Loan'}
+                          {txType === 'buy' ? 'Direct Purchase (Seller Batch)' : '30-Day Pawn Loan'}
                         </span>
                       </div>
                       <div className="flex justify-between py-1.5">
@@ -1607,19 +1758,109 @@ export const BuyPawn: React.FC = () => {
                         <span className="text-gray-500">ID Number</span>
                         <span className="font-mono font-medium text-gray-800">{selectedIdentity?.idNumber}</span>
                       </div>
-                      <div className="flex justify-between py-1.5">
+                    </div>
+
+                    {/* ITEMS IN BATCH LIST */}
+                    {txType === 'buy' ? (
+                      <div className="space-y-3 pt-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                            Acquisition Batch Items ({buyBatchItems.length + (itemData.title ? 1 : 0)})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (itemData.title) {
+                                handleAddItemToBatch();
+                              } else {
+                                setStep('item');
+                              }
+                            }}
+                            className="text-[11px] text-[#C85A32] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Add Another Item</span>
+                          </button>
+                        </div>
+
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                          {buyBatchItems.map((item, idx) => (
+                            <div key={item.tempId} className="p-2.5 bg-gray-50 rounded-xl border border-gray-200 text-xs flex items-center justify-between">
+                              <div>
+                                <span className="font-bold text-gray-900">#{idx + 1} {item.title}</span>
+                                <div className="text-[10px] text-gray-500 font-mono">
+                                  SN: {item.serialOrImei} · Cond: {item.condition}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="font-mono font-bold text-emerald-700">R {item.costBasis.toLocaleString()}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveBatchItem(item.tempId)}
+                                  className="text-gray-400 hover:text-red-500 p-1"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+
+                          {itemData.title && (
+                            <div className="p-2.5 bg-[#FDF0EA] rounded-xl border border-[#C85A32]/30 text-xs flex items-center justify-between">
+                              <div>
+                                <span className="font-bold text-[#C85A32]">#{buyBatchItems.length + 1} {itemData.title}</span>
+                                <div className="text-[10px] text-gray-600 font-mono">
+                                  SN: {itemData.serialOrImei || 'N/A'} · Cond: {itemData.condition}
+                                </div>
+                              </div>
+                              <span className="font-mono font-bold text-[#C85A32]">R {agreedOffer.toLocaleString()}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between py-1.5 text-xs">
                         <span className="text-gray-500">Asset</span>
                         <span className="font-semibold text-gray-900">{itemData.title}</span>
                       </div>
-                    </div>
+                    )}
 
                     <div className="pt-2 border-t border-gray-200 space-y-3">
                       <div className="flex justify-between items-baseline">
-                        <span className="text-xs font-bold text-gray-700">Immediate Cash Payout</span>
-                        <span className="text-2xl font-bold text-gray-900 font-mono">
-                          R {agreedOffer.toLocaleString()}
+                        <span className="text-xs font-bold text-gray-700">
+                          {txType === 'buy' ? 'Total Approved Payout' : 'Immediate Cash Payout'}
+                        </span>
+                        <span className="text-2xl font-bold text-emerald-700 font-mono">
+                          R {(txType === 'buy' 
+                            ? buyBatchItems.reduce((sum, i) => sum + i.costBasis, 0) + (itemData.title ? agreedOffer : 0)
+                            : agreedOffer
+                          ).toLocaleString()}
                         </span>
                       </div>
+
+                      {txType === 'buy' && (
+                        <div className="grid grid-cols-2 gap-3 pt-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-gray-600 uppercase">Payment Method</label>
+                            <select
+                              value={paymentMethod}
+                              onChange={e => setPaymentMethod(e.target.value as any)}
+                              className="w-full bg-[#F8F9FA] border border-gray-200 rounded-lg p-2 text-xs font-semibold text-gray-800 focus:outline-none"
+                            >
+                              <option value="cash">Cash Outflow</option>
+                              <option value="eft">Electronic Funds Transfer (EFT)</option>
+                              <option value="card">Card / Store Credit</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-gray-600 uppercase">Payment State</label>
+                            <div className="w-full bg-emerald-50 border border-emerald-200 rounded-lg p-2 text-xs font-bold text-emerald-700">
+                              Acquired &amp; Paid
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {txType === 'pawn' && pawnCalculations && (
                         <div className="space-y-1.5 pt-2 border-t border-gray-100 text-xs">
@@ -1654,25 +1895,25 @@ export const BuyPawn: React.FC = () => {
                       <div>
                         <h4 className="text-xs font-bold text-gray-900">SAPS Form 21 Ready</h4>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          Finalizing will assign an asset tag, record the transaction in the statutory register, and print receipt.
+                          Finalizing will create traceable SKUs, record the transaction in the statutory register, and generate thermal receipts.
                         </p>
                       </div>
                     </div>
 
                     <button
                       onClick={handleFinalize}
-                      className={`w-full py-4 rounded-xl text-white font-bold text-sm shadow-xs transition ${
+                      className={`w-full py-4 rounded-xl text-white font-bold text-sm shadow-xs transition cursor-pointer ${
                         txType === 'buy'
                           ? 'bg-emerald-600 hover:bg-emerald-700'
                           : 'bg-blue-600 hover:bg-blue-700'
                       }`}
                     >
-                      {txType === 'buy' ? 'Complete Purchase & Payout' : 'Finalise Pawn Loan Agreement'}
+                      {txType === 'buy' ? 'Complete Acquisition & Payout' : 'Finalise Pawn Loan Agreement'}
                     </button>
 
                     <button
                       onClick={handleBack}
-                      className="text-xs text-gray-500 hover:text-gray-900 font-semibold text-center py-1"
+                      className="text-xs text-gray-500 hover:text-gray-900 font-semibold text-center py-1 cursor-pointer"
                     >
                       Modify Terms
                     </button>
@@ -1696,54 +1937,80 @@ export const BuyPawn: React.FC = () => {
                   </div>
                   <h3 className="text-2xl font-bold text-gray-900">Intake Complete</h3>
                   <p className="text-xs text-gray-500">
-                    Asset <span className="font-mono font-bold text-gray-800">{result.assetTag}</span> has been logged to inventory.
+                    {result.batchItems && result.batchItems.length > 1 ? (
+                      <span>Batch <span className="font-mono font-bold text-gray-800">{result.transactionNumber}</span> ({result.batchItems.length} items) logged to inventory.</span>
+                    ) : (
+                      <span>Asset <span className="font-mono font-bold text-gray-800">{result.assetTag}</span> has been logged to inventory.</span>
+                    )}
                   </p>
                 </div>
 
                 <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs space-y-5">
-                  <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <p className="text-gray-400 font-medium">SKU / Asset Tag</p>
-                      <p className="text-base font-bold text-gray-900 font-mono mt-0.5">{result.assetTag}</p>
-                    </div>
-
-                    {result.ticketNumber && (
-                      <div>
-                        <p className="text-gray-400 font-medium">Pawn Ticket</p>
-                        <p className="text-base font-bold text-blue-600 font-mono mt-0.5">{result.ticketNumber}</p>
+                  {result.batchItems && result.batchItems.length > 1 ? (
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+                        <span className="text-xs font-bold text-gray-700 uppercase">Batch #{result.transactionNumber}</span>
+                        <span className="text-xs font-bold text-emerald-700 font-mono">
+                          R {result.batchItems.reduce((acc, i) => acc + (i.costBasis || 0), 0).toLocaleString()} Total Payout
+                        </span>
                       </div>
-                    )}
-
-                    <div>
-                      <p className="text-gray-400 font-medium">
-                        {txType === 'existing' ? 'Retail Price' : 'Payout Amount'}
-                      </p>
-                      <p className="text-base font-bold text-emerald-600 font-mono mt-0.5">
-                        R {txType === 'existing' ? result.item.retailPrice.toLocaleString() : agreedOffer.toLocaleString()}
-                      </p>
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {result.batchItems.map((item, idx) => (
+                          <div key={item.id} className="p-2.5 rounded-xl bg-gray-50 border border-gray-200 text-xs flex justify-between items-center">
+                            <div>
+                              <p className="font-bold text-gray-900 font-mono">{item.sku}</p>
+                              <p className="text-gray-600 text-[11px]">{item.title}</p>
+                            </div>
+                            <span className="font-mono font-bold text-gray-900">R {item.costBasis?.toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4 text-xs">
+                      <div>
+                        <p className="text-gray-400 font-medium">SKU / Asset Tag</p>
+                        <p className="text-base font-bold text-gray-900 font-mono mt-0.5">{result.assetTag}</p>
+                      </div>
 
-                    <div>
-                      <p className="text-gray-400 font-medium">Location</p>
-                      <p className="text-base font-bold text-gray-900 mt-0.5">
-                        {result.item.stockLocation || (txType === 'buy' ? 'Retail Floor' : businessRules.defaultVaultShelf)}
-                      </p>
+                      {result.ticketNumber && (
+                        <div>
+                          <p className="text-gray-400 font-medium">Pawn Ticket</p>
+                          <p className="text-base font-bold text-blue-600 font-mono mt-0.5">{result.ticketNumber}</p>
+                        </div>
+                      )}
+
+                      <div>
+                        <p className="text-gray-400 font-medium">
+                          {txType === 'existing' ? 'Retail Price' : 'Payout Amount'}
+                        </p>
+                        <p className="text-base font-bold text-emerald-600 font-mono mt-0.5">
+                          R {txType === 'existing' ? result.item.retailPrice.toLocaleString() : agreedOffer.toLocaleString()}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-gray-400 font-medium">Location</p>
+                        <p className="text-base font-bold text-gray-900 mt-0.5">
+                          {result.item.stockLocation || (txType === 'buy' ? 'Retail Floor' : businessRules.defaultVaultShelf)}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-gray-100">
                     <button
-                      onClick={() => showToast('Label Sent', `Asset label ${result.assetTag} printed`, 'success')}
-                      className="py-3 px-4 rounded-xl bg-gray-900 text-white font-semibold text-xs flex items-center justify-center gap-2 hover:bg-gray-800 transition shadow-xs"
+                      onClick={() => showToast('Label Sent', `Asset label(s) printed`, 'success')}
+                      className="py-3 px-4 rounded-xl bg-gray-900 text-white font-semibold text-xs flex items-center justify-center gap-2 hover:bg-gray-800 transition shadow-xs cursor-pointer"
                     >
                       <Printer className="w-4 h-4" />
-                      <span>Print Asset Label</span>
+                      <span>Print Asset Labels</span>
                     </button>
 
                     {txType === 'pawn' && (
                       <button
                         onClick={() => setActiveContractModal(result.loan!)}
-                        className="py-3 px-4 rounded-xl border border-gray-200 text-gray-800 font-semibold text-xs flex items-center justify-center gap-2 hover:bg-gray-50 transition shadow-xs"
+                        className="py-3 px-4 rounded-xl border border-gray-200 text-gray-800 font-semibold text-xs flex items-center justify-center gap-2 hover:bg-gray-50 transition shadow-xs cursor-pointer"
                       >
                         <FileText className="w-4 h-4" />
                         <span>Print Pawn Contract</span>
@@ -1752,7 +2019,7 @@ export const BuyPawn: React.FC = () => {
 
                     <button
                       onClick={() => showToast('Digital Receipt Sent', 'Receipt sent via WhatsApp', 'info')}
-                      className="py-3 px-4 rounded-xl border border-gray-200 text-gray-800 font-semibold text-xs flex items-center justify-center gap-2 hover:bg-gray-50 transition shadow-xs sm:col-span-2"
+                      className="py-3 px-4 rounded-xl border border-gray-200 text-gray-800 font-semibold text-xs flex items-center justify-center gap-2 hover:bg-gray-50 transition shadow-xs sm:col-span-2 cursor-pointer"
                     >
                       <Smartphone className="w-4 h-4" />
                       <span>Send WhatsApp Notification</span>
@@ -1763,7 +2030,7 @@ export const BuyPawn: React.FC = () => {
                 <div className="flex justify-center pt-2">
                   <button
                     onClick={resetWorkflow}
-                    className="flex items-center gap-2 px-6 py-3 bg-[#C85A32] text-white rounded-xl font-semibold text-xs shadow-xs hover:bg-[#A94725] transition"
+                    className="flex items-center gap-2 px-6 py-3 bg-[#C85A32] text-white rounded-xl font-semibold text-xs shadow-xs hover:bg-[#A94725] transition cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
                     <span>Start New Intake</span>
