@@ -229,6 +229,18 @@ export const BuyPawn: React.FC = () => {
         return;
       }
 
+      if (duplicateSerialMatch) {
+        const activeStatuses = ['Retail Floor', 'Vault Hold', 'InStock', 'Reserved', 'Pawned'];
+        if (activeStatuses.includes(duplicateSerialMatch.status)) {
+          showToast('Duplicate Serial', 'This serial/IMEI already belongs to active inventory.', 'error');
+          return;
+        }
+        if (duplicateSerialMatch.status === 'Flagged') {
+          showToast('Compliance Flag', 'This serial/IMEI is flagged under compliance review.', 'error');
+          return;
+        }
+      }
+
       if (txType === 'existing') {
         // Suggested retail placeholder if not set
         if (Number(retailPriceInput) === 0) {
@@ -1146,12 +1158,28 @@ export const BuyPawn: React.FC = () => {
                             className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 font-mono focus:outline-none focus:border-[#C85A32]"
                           />
                           {duplicateSerialMatch && (
-                            <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2">
-                              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <div className={`mt-2 p-2.5 rounded-xl border text-xs flex items-start gap-2 ${
+                              ['Retail Floor', 'Vault Hold', 'InStock', 'Reserved', 'Pawned'].includes(duplicateSerialMatch.status)
+                                ? 'bg-red-50 border-red-300 text-red-900'
+                                : duplicateSerialMatch.status === 'Flagged'
+                                ? 'bg-purple-50 border-purple-300 text-purple-900'
+                                : 'bg-amber-50 border-amber-300 text-amber-900'
+                            }`}>
+                              <AlertTriangle className={`w-4 h-4 shrink-0 mt-0.5 ${
+                                ['Retail Floor', 'Vault Hold', 'InStock', 'Reserved', 'Pawned', 'Flagged'].includes(duplicateSerialMatch.status)
+                                  ? 'text-red-600'
+                                  : 'text-amber-600'
+                              }`} />
                               <div className="min-w-0">
-                                <p className="font-bold text-[11px] leading-tight text-amber-900">Duplicate Serial/IMEI Detected</p>
-                                <p className="text-[10px] text-amber-800 mt-0.5 leading-snug">
-                                  Matches existing item <span className="font-mono font-bold">{duplicateSerialMatch.sku}</span> ("{duplicateSerialMatch.title}") currently marked as <span className="font-semibold">{duplicateSerialMatch.status}</span>. Verify item identity before continuing.
+                                <p className="font-bold text-[11px] leading-tight">
+                                  {['Retail Floor', 'Vault Hold', 'InStock', 'Reserved', 'Pawned'].includes(duplicateSerialMatch.status)
+                                    ? 'This serial/IMEI already belongs to active inventory.'
+                                    : duplicateSerialMatch.status === 'Flagged'
+                                    ? 'This serial/IMEI is flagged under compliance review.'
+                                    : 'This serial/IMEI was previously sold. Verify that this is the same physical item.'}
+                                </p>
+                                <p className="text-[10px] opacity-90 mt-0.5 leading-snug">
+                                  Matches item <span className="font-mono font-bold">{duplicateSerialMatch.sku}</span> ("{duplicateSerialMatch.title}") currently marked as <span className="font-semibold">{duplicateSerialMatch.status}</span>.
                                 </p>
                               </div>
                             </div>

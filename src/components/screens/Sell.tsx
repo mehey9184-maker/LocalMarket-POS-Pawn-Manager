@@ -96,21 +96,27 @@ const CartItemRow: React.FC<{
           </div>
         )}
 
-        <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-1 py-0.5">
-          <button 
-            onClick={() => onUpdateQuantity(ci.item.id, ci.quantity - 1)}
-            className="text-gray-400 hover:text-gray-700 p-0.5"
-          >
-            <Minus className="w-2.5 h-2.5" />
-          </button>
-          <span className="text-[11px] font-bold text-gray-800 font-mono px-1">{ci.quantity}</span>
-          <button 
-            onClick={() => onUpdateQuantity(ci.item.id, ci.quantity + 1)}
-            className="text-gray-400 hover:text-gray-700 p-0.5"
-          >
-            <Plus className="w-2.5 h-2.5" />
-          </button>
-        </div>
+        {ci.item.acquisitionType ? (
+          <span className="text-[10px] font-mono font-bold text-gray-500 bg-white border border-gray-200 px-2 py-0.5 rounded-lg" title="Unique item — quantity is 1">
+            Qty: 1
+          </span>
+        ) : (
+          <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-1 py-0.5">
+            <button 
+              onClick={() => onUpdateQuantity(ci.item.id, ci.quantity - 1)}
+              className="text-gray-400 hover:text-gray-700 p-0.5"
+            >
+              <Minus className="w-2.5 h-2.5" />
+            </button>
+            <span className="text-[11px] font-bold text-gray-800 font-mono px-1">{ci.quantity}</span>
+            <button 
+              onClick={() => onUpdateQuantity(ci.item.id, ci.quantity + 1)}
+              className="text-gray-400 hover:text-gray-700 p-0.5"
+            >
+              <Plus className="w-2.5 h-2.5" />
+            </button>
+          </div>
+        )}
       </div>
 
       <button 
