@@ -10,7 +10,7 @@ END $$;
 ALTER TABLE IF EXISTS public.profiles 
 ADD COLUMN IF NOT EXISTS pin_hash TEXT;
 
--- Update secure_update_staff_profile RPC to support pin_hash and use auth.uid() correctly with user-scoped client
+-- Update secure_update_staff_profile RPC to support pin_hash update while EXPLICITLY EXCLUDING pin_hash from audit old/new values
 CREATE OR REPLACE FUNCTION public.secure_update_staff_profile(
     p_target_id UUID,
     p_updates JSONB,
@@ -29,6 +29,7 @@ DECLARE
     v_old_values JSONB := '{}'::jsonb;
     v_new_values JSONB := '{}'::jsonb;
     v_final_updates JSONB := '{}'::jsonb;
+    v_event_type TEXT := 'STAFF_PROFILE_UPDATED';
 BEGIN
     -- 1. Get caller profile using auth.uid()
     SELECT * INTO v_caller_profile FROM public.profiles WHERE id = auth.uid();
@@ -68,14 +69,23 @@ BEGIN
                 RAISE EXCEPTION 'Only Owners can promote staff to Owner or Admin roles';
             END IF;
 
-            v_old_values := v_old_values || jsonb_build_object(v_field, row_to_json(v_target_profile)->v_field);
-            v_new_values := v_new_values || jsonb_build_object(v_field, p_updates->v_field);
+            -- CRITICAL: Never include pin_hash in audit old/new values
+            IF v_field != 'pin_hash' THEN
+                v_old_values := v_old_values || jsonb_build_object(v_field, row_to_json(v_target_profile)->v_field);
+                v_new_values := v_new_values || jsonb_build_object(v_field, p_updates->v_field);
+            END IF;
+
             v_final_updates := v_final_updates || jsonb_build_object(v_field, p_updates->v_field);
         END IF;
     END LOOP;
 
     IF v_final_updates = '{}'::jsonb THEN
         RETURN jsonb_build_object('success', true, 'message', 'No valid fields to update');
+    END IF;
+
+    -- If pin_hash is being updated, set event_type to PIN_CHANGED
+    IF v_final_updates ? 'pin_hash' THEN
+        v_event_type := 'PIN_CHANGED';
     END IF;
 
     -- 7. Apply updates
@@ -92,7 +102,7 @@ BEGIN
         updated_at = now()
     WHERE id = p_target_id;
 
-    -- 8. Log audit
+    -- 8. Log audit (pin_hash and raw PINs are strictly excluded)
     INSERT INTO public.staff_audit_logs (
         shop_id,
         actor_id,
@@ -105,9 +115,9 @@ BEGIN
         v_caller_profile.shop_id,
         v_caller_profile.id,
         p_target_id,
-        'STAFF_PROFILE_UPDATED',
-        v_old_values,
-        v_new_values,
+        v_event_type,
+        CASE WHEN v_old_values = '{}'::jsonb THEN NULL ELSE v_old_values END,
+        CASE WHEN v_new_values = '{}'::jsonb THEN NULL ELSE v_new_values END,
         p_reason
     );
 
