@@ -31,7 +31,7 @@ import { useSaps } from './SapsContext';
 import { useSync } from './SyncContext';
 import { db } from '../db';
 
-export type NavTab = 'landing' | 'auth' | 'home' | 'sell' | 'buy-pawn' | 'inventory' | 'customers' | 'profile';
+export type NavTab = 'landing' | 'auth' | 'home' | 'sell' | 'buy-pawn' | 'inventory' | 'customers' | 'profile' | 'vault';
 
 export interface ShopProfile {
   id?: string;
@@ -173,7 +173,7 @@ interface AppContextType {
 
   // Business & Deal Rules Customization
   businessRules: BusinessRules;
-  updateBusinessRules: (rules: Partial<BusinessRules>) => void;
+  updateBusinessRules: (rules: Partial<BusinessRules>, reason?: string) => Promise<void>;
   isRulesModalOpen: boolean;
   setIsRulesModalOpen: (open: boolean) => void;
 
@@ -269,19 +269,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return cart.reduce((sum, ci) => sum + (ci.overridePrice ?? ci.item.retailPrice) * ci.quantity, 0);
   }, [cart]);
 
-  const updateBusinessRules = useCallback((updates: Partial<BusinessRules>) => {
-    setBusinessRules(prev => {
-      const next = { ...prev, ...updates };
-      localStorage.setItem('lm_business_rules', JSON.stringify(next));
-      setShopProfile(sp => {
-        const updated = { ...sp, businessRules: next };
-        localStorage.setItem('lm_shop_profile', JSON.stringify(updated));
-        return updated;
-      });
-      return next;
+  const updateBusinessRules = useCallback(async (updates: Partial<BusinessRules>, reason?: string) => {
+    const nextRules = { ...businessRules, ...updates };
+    setBusinessRules(nextRules);
+    localStorage.setItem('lm_business_rules', JSON.stringify(nextRules));
+    
+    setShopProfile(sp => {
+      const updated = { ...sp, businessRules: nextRules };
+      localStorage.setItem('lm_shop_profile', JSON.stringify(updated));
+      return updated;
     });
-    showToast('Rules & Margins Updated', 'Custom interest, retail margins, and terms saved locally', 'success');
-  }, [showToast]);
+
+    if (currentUserProfile?.shop_id && currentUserProfile.role === 'owner') {
+      try {
+        const res = await shopProfilesApi.updateShopBusinessRulesRpc(nextRules, reason);
+        if (res.success) {
+          showToast('Settings Persisted', 'Business rules updated and audited on server.', 'success');
+        } else {
+          showToast('Sync Warning', 'Local settings saved but server update failed.', 'amber');
+        }
+      } catch (err) {
+        console.error('Failed to sync business rules:', err);
+      }
+    } else {
+      showToast('Settings Saved', 'Local business rules updated.', 'success');
+    }
+  }, [businessRules, currentUserProfile, showToast]);
 
   const updateShopProfile = useCallback((updates: Partial<ShopProfile>) => {
     setShopProfile(prev => {
@@ -293,6 +306,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [showToast]);
 
   // Auth Effects
+  useEffect(() => {
+    if (currentUserProfile?.shop_id) {
+      shopProfilesApi.getShopById(currentUserProfile.shop_id).then(shop => {
+        if (shop) {
+          const serverRules = (shop as any).business_rules as BusinessRules;
+          const mappedShop: ShopProfile = {
+            id: shop.id,
+            shop_code: shop.shop_code,
+            shop_name: shop.shop_name,
+            trading_name: shop.trading_name || '',
+            registration_number: shop.registration_number || '',
+            vat_number: shop.vat_number || '',
+            saps_dealer_license: shop.saps_dealer_license || '',
+            phone: shop.phone || '',
+            email: shop.email || '',
+            address: shop.address || '',
+            city: shop.city || '',
+            province: shop.province || '',
+            postal_code: shop.postal_code || '',
+            currency: shop.currency || 'ZAR',
+            receipt_header: shop.receipt_header || '',
+            receipt_footer: shop.receipt_footer || '',
+            businessRules: serverRules
+          };
+          setShopProfile(mappedShop);
+          localStorage.setItem('lm_shop_profile', JSON.stringify(mappedShop));
+          
+          if (serverRules) {
+            setBusinessRules(prev => ({ ...prev, ...serverRules }));
+            localStorage.setItem('lm_business_rules', JSON.stringify(serverRules));
+          }
+        }
+      });
+    }
+  }, [currentUserProfile]);
+
   useEffect(() => {
     if (isSupabaseConfigured()) {
       authApi.getUser().then(user => {

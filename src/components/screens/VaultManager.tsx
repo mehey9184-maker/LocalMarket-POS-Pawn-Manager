@@ -165,7 +165,7 @@ const VaultItemRow: React.FC<{ loan: PawnLoan; onArchive: (id: string) => void; 
 };
 
 export const VaultManager: React.FC = () => {
-  const { showToast } = useApp();
+  const { showToast, businessRules } = useApp();
   const { verifyManagerPin, isManager } = useAuth();
   const { inventory } = useInventory();
   const { 
@@ -191,8 +191,9 @@ export const VaultManager: React.FC = () => {
   const totalVaultOutlay = useMemo(() => activeVaultLoans.reduce((sum, l) => sum + l.principal, 0), [activeVaultLoans]);
   
   const overdueLoans = useMemo(() => loans.filter(l => 
-    (l.daysRemaining <= 0 || l.daysElapsed > 30) && l.status === 'Active'
-  ), [loans]);
+    (l.daysRemaining <= 0 || l.daysElapsed > businessRules.defaultLoanTermDays) && l.status === 'Active'
+  ), [loans, businessRules.defaultLoanTermDays]);
+
   const totalOverdueCapital = useMemo(() => overdueLoans.reduce((sum, l) => sum + l.principal, 0), [overdueLoans]);
 
   const reviewQueueLoans = useMemo(() => loans.filter(l => l.status === 'Pending Forfeit'), [loans]);
@@ -238,7 +239,7 @@ export const VaultManager: React.FC = () => {
 
   const handleOpenTransferModal = (loan: PawnLoan) => {
     setSelectedLoanForTransfer(loan);
-    setTargetRetailPrice(Math.round(loan.principal * 1.8));
+    setTargetRetailPrice(Math.round(loan.principal * businessRules.defaultRetailMarkupMultiplier));
     setIsManagerModalOpen(true);
   };
 

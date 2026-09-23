@@ -152,6 +152,15 @@ export const Inventory: React.FC = () => {
               />
             </div>
 
+            {/* VAULT MANAGER BUTTON */}
+            <button
+              onClick={() => setActiveTab('vault')}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-semibold shadow-xs hover:bg-amber-500 transition shrink-0"
+            >
+              <Lock className="w-4 h-4" />
+              <span>Vault Manager</span>
+            </button>
+
             {/* ADD STOCK BUTTON */}
             <button
               onClick={() => setActiveTab('buy-pawn')}

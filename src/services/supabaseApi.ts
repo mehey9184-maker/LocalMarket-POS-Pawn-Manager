@@ -225,6 +225,39 @@ export const shopProfilesApi = {
 
     if (error) throw error;
     return data;
+  },
+
+  async updateShopBusinessRulesRpc(rules: BusinessRules, reason?: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { error } = await supabase.rpc('update_shop_business_rules', {
+          p_rules: rules,
+          p_reason: reason || 'Business rules updated'
+        });
+
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to update business rules.' };
+    }
+  },
+
+  async getBusinessRuleAuditLogs(shopId: string): Promise<any[]> {
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { data, error } = await supabase
+          .from('business_rule_audit_logs')
+          .select('*')
+          .eq('shop_id', shopId)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        return data || [];
+      });
+    } catch {
+      return [];
+    }
   }
 };
 

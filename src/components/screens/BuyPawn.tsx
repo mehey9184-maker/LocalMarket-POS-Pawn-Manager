@@ -7,7 +7,7 @@ import { useCustomers } from '../../context/CustomerContext';
 import { useSellers } from '../../context/SellerContext';
 import { useSaps } from '../../context/SapsContext';
 import { ItemCondition, InventoryItem, PawnLoan, Customer, Seller, ItemStatus } from '../../types';
-import { roundRetailPrice } from '../../utils/pricingRules';
+import { roundRetailPrice, calculatePawnFees } from '../../utils/pricingRules';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ShieldCheck,
@@ -130,16 +130,15 @@ export const BuyPawn: React.FC = () => {
   // Derived Values for Pawn
   const pawnCalculations = useMemo(() => {
     if (txType !== 'pawn') return null;
-    const interest = agreedOffer * businessRules.pawnMonthlyInterestRate;
-    const adminFee = agreedOffer * businessRules.pawnStorageAdminFeeRate;
-    const totalRedemption = agreedOffer + interest + adminFee;
+    const { interest, storage, total } = calculatePawnFees(agreedOffer, businessRules);
+    
     const expiry = new Date();
     expiry.setDate(expiry.getDate() + businessRules.defaultLoanTermDays);
 
     return {
       interest,
-      adminFee,
-      totalRedemption,
+      adminFee: storage,
+      totalRedemption: total,
       expiryDate: expiry.toISOString().split('T')[0]
     };
   }, [txType, agreedOffer, businessRules]);
@@ -1659,11 +1658,11 @@ export const BuyPawn: React.FC = () => {
                       {txType === 'pawn' && pawnCalculations && (
                         <div className="space-y-1.5 pt-2 border-t border-gray-100 text-xs">
                           <div className="flex justify-between text-gray-500">
-                            <span>Monthly Interest (5%)</span>
+                            <span>Monthly Interest ({Math.round(businessRules.pawnMonthlyInterestRate * 100)}%)</span>
                             <span className="font-mono">R {pawnCalculations.interest.toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between text-gray-500">
-                            <span>Admin & Storage Fee</span>
+                            <span>Vault Storage & Admin Fee ({Math.round(businessRules.pawnStorageAdminFeeRate * 100)}%)</span>
                             <span className="font-mono">R {pawnCalculations.adminFee.toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between font-bold text-blue-700 pt-1 border-t border-gray-100">

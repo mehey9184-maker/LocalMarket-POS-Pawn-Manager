@@ -212,6 +212,19 @@ export interface SyncLog {
   retryCount: number;
 }
 
+export interface BusinessRuleAuditLog {
+  id: string;
+  shopId: string;
+  actorId: string;
+  actorName: string;
+  timestamp: string;
+  eventType: string;
+  oldValues: BusinessRules;
+  newValues: BusinessRules;
+  reason?: string;
+  createdAt: string;
+}
+
 export type SellerTransactionStatus = 'Draft' | 'Proposed' | 'Approved' | 'Paid' | 'Acquired' | 'Rejected' | 'Cancelled';
 export type SellerPaymentStatus = 'Pending' | 'Paid';
 

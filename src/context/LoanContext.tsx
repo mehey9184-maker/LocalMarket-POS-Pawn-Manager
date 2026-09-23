@@ -31,7 +31,29 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { updateItem } = useInventory();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const loans = useLiveQuery(() => db.loans.orderBy('expiryDate').toArray()) || [];
+  const rawLoans = useLiveQuery(() => db.loans.orderBy('expiryDate').toArray()) || [];
+
+  const loans = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    
+    return rawLoans.map(loan => {
+      const start = new Date(loan.startDate);
+      const expiry = new Date(loan.expiryDate);
+      
+      // Derive remaining days
+      const diffRemaining = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      
+      // Derive elapsed days
+      const diffElapsed = Math.ceil((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      
+      return {
+        ...loan,
+        daysRemaining: diffRemaining,
+        daysElapsed: diffElapsed
+      };
+    });
+  }, [rawLoans]);
 
   const fuse = useMemo(() => new Fuse(loans, {
     keys: ['ticketNumber', 'customerName', 'customerIdNumber', 'itemTitle'],

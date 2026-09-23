@@ -207,6 +207,48 @@ export const Home: React.FC = () => {
               </div>
             </div>
 
+            {/* Vault At-a-Glance Interaction */}
+            <div className="p-6 rounded-2xl bg-[#121212] border border-[#2A2A2A] shadow-2xl relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 blur-[80px] -mr-32 -mt-32 pointer-events-none" />
+              <div className="flex items-center justify-between mb-6 relative z-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center border border-amber-500/20">
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Vault At-a-Glance</h3>
+                    <p className="text-[10px] text-gray-500 font-mono">Pledge Security & Forfeiture Control</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setActiveTab('vault')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest transition shadow-lg shadow-amber-900/20"
+                >
+                  Enter Vault
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 relative z-10">
+                <div className="p-4 rounded-2xl bg-black/40 border border-[#2A2A2A]">
+                  <span className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Normal</span>
+                  <p className="text-xl font-black text-white font-mono">{activeLoans.length - expiringSoon.length - overdueLoans.length}</p>
+                </div>
+                <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-800/30">
+                  <span className="text-[9px] font-bold text-amber-500 uppercase block mb-1">Due Soon</span>
+                  <p className="text-xl font-black text-amber-400 font-mono">{expiringSoon.filter(l => l.expiryDate > today).length}</p>
+                </div>
+                <div className="p-4 rounded-2xl bg-orange-950/40 border border-orange-800/30">
+                  <span className="text-[9px] font-bold text-orange-500 uppercase block mb-1">Due Today</span>
+                  <p className="text-xl font-black text-orange-400 font-mono">{expiringSoon.filter(l => l.expiryDate === today).length}</p>
+                </div>
+                <div className="p-4 rounded-2xl bg-red-950/40 border border-red-800/30">
+                  <span className="text-[9px] font-bold text-red-500 uppercase block mb-1">Overdue</span>
+                  <p className="text-xl font-black text-red-400 font-mono">{overdueLoans.length}</p>
+                </div>
+              </div>
+            </div>
+
             {/* Inventory Health Widget */}
             <div className="p-6 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
               <div className="flex items-center justify-between">

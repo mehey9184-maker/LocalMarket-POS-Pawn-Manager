@@ -32,6 +32,7 @@ import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSales } from '../../context/SalesContext';
 import { ShopProfileAndOfflineHub } from '../profile/ShopProfileAndOfflineHub';
+import { BusinessRulesManager } from '../profile/BusinessRulesManager';
 import { RefundRequest } from '../../types';
 
 export const CashierProfile: React.FC = () => {
@@ -73,6 +74,9 @@ export const CashierProfile: React.FC = () => {
     pinCode: ''
   });
   const [isProvisioning, setIsProvisioning] = useState(false);
+
+  // Owner Settings Toggle
+  const [showOwnerSettings, setShowOwnerSettings] = useState(false);
 
   const handleSecureAction = (action: () => void) => {
     setPendingAction(() => action);
@@ -272,6 +276,52 @@ export const CashierProfile: React.FC = () => {
 
         {/* SHOP PROFILE & OFFLINE-FIRST HUB */}
         <ShopProfileAndOfflineHub />
+
+        {/* OWNER SETTINGS (OWNER/MANAGER ONLY) */}
+        {(isOwner || isManager) && (
+          <div className="space-y-6">
+            <button
+              onClick={() => setShowOwnerSettings(!showOwnerSettings)}
+              className={`w-full p-8 rounded-[2.5rem] border flex items-center justify-between transition-all group ${
+                showOwnerSettings 
+                  ? 'bg-amber-600 border-amber-500 shadow-xl shadow-amber-900/20' 
+                  : 'bg-[#121212] border-[#2A2A2A] hover:border-amber-500/50 shadow-2xl'
+              }`}
+            >
+              <div className="flex items-center gap-6">
+                <div className={`p-4 rounded-2xl border transition-colors ${
+                  showOwnerSettings ? 'bg-white/10 border-white/20' : 'bg-[#1A1A1A] border-[#2A2A2A] group-hover:border-amber-500/30'
+                }`}>
+                  <Settings className={`w-6 h-6 ${showOwnerSettings ? 'text-white' : 'text-amber-500'}`} />
+                </div>
+                <div className="text-left">
+                  <h2 className={`text-sm font-black uppercase tracking-widest ${showOwnerSettings ? 'text-white' : 'text-gray-200'}`}>
+                    Owner Settings & Business Rules
+                  </h2>
+                  <p className={`text-[11px] font-mono mt-0.5 ${showOwnerSettings ? 'text-white/70' : 'text-gray-500'}`}>
+                    Interest Rates, Loan Terms, and Authoritative Audit History
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className={`w-6 h-6 transition-transform duration-500 ${showOwnerSettings ? 'text-white rotate-90' : 'text-gray-600 group-hover:text-amber-500'}`} />
+            </button>
+
+            <AnimatePresence>
+              {showOwnerSettings && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="p-8 bg-[#0D0D0D] border border-[#2A2A2A] rounded-[2.5rem] mt-2 shadow-inner">
+                    <BusinessRulesManager />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
         {/* TRANSACTION JOURNAL */}
         <div className="bg-[#121212] border border-[#2A2A2A] rounded-[2.5rem] overflow-hidden shadow-2xl">
