@@ -324,5 +324,98 @@ export async function runExternalProviderManagerTests() {
     assertEqual(manager.getQuota('upcitemdb').requestsToday, 1, 'Test I: recordFailure did NOT increment requestsToday (still 1)');
   }
 
+  // Test J — RPC unavailable must fail closed
+  {
+    const manager = ExternalMarketProviderManager.getInstance();
+    manager.resetState();
+
+    const mockErrorRpcAdmin = {
+      rpc: async () => ({
+        data: null,
+        error: { message: 'Database connection timeout / maintenance window' }
+      }),
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }),
+        upsert: async () => ({ data: null, error: null })
+      })
+    };
+
+    let externalCallCount = 0;
+    const mockFetch = async () => {
+      externalCallCount++;
+      return { ok: true, json: async () => ({ items: [{ title: 'Should Not Be Fetched' }] }) } as any;
+    };
+
+    const reservation = await manager.reserveQuota('upcitemdb', mockErrorRpcAdmin);
+    assertEqual(reservation.allowed, false, 'Test J: RPC error failed closed (allowed === false)');
+    assertEqual(reservation.reason, 'Global provider quota service unavailable', 'Test J: Correct fail-closed reason returned');
+
+    const res = await manager.getExternalObservation('444444444444', 'Fail Closed Item', undefined, mockErrorRpcAdmin, false, mockFetch);
+    assertEqual(externalCallCount, 0, 'Test J: 0 HTTP calls made when RPC fails');
+    assertEqual(res.observation, null, 'Test J: Observation is null');
+  }
+
+  // Test K — No Supabase client may use test fallback
+  {
+    const manager = ExternalMarketProviderManager.getInstance();
+    manager.resetState();
+
+    const res1 = await manager.reserveQuota('upcitemdb', null);
+    assertEqual(res1.allowed, true, 'Test K: In-memory fallback allowed when supabaseAdmin is null');
+    assertEqual(manager.getQuota('upcitemdb').requestsToday, 1, 'Test K: In-memory counter incremented to 1');
+  }
+
+  // Test L — Successful RPC response controls admission
+  {
+    const manager = ExternalMarketProviderManager.getInstance();
+    manager.resetState();
+
+    let rpcAllowed = true;
+    let rpcRequestsToday = 1;
+    const mockControllableRpcAdmin = {
+      rpc: async () => ({
+        data: {
+          allowed: rpcAllowed,
+          reason: rpcAllowed ? undefined : 'Daily provider request quota exhausted (25/25)',
+          provider: 'upcitemdb',
+          daily_limit: 25,
+          requests_today: rpcRequestsToday,
+          reset_at: new Date(Date.now() + 86400000).toISOString(),
+          consecutive_failures: 0,
+          cooldown_until: null
+        },
+        error: null
+      }),
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }),
+        upsert: async () => ({ data: null, error: null })
+      })
+    };
+
+    let externalCallCount = 0;
+    const mockFetch = async () => {
+      externalCallCount++;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          items: [{ title: 'Admitted Product Title', msrp: 2000, offers: [{ price: 1500 }] }]
+        })
+      } as any;
+    };
+
+    // Case 1: RPC returns allowed: true -> request executed
+    const resAllowed = await manager.getExternalObservation('333333333333', 'Allowed Item', undefined, mockControllableRpcAdmin, false, mockFetch);
+    assertEqual(externalCallCount, 1, 'Test L: Allowed RPC response triggered exactly 1 HTTP call');
+    assertEqual(resAllowed.observation?.productName, 'Admitted Product Title', 'Test L: Admitted product returned');
+
+    // Case 2: RPC returns allowed: false -> request NOT executed
+    rpcAllowed = false;
+    rpcRequestsToday = 25;
+    const resBlocked = await manager.getExternalObservation('222222222222', 'Blocked Item', undefined, mockControllableRpcAdmin, false, mockFetch);
+    assertEqual(externalCallCount, 1, 'Test L: Blocked RPC response resulted in 0 additional HTTP calls');
+    assertEqual(resBlocked.observation, null, 'Test L: Blocked observation returned null');
+  }
+
   console.log('=== ALL EXTERNAL MARKET PROVIDER MANAGER TESTS PASSED ===');
 }

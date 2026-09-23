@@ -30,6 +30,7 @@ import { useSellers } from './SellerContext';
 import { useSales } from './SalesContext';
 import { useSaps } from './SapsContext';
 import { useSync } from './SyncContext';
+import { useAuth } from './AuthContext';
 import { db } from '../db';
 
 export type NavTab = 'landing' | 'auth' | 'home' | 'sell' | 'buy-pawn' | 'inventory' | 'customers' | 'profile' | 'vault';
@@ -214,10 +215,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, 4500);
   }, []);
 
+  // Consume Auth Context (Single Source of Truth)
+  const { user: supabaseUser, profile: currentUserProfile } = useAuth();
+
   // Supabase API Integration State
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
-  const [supabaseUser, setSupabaseUser] = useState<any | null>(null);
-  const [currentUserProfile, setCurrentUserProfile] = useState<ProfileRow | null>(null);
   const [supabaseLogs, setSupabaseLogs] = useState<SystemLogRow[]>([]);
   const [supabaseStatus, setSupabaseStatus] = useState({
     isConfigured: isSupabaseConfigured(),
@@ -345,30 +347,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     }
   }, [currentUserProfile]);
-
-  useEffect(() => {
-    if (isSupabaseConfigured()) {
-      authApi.getUser().then(user => {
-        setSupabaseUser(user);
-        if (user) {
-          profilesApi.getProfileById(user.id).then(setCurrentUserProfile).catch(() => {});
-        }
-      }).catch(() => {});
-
-      const authListener = authApi.onAuthStateChange((_event, session) => {
-        setSupabaseUser(session?.user ?? null);
-        if (session?.user) {
-          profilesApi.getProfileById(session.user.id).then(setCurrentUserProfile).catch(() => {});
-        } else {
-          setCurrentUserProfile(null);
-        }
-      });
-
-      return () => {
-        authListener?.unsubscribe();
-      };
-    }
-  }, []);
 
   const logSystemEvent = useCallback(async (
     eventType: string,

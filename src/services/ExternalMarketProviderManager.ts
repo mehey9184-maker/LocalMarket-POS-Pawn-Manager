@@ -110,7 +110,15 @@ export class ExternalMarketProviderManager {
           p_default_limit: this.defaultDailyLimit
         });
 
-        if (!error && data) {
+        if (error) {
+          console.warn('[ExternalProviderManager] RPC reserve_provider_request error:', error.message || error);
+          return {
+            allowed: false,
+            reason: 'Global provider quota service unavailable'
+          };
+        }
+
+        if (data) {
           const quota = this.getQuota(provider);
           quota.requestsToday = data.requests_today ?? quota.requestsToday;
           quota.dailyLimit = data.daily_limit ?? quota.dailyLimit;
@@ -124,11 +132,17 @@ export class ExternalMarketProviderManager {
             quota
           };
         }
-        if (error) {
-          console.warn('[ExternalProviderManager] RPC reserve_provider_request error:', error.message || error);
-        }
-      } catch (err) {
-        console.warn('[ExternalProviderManager] RPC call exception:', err);
+
+        return {
+          allowed: false,
+          reason: 'Global provider quota service returned empty payload'
+        };
+      } catch (err: any) {
+        console.warn('[ExternalProviderManager] RPC call exception:', err.message || err);
+        return {
+          allowed: false,
+          reason: 'Global provider quota service unavailable'
+        };
       }
     }
 

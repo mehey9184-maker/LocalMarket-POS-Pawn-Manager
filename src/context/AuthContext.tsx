@@ -62,10 +62,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let lastFocusCheck = 0;
 
+    // Active access token tracking ref to prevent unnecessary state churn
+    let activeToken: string | null = null;
+
     // Check initial session
     const initAuth = async () => {
       try {
         const currentSession = await authApi.getSession();
+        activeToken = currentSession?.access_token ?? null;
         setSession(currentSession);
         const currentUser = currentSession?.user ?? null;
         setUser(currentUser);
@@ -83,14 +87,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Listen for auth changes (Synchronous callback to satisfy Supabase contract)
     const { unsubscribe } = authApi.onAuthStateChange((event, newSession) => {
+      const newToken = newSession?.access_token ?? null;
+
       switch (event) {
         case 'INITIAL_SESSION':
         case 'SIGNED_IN': {
+          activeToken = newToken;
           setSession(newSession);
           const newUser = newSession?.user ?? null;
           setUser(newUser);
           if (newUser?.id) {
-            // Schedule non-blocking profile fetch
             setTimeout(() => {
               fetchProfile(newUser.id);
             }, 0);
@@ -98,18 +104,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           break;
         }
         case 'TOKEN_REFRESHED': {
-          setSession(newSession);
-          const newUser = newSession?.user ?? null;
-          if (newUser) {
-            setUser(newUser);
+          // Routine token refresh updates session state only if token changed
+          if (newToken !== activeToken) {
+            activeToken = newToken;
+            setSession(newSession);
+            const newUser = newSession?.user ?? null;
+            if (newUser) {
+              setUser(newUser);
+            }
           }
-          // Notify dependent components that a fresh valid token is available
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('lm_session_recovered'));
-          }
+          // Do NOT dispatch lm_session_recovered or reload profile on routine TOKEN_REFRESHED
           break;
         }
         case 'USER_UPDATED': {
+          activeToken = newToken;
           setSession(newSession);
           const newUser = newSession?.user ?? null;
           setUser(newUser);
@@ -121,6 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           break;
         }
         case 'SIGNED_OUT': {
+          activeToken = null;
           setSession(null);
           setUser(null);
           setProfile(null);
@@ -128,25 +137,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           break;
         }
         default: {
-          if (newSession) {
+          if (newToken !== activeToken) {
+            activeToken = newToken;
             setSession(newSession);
-            setUser(newSession.user);
+            if (newSession) {
+              setUser(newSession.user);
+            }
           }
           break;
         }
       }
     });
 
-    // Foreground / visibility change handler
+    // Foreground / visibility change handler — checks recovery only if token changed or session was missing
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
         const validSession = await authApi.getSession();
-        if (validSession) {
-          setSession(validSession);
-          setUser(validSession.user);
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('lm_session_recovered'));
+        const freshToken = validSession?.access_token ?? null;
+        if (freshToken && validSession) {
+          if (freshToken !== activeToken) {
+            const wasMissing = !activeToken;
+            activeToken = freshToken;
+            setSession(validSession);
+            setUser(validSession.user ?? null);
+            if (wasMissing && typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('lm_session_recovered'));
+            }
           }
+        } else if (activeToken) {
+          activeToken = null;
+          setSession(null);
+          setUser(null);
+          setProfile(null);
         }
       }
     };
@@ -158,12 +180,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       lastFocusCheck = now;
 
       const validSession = await authApi.getSession();
-      if (validSession) {
-        setSession(validSession);
-        setUser(validSession.user);
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('lm_session_recovered'));
+      const freshToken = validSession?.access_token ?? null;
+      if (freshToken && validSession) {
+        if (freshToken !== activeToken) {
+          const wasMissing = !activeToken;
+          activeToken = freshToken;
+          setSession(validSession);
+          setUser(validSession.user ?? null);
+          if (wasMissing && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('lm_session_recovered'));
+          }
         }
+      } else if (activeToken) {
+        activeToken = null;
+        setSession(null);
+        setUser(null);
+        setProfile(null);
       }
     };
 
