@@ -1,0 +1,1449 @@
+LOCALMARKET POS & PAWN MANAGER
+BUSINESS RULES & STATE MACHINE
+VERSION 1.0 — MASTER LOGIC
+
+PURPOSE
+
+This document defines the authoritative business logic for LocalMarket POS & Pawn Manager.
+
+AI Studio and all application code must treat these rules as the source of truth for business behavior.
+
+Do not invent alternative business rules separately inside screens, components, contexts, API services, database functions, or offline logic.
+
+If an existing implementation conflicts with this document, identify the conflict and change the implementation to follow this document.
+
+The application must prioritize:
+
+1. Correct business transactions
+2. Data integrity
+3. Auditability
+4. Shop isolation
+5. Staff authorization
+6. Fast cashier operation
+7. Safe offline operation
+8. Clear recovery from failures
+
+==================================================
+
+1. BUSINESS ENTITY SEPARATION
+   ==================================================
+
+LOCALMARKET HAS THREE DISTINCT HUMAN RELATIONSHIPS
+
+A. RETAIL BUYER
+
+A person purchasing goods from the shop.
+
+A retail buyer does NOT automatically become a persistent Customer.
+
+A customer profile may only be created when the person is intentionally identified for an ongoing business relationship such as:
+
+* warranty
+* service
+* receipt history
+* customer relationship
+* pawn activity
+
+Entering a phone number during checkout does NOT automatically create a persistent Customer.
+
+B. SELLER
+
+A person selling goods TO the shop.
+
+Seller is a persistent business entity.
+
+Seller history must include, where applicable:
+
+* seller identity
+* item
+* SKU
+* transaction amount
+* date/time
+* compliance/SAPS reference
+* staff member
+* shop
+* transaction status
+
+A returning Seller must be identified as:
+
+"Previous seller found"
+
+Never call this:
+
+"Customer found"
+
+C. PAWN CUSTOMER
+
+A person entering into an ongoing pawn relationship with the shop.
+
+Pawn customer becomes a persistent Customer because the relationship continues through loans, repayments, extensions and redemption/default events.
+
+==================================================
+2. SHOP AND BRANCH RULES
+========================
+
+A staff member may belong to only ONE active shop at a time.
+
+The same employee may later be transferred to another LocalMarket branch.
+
+Historical transactions remain attached to the shop where they occurred.
+
+Owner may have access to multiple shops.
+
+Owner can switch between authorized shops.
+
+Manager belongs to ONE shop only.
+
+Manager cannot manage multiple shops simultaneously.
+
+A staff member must never automatically be assigned to the first active shop.
+
+shop_id must be explicit and authoritative.
+
+Cross-shop business access is forbidden.
+
+All business queries and mutations must be shop scoped.
+
+==================================================
+3. STAFF ROLES
+==============
+
+NORMAL APPLICATION ROLES
+
+OWNER
+MANAGER
+SENIOR_CASHIER
+CASHIER
+
+Technical/admin roles may exist internally but must not appear as normal operational roles unless explicitly required.
+
+STAFF CREATION
+
+Owner:
+
+* can create Cashier
+* can create Senior Cashier
+* can create Manager
+
+Manager:
+
+* can create Cashier
+* can create Senior Cashier
+
+Manager cannot create another Manager.
+
+Manager cannot create Owner.
+
+Owner can change/demote another Manager.
+
+DEACTIVATION
+
+Owner and Manager can deactivate:
+
+* Cashier
+* Senior Cashier
+
+Only Owner can deactivate another Manager.
+
+Staff states:
+
+Active
+Suspended
+Deactivated
+
+Deactivated/suspended staff cannot start a new shift.
+
+An already-open shift must NOT disappear automatically.
+
+It becomes:
+
+"Shift requires management closure"
+
+Manager/Owner must reconcile and close it.
+
+ROLE/PERMISSION CHANGES
+
+Maximum normal permission cache/session delay:
+
+10 minutes.
+
+Sensitive operations must verify current authorization immediately.
+
+==================================================
+4. SHOP LOGIN AND TERMINAL MODEL
+================================
+
+LOGIN FLOW
+
+Shop Login
+→ Staff Selection
+→ Staff PIN
+→ Shift Check
+→ Home
+
+The shop can be remembered on the PC after successful setup.
+
+The cashier should not repeatedly enter the shop code during normal operation.
+
+LOCK TERMINAL
+
+Locking terminal does NOT completely sign out the shop.
+
+The terminal remains associated with the shop.
+
+The active cashier becomes PIN locked.
+
+STAFF SWITCH
+
+Another staff member may select their profile and enter their PIN.
+
+SAME STAFF ON ANOTHER TERMINAL
+
+One staff account may have only ONE active cashier terminal session.
+
+If the same cashier logs in on another terminal:
+
+Show:
+
+"This cashier is active on another terminal. Switch to this terminal?"
+
+If confirmed:
+
+* new terminal becomes active
+* previous terminal session becomes invalid/locked
+* audit event is recorded
+
+==================================================
+5. STAFF WORK SCHEDULE
+======================
+
+Owner controls staff working schedule.
+
+Schedule may contain:
+
+* start time
+* end time
+* days of week
+* specific dates
+* overnight shifts
+
+Allow a 10-minute early-login window.
+
+At scheduled end time:
+
+DO NOT abruptly terminate an active transaction.
+
+Warn cashier:
+
+"Your shift has ended. Finish the current transaction and hand over to management."
+
+After shift end:
+
+* do not allow new work beyond configured policy
+* allow current transaction completion
+* require Manager/Owner extension for additional operation
+
+==================================================
+6. OFFLINE-FIRST PRINCIPLE
+==========================
+
+LOCALMARKET IS LOCAL-FIRST.
+
+The PC must continue operating when internet connectivity is unavailable.
+
+LOCAL PC:
+
+* operational cache
+* frequently used inventory
+* recent sales
+* recent customers
+* recent sellers
+* shop configuration
+* offline transaction queue
+* local business records required for operation
+
+SUPABASE:
+
+* authoritative shared cloud database
+* cross-terminal state
+* business transaction authority
+* RLS
+* atomic RPCs
+* audit records
+* synchronization target
+
+BACKBLAZE B2:
+
+* photographs
+* files
+* binary assets
+
+The application must NEVER display:
+
+"Synced"
+
+unless the remote transaction actually succeeded.
+
+Offline operation may continue for more than 12 hours.
+
+There is NO arbitrary 12-hour shop shutdown.
+
+Instead display:
+
+"Offline — changes will sync automatically"
+
+==================================================
+7. OFFLINE OPERATION PERMISSIONS
+================================
+
+GENERALLY ALLOWED OFFLINE
+
+* retail sales
+* inventory viewing
+* inventory movement where safe
+* existing-stock capture
+* receipt printing
+* shift operations
+* cached customer lookup
+* cached seller lookup
+* basic refund request capture
+
+RESTRICTED OFFLINE
+
+* Buy From Person final approval
+* Pawn final approval
+* refund approval
+* permanent retail price changes
+* staff creation
+* staff deactivation
+* final compliance verification
+* operations requiring fresh cross-shop invariants
+
+An offline regulated acquisition may be captured as:
+
+"PENDING ONLINE COMPLIANCE"
+
+It must not become fully cleared/sellable until required server-side validation succeeds.
+
+==================================================
+8. EXISTING STOCK WORKFLOW
+==========================
+
+FLOW
+
+Add Stock
+→ Existing Stock
+→ Item Details
+→ Retail Price
+→ Location
+→ Complete
+
+Existing Stock does NOT require:
+
+* seller
+* customer
+* pawn relationship
+* identity verification
+* SAPS seller transaction
+
+unless another later workflow explicitly creates such a relationship.
+
+FIELDS
+
+* title
+* category
+* brand
+* model
+* serial/IMEI if available
+* condition
+* photos
+* retail price
+* optional acquisition cost
+* location
+* notes
+
+ACQUISITION COST
+
+Use field name:
+
+"Acquisition Cost"
+
+If historical cost is unknown:
+
+"Unknown"
+
+Do not force staff to invent a number.
+
+RETAIL PRICE
+
+Completion requires:
+
+Retail Price > R0.00
+
+SKU
+
+Generate LocalMarket SKU when item is first committed.
+
+Example:
+
+LM-000184
+
+Do not permanently assign SKUs to abandoned drafts.
+
+==================================================
+9. SERIAL / IMEI RULES
+======================
+
+Unique serial/IMEI items cannot have duplicate ACTIVE identifiers.
+
+Already SOLD historical records may retain the same serial/IMEI.
+
+MATCH RESULTS
+
+ACTIVE MATCH:
+
+Hard stop.
+
+"This serial/IMEI already belongs to active inventory."
+
+HISTORICAL SOLD MATCH:
+
+Warning.
+
+"This serial/IMEI was previously sold. Verify that this is the same physical item."
+
+PAWN/COMPLIANCE MATCH:
+
+Hard stop and management review.
+
+SERIAL ENTRY
+
+Cashier should NOT be forced to type a serial/IMEI when the value can be reliably obtained through:
+
+* scanner
+* device lookup
+* existing system source
+
+Manual entry remains available.
+
+NO SERIAL/IMEI
+
+Allow where appropriate.
+
+Require an identification reason such as:
+
+* No serial present
+* Serial worn/illegible
+* Product does not normally have serial
+* Serial could not be electronically detected
+
+Higher-risk categories may require Manager approval.
+
+==================================================
+10. ITEM EDITING
+================
+
+Completed items may be edited within role permissions.
+
+Every meaningful edit must create an audit/history event.
+
+Display:
+
+"Edited"
+
+History must show:
+
+Old value
+→ New value
+→ Actor
+→ Date/time
+→ Reason
+
+Never destructively overwrite important history.
+
+CASHIER-EDITABLE EXAMPLES
+
+* descriptive title
+* photos
+* notes
+* condition description
+* operational location fields where permitted
+
+MANAGER
+
+* controlled corrections
+* operational overrides
+
+OWNER
+
+* full permitted operational control
+
+DO NOT casually overwrite:
+
+* acquisition history
+* seller identity
+* original purchase amount
+* original pawn terms
+* compliance identity
+* original transaction timestamps
+
+Use correction events instead.
+
+==================================================
+11. BUY FROM PERSON
+===================
+
+FLOW
+
+Add Stock
+→ Buy From Person
+→ Seller Identification
+→ Item Details
+→ Valuation
+→ Deal Review
+→ Approval
+→ Payment
+→ Complete
+
+SELLER IDENTITY
+
+For normal regulated second-hand acquisition:
+
+Required:
+
+* full name
+* surname
+* required identity document/passport information
+* other required compliance information
+
+Do NOT create a normal "no ID" bypass simply through Manager approval.
+
+A live seller photograph may be captured as an additional operational identity measure.
+
+Sensitive seller information must be access controlled.
+
+PRIMARY IDENTITY
+
+ID number/document identity is the primary matching mechanism.
+
+Phone number is secondary.
+
+Name assists verification.
+
+ID/name mismatch:
+
+"Identity details don't match previous seller record."
+
+Require Manager review.
+
+Never silently overwrite historical seller identity.
+
+==================================================
+12. SELLER TRANSACTIONS
+=======================
+
+One Seller Transaction may contain multiple items.
+
+Example:
+
+Seller Transaction ST-000123
+
+→ Item 1
+→ Item 2
+→ Item 3
+
+Each item receives its own LocalMarket inventory identity/SKU.
+
+SELLER PAYMENT
+
+Do not treat approval as payment.
+
+State progression:
+
+Proposed
+→ Approved
+→ Paid
+→ Acquired
+
+Payment must be explicitly recorded.
+
+CHANGE TO AGREED PAYOUT
+
+Cashier may propose.
+
+Manager/Owner approves according to permissions.
+
+Record:
+
+original amount
+new amount
+actor
+reason
+timestamp
+
+CANCELLATION
+
+Before payout:
+
+Cancel Acquisition
+
+After payout:
+
+Never delete.
+
+Use reversal/return workflow.
+
+SELLER RETURN
+
+Possible only through:
+
+"Seller Return / Acquisition Reversal"
+
+Original acquisition remains permanently visible in history.
+
+PROBLEMATIC ITEM
+
+If an issue is discovered later:
+
+Under Investigation
+→ Quarantine
+
+Item cannot be sold while under investigation.
+
+==================================================
+13. SELLER HISTORY VISIBILITY
+=============================
+
+Seller profile may include:
+
+* total transactions
+* total items
+* total amount paid
+* first transaction
+* latest transaction
+* compliance flags
+
+Manager and Owner may see full seller financial history.
+
+Cashier sees only the information necessary for current operation.
+
+==================================================
+14. PAWN WORKFLOW
+=================
+
+FLOW
+
+Add Stock
+→ Pawn
+→ Customer Identification
+→ Item Details
+→ Loan Terms
+→ Pledge Review
+→ Complete
+
+A Customer may have multiple active loans.
+
+The same physical item may NEVER be pledged twice.
+
+LOAN STATES
+
+Draft
+→ Active
+→ Due
+→ Overdue
+
+Possible default path:
+
+Overdue
+→ Defaulted
+→ Forfeited
+→ Retail
+
+Normal redemption path:
+
+Active/Due/Overdue
+→ Redeemed
+
+Never delete a pawn loan.
+
+==================================================
+15. PAWN RULES
+==============
+
+If Customer has overdue loan:
+
+Display prominently:
+
+"OVERDUE"
+
+New pawn loan is allowed only with Manager approval.
+
+Cashier may propose valuation/principal.
+
+Cashier cannot independently change calculated interest/fees.
+
+Manager may override within configured limits.
+
+Owner may override with full audit.
+
+PAWN PAYMENTS
+
+Partial payments are allowed.
+
+Every payment is a separate immutable ledger event.
+
+EXTENSIONS
+
+Loan extensions are supported.
+
+Number of permitted extensions is configurable by Owner/shop policy.
+
+Default may be 3.
+
+Every extension creates permanent history.
+
+PAWN HISTORY CANNOT BE DELETED.
+
+==================================================
+16. INVENTORY STATE MACHINE
+===========================
+
+OFFICIAL STATUSES
+
+Draft
+Available
+Reserved
+Sold
+Pawned
+Damaged
+Lost
+Quarantined
+Forfeited
+Returned
+
+Status changes must follow valid transitions.
+
+Users cannot arbitrarily type/change status.
+
+Examples:
+
+Available → Sold
+Available → Reserved
+Available → Pawned
+Pawned → Redeemed
+Over relevant business workflow → Forfeited
+Approved Refund → Returned/Available as appropriate
+
+SOLD → AVAILABLE
+
+Never direct.
+
+Requires controlled refund/reversal process.
+
+==================================================
+17. CONCURRENT INVENTORY EDITS
+==============================
+
+Multiple terminals may interact with the same item.
+
+Use concurrency protection.
+
+If Item changes after a user opened it:
+
+"This item changed while you were viewing it."
+
+Do not silently overwrite the newer version.
+
+Two users selling the same unique item:
+
+Only ONE transaction may succeed.
+
+Database must enforce this.
+
+Second transaction must receive an operational message:
+
+"Item LM-000184 was already sold on another terminal."
+
+==================================================
+18. RETAIL POS
+==============
+
+FLOW
+
+Sell
+→ Search/Scan
+→ Cart
+→ Payment
+→ Receipt
+→ Done
+
+A receipt can contain:
+
+* multiple unique second-hand items
+* generic merchandise
+* both
+
+UNIQUE ITEMS
+
+Quantity is always 1.
+
+Scanning the same unique item twice:
+
+"Item already in cart."
+
+Do not silently change quantity to 2.
+
+COMPLETED SALE
+
+Cannot be edited.
+
+Original sale remains permanently preserved.
+
+PAYMENT METHOD
+
+Cannot be silently changed after completion.
+
+REPRINT RECEIPT
+
+Allowed.
+
+==================================================
+19. VOID VS REFUND
+==================
+
+VOID
+
+A transaction stopped/reversed as part of immediate checkout before becoming a completed sale.
+
+REFUND
+
+A completed sale existed and is subsequently reversed.
+
+Do not treat these as the same event.
+
+==================================================
+20. ATOMIC RETAIL SALES
+=======================
+
+When online:
+
+LocalMarket must call the secure atomic retail-sale operation.
+
+Database must atomically:
+
+* verify item availability
+* create sale
+* update inventory
+* enforce shop ownership
+* prevent duplicate transaction
+* enforce idempotency
+
+A successful UI operation does NOT mean a business transaction succeeded.
+
+The database transaction must succeed.
+
+==================================================
+21. PAYMENT / CRASH RECOVERY
+============================
+
+Every sale must have:
+
+* stable UUID
+* stable receipt number
+* idempotency identity
+
+If browser crashes after payment but before receipt screen:
+
+DO NOT automatically create another sale.
+
+First recover/query the original transaction by its stable transaction ID.
+
+If server already accepted the sale:
+
+restore it locally.
+
+If server did not accept it:
+
+the application may safely attempt the original operation according to retry rules.
+
+Never create a new transaction ID during ambiguous recovery.
+
+==================================================
+22. OFFLINE SALES CONFLICTS
+===========================
+
+Example:
+
+Cashier A sells Item X offline.
+
+Cashier B sells Item X online.
+
+When Cashier A synchronizes:
+
+DO NOT silently overwrite either transaction.
+
+Create:
+
+CONFLICT — MANAGEMENT REVIEW
+
+Preserve the original records.
+
+Do not simply delete the offline transaction.
+
+Management resolves the business exception.
+
+==================================================
+23. REFUNDS
+===========
+
+FLOW
+
+Find Receipt
+→ Select Item
+→ Reason
+→ Refund Request
+→ Manager Approval
+→ Refund Payment
+→ Inventory Update
+→ Audit
+
+Cashier may request.
+
+Manager/Owner may approve/reject according to authority.
+
+SELF-APPROVAL
+
+A staff member may NEVER approve their own refund request.
+
+DOUBLE APPROVAL
+
+If two Managers attempt to process the same refund simultaneously:
+
+Only one may succeed through an atomic state transition.
+
+The second receives:
+
+"This refund has already been processed."
+
+==================================================
+24. PARTIAL REFUNDS
+===================
+
+Partial refund is allowed.
+
+Database must calculate:
+
+## Original Sold Amount
+
+# Previously Approved Refund Amount
+
+Remaining Refundable Amount
+
+Refund request cannot exceed remaining refundable amount.
+
+This must be enforced server/database side, not merely in React.
+
+==================================================
+25. REFUND STATES
+=================
+
+Pending Approval
+→ Approved
+→ Payment Pending
+→ Refunded
+
+OR
+
+Pending Approval
+→ Rejected
+
+A rejected request remains permanently in history.
+
+Resubmission creates a NEW refund request linked to the previous rejected request.
+
+APPROVAL IS NOT THE SAME AS PAYMENT.
+
+Do not mark a refund "paid" merely because Manager approved it.
+
+==================================================
+26. REFUND MONEY / CASH
+=======================
+
+Refund approval and financial payment are separate events.
+
+The application must eventually model the financial event explicitly.
+
+Example:
+
+Refund Approved
+→ Refund Payment Recorded
+→ Shift/Cash Ledger Updated
+→ Refund Completed
+
+Refund must affect financial reconciliation.
+
+The original sale must remain untouched.
+
+==================================================
+27. PRICE CONTROL
+=================
+
+CASHIER
+
+May use controlled discount/override authority.
+
+May NOT permanently change base retail price.
+
+MANAGER/OWNER
+
+May change permanent retail price according to role.
+
+CASHIER DISCOUNT
+
+May support:
+
+* percentage
+* fixed amount
+
+Maximum discount is Owner-configurable.
+
+Meaningful overrides require reason.
+
+PRICE HISTORY
+
+Store:
+
+old price
+new price
+actor
+timestamp
+reason
+
+Never destroy old price history.
+
+ACQUISITION COST
+
+Cashier cannot view acquisition cost/profit basis.
+
+Manager/Owner may view according to permission.
+
+==================================================
+28. SHIFTS
+==========
+
+FLOW
+
+Open Shift
+→ Starting Cash
+→ Work
+→ Close Shift
+→ Counted Cash
+→ Expected Cash
+→ Difference
+→ Confirm
+
+Starting cash is mandatory.
+
+Overlapping shifts for the same cashier are not allowed.
+
+Cash movement must be recorded for:
+
+* retail sales
+* seller payouts
+* pawn disbursements
+* refunds
+* other approved cash adjustments
+
+SHIFT CLOSE
+
+Difference must be calculated.
+
+A cashier may close with a difference, but explanation is required.
+
+Large differences may require Manager approval.
+
+Closed shifts are immutable.
+
+Reopening a closed shift requires Owner approval.
+
+==================================================
+29. CUSTOMER RULES
+==================
+
+Persistent Customer creation must be intentional.
+
+Do not automatically create persistent customers for anonymous retail buyers.
+
+Customer may contain:
+
+* identity details
+* mobile
+* alternate phone
+* pawn history
+* identified purchase history
+* service/warranty relationship
+
+Customer information must be access controlled.
+
+Phone normalization should support equivalent forms such as:
+
+0672054752
++27672054752
++27 67 205 4752
+
+internally normalizing them to the same value where appropriate.
+
+==================================================
+30. SEARCH / MATCHING
+=====================
+
+ONE MATCH
+
+Open directly.
+
+MULTIPLE POSSIBLE MATCHES
+
+Show candidate list.
+
+NO MATCH
+
+Offer creation.
+
+IDENTITY MATCHING
+
+ID/document number:
+Exact match.
+
+Phone:
+Normalized match.
+
+Serial/IMEI:
+Normalize for matching while retaining original displayed value.
+
+Never silently merge two different people.
+
+Never automatically merge seller/customer records based only on name.
+
+==================================================
+31. COMPLIANCE / SAPS
+=====================
+
+Compliance is part of the acquisition lifecycle.
+
+Applicable regulated acquisitions must have required compliance information before being treated as fully cleared retail stock.
+
+PENDING COMPLIANCE
+
+Allowed state for offline capture where operationally necessary.
+
+Item must not become normally sellable until required compliance is resolved.
+
+FAILED COMPLIANCE
+
+Quarantine.
+
+Compliance records:
+
+* cannot be deleted
+* cannot be silently overwritten
+* corrections become permanent history/addenda
+
+Every material compliance change must be auditable.
+
+==================================================
+32. AUDIT TRAIL
+===============
+
+Material business events must be audited.
+
+Minimum examples:
+
+SALE_CREATED
+REFUND_REQUESTED
+REFUND_APPROVED
+REFUND_REJECTED
+REFUND_PAID
+PRICE_CHANGED
+ITEM_CREATED
+ITEM_EDITED
+ITEM_STATUS_CHANGED
+ITEM_LOCATION_CHANGED
+SELLER_CREATED
+SELLER_TRANSACTION_CREATED
+SELLER_PAYMENT
+SELLER_RETURN
+PAWN_CREATED
+PAWN_PAYMENT
+PAWN_EXTENDED
+PAWN_REDEEMED
+PAWN_DEFAULTED
+PAWN_FORFEITED
+SHIFT_OPENED
+SHIFT_CLOSED
+STAFF_CREATED
+STAFF_DEACTIVATED
+STAFF_ROLE_CHANGED
+LOGIN
+LOGOUT
+COMPLIANCE_UPDATED
+SYNC_CONFLICT
+SYNC_FAILURE
+
+AUDIT RECORD
+
+Should contain where applicable:
+
+* actor_id
+* shop_id
+* timestamp
+* event_type
+* entity_id
+* old value
+* new value
+* reason
+* related transaction/reference
+
+Audit records are immutable.
+
+Owner cannot delete audit history through normal application UI.
+
+==================================================
+33. OFFLINE SYNC STATES
+=======================
+
+Use explicit states:
+
+Local Only
+Pending Sync
+Syncing
+Synced
+Failed
+Conflict
+
+NEVER:
+
+* pretend failed sync succeeded
+* delete business transaction because sync failed
+* silently overwrite cloud data
+* silently resolve important conflicts
+
+A failed sync record cannot be deleted by normal cashier users.
+
+Manager/Owner may resolve operational exceptions.
+
+==================================================
+34. IDEMPOTENCY
+===============
+
+Business operations must use stable globally unique identifiers.
+
+Every important operation must be retry-safe.
+
+Examples:
+
+* sale UUID
+* refund UUID
+* seller transaction UUID
+* pawn loan UUID
+* inventory UUID
+
+Retrying the same operation must NOT create a duplicate business transaction.
+
+==================================================
+35. AUTHENTICATION AND SESSION
+==============================
+
+Supabase authentication uses:
+
+* persistent browser session
+* automatic token refresh
+* proactive session validation
+* token refresh on expiry/near expiry
+* single in-flight refresh promise
+* retry-once after JWT expiry
+* session recovery on browser foreground/focus
+
+If session cannot be recovered:
+
+* safely sign out
+* show clear authentication message
+* do NOT display fake empty business data
+* do NOT delete local business data
+
+==================================================
+36. SECURITY
+============
+
+Frontend authorization is NOT sufficient.
+
+Sensitive operations must be protected by:
+
+1. UI permission
+2. Server authorization where applicable
+3. Supabase/RLS
+4. Database RPC/business-operation authorization
+5. Audit trail
+
+NEVER:
+
+* trust client-provided shop_id
+* trust client-provided role
+* use first active shop as fallback
+* use anon key as service-role substitute
+* expose service-role key in browser
+* use universal manager PIN
+* allow cross-shop business access
+* allow cashier to permanently alter controlled pricing
+* allow cashier to approve own refund
+* allow staff to create Owner/Admin via normal provisioning
+
+==================================================
+37. ERROR MESSAGES
+==================
+
+Do not expose raw database errors to normal cashiers.
+
+BAD:
+
+23505 duplicate key violation
+
+GOOD:
+
+"Item LM-000184 was already sold on another terminal."
+
+Errors should be:
+
+* clear
+* actionable
+* human
+* operationally accurate
+
+Do not hide real failures.
+
+Do not return an empty business dataset when the underlying cause is authentication failure.
+
+==================================================
+38. DATA RECOVERY RULE
+======================
+
+Cloud success + local failure:
+
+Cloud remains authoritative.
+
+Recover the accepted cloud transaction into local cache.
+
+Local success + cloud failure:
+
+Transaction remains local/pending according to allowed offline rules.
+
+Cloud conflict:
+
+Preserve transaction.
+
+Mark:
+
+Conflict
+
+Require management resolution.
+
+==================================================
+39. CASHIER UX PRINCIPLE
+========================
+
+LocalMarket is operational software.
+
+The cashier should feel:
+
+"I know exactly what to press."
+
+The application should:
+
+* reduce mental workload
+* minimize unnecessary fields
+* keep frequently used data local
+* make exceptions obvious
+* avoid technical jargon
+* keep compliance strict without adding unnecessary friction
+* show status clearly
+* prevent invalid operations before they become errors
+
+Do not add tutorials unless required.
+
+Use quiet contextual guidance.
+
+==================================================
+40. STATE MACHINES MUST BE CENTRALIZED
+======================================
+
+Do not implement business state rules independently in:
+
+* individual React components
+* screen-specific conditionals
+* unrelated contexts
+* API wrappers
+* sync code
+
+Use centralized business rules/state transition logic where practical.
+
+Database invariants must remain database-enforced for critical transactions.
+
+UI is responsible for usability.
+
+Database/server is responsible for authority.
+
+==================================================
+41. DEVELOPMENT RULE
+====================
+
+Before adding or changing functionality, AI Studio must ask:
+
+1. Which business entity does this modify?
+2. Which shop owns it?
+3. Which staff role is allowed?
+4. Is the operation online-only, offline-safe, or offline-captured?
+5. What is the valid state transition?
+6. What happens if it is attempted twice?
+7. What happens if the browser crashes?
+8. What happens if the network fails?
+9. What is recorded in the audit trail?
+10. What happens if another terminal changes the record simultaneously?
+
+Do not consider a feature complete until these questions have been addressed for material business operations.
+
+==================================================
+42. PRIORITY ORDER
+==================
+
+When requirements conflict, prioritize:
+
+1. Legal/compliance integrity
+2. Data integrity
+3. Security/shop isolation
+4. Financial correctness
+5. Inventory correctness
+6. Auditability
+7. Offline resilience
+8. Cashier speed
+9. Visual convenience
+
+Do not sacrifice transaction integrity merely to make a screen faster.
+
+==================================================
+43. FINAL NON-NEGOTIABLE RULE
+=============================
+
+A successful button click is NOT a successful business transaction.
+
+A transaction is successful only when the authoritative business operation has succeeded according to the appropriate online/offline rules.
+
+Every important transaction must be:
+
+* identifiable
+* durable
+* auditable
+* recoverable
+* retry-safe
+* shop-scoped
+* role-authorized
+
+END OF LOCALMARKET BUSINESS RULES & STATE MACHINE
