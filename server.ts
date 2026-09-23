@@ -373,21 +373,18 @@ async function startServer() {
         return res.status(400).json({ success: false, error: "PIN is required." });
       }
 
-      // Brute Force Protection
-      const now = new Date();
-      const lastAttempt = auth.profile.last_attempt_at ? new Date(auth.profile.last_attempt_at) : null;
-      const attempts = auth.profile.login_attempts || 0;
+      // 1. Atomic Brute Force Lockout Check
+      const { data: lockoutData, error: lockoutErr } = await adminSupabase.rpc('check_pin_lockout', {
+        p_user_id: auth.profile.id
+      });
 
-      if (attempts >= 5 && lastAttempt && (now.getTime() - lastAttempt.getTime() < 15 * 60 * 1000)) {
-        const remaining = Math.ceil(15 - (now.getTime() - lastAttempt.getTime()) / (60 * 1000));
-        return res.status(429).json({ success: false, error: `Too many failed attempts. Try again in ${remaining} minutes.` });
+      if (!lockoutErr && lockoutData && lockoutData.locked) {
+        return res.status(429).json({ success: false, error: `Too many failed attempts. Try again in ${lockoutData.remaining_minutes} minutes.` });
       }
-
-      const currentAttempts = (lastAttempt && (now.getTime() - lastAttempt.getTime() > 15 * 60 * 1000)) ? 0 : attempts;
 
       let isPinValid = false;
 
-      // 1. Check if caller profile has pin_hash set or legacy pin_code fallback
+      // 2. Verify PIN (pin_hash or legacy pin_code migration fallback)
       if (auth.profile.pin_hash) {
         isPinValid = verifyPinHash(pin, auth.profile.pin_hash);
       } else if (auth.profile.pin_code && String(auth.profile.pin_code) === String(pin)) {
@@ -399,28 +396,17 @@ async function startServer() {
         }).eq('id', auth.profile.id);
       }
 
-      // 2. Check if server-side MANAGER_PIN environment variable matches
-      if (!isPinValid && process.env.MANAGER_PIN && String(pin) === String(process.env.MANAGER_PIN)) {
-        isPinValid = true;
+      // 3. Atomically record attempt result
+      await adminSupabase.rpc('record_pin_attempt', {
+        p_user_id: auth.profile.id,
+        p_success: isPinValid
+      });
+
+      if (!isPinValid) {
+        return res.status(401).json({ success: false, error: "Invalid Manager PIN." });
       }
 
-      if (isPinValid) {
-        // Reset attempts on success
-        await adminSupabase.from('profiles').update({
-          login_attempts: 0,
-          last_attempt_at: null
-        }).eq('id', auth.profile.id);
-
-        return res.json({ success: true, authorizedRole: auth.profile.role });
-      }
-
-      // Increment attempts on failure
-      await adminSupabase.from('profiles').update({
-        login_attempts: currentAttempts + 1,
-        last_attempt_at: now.toISOString()
-      }).eq('id', auth.profile.id);
-
-      return res.status(401).json({ success: false, error: "Invalid Manager PIN." });
+      return res.json({ success: true, authorizedRole: auth.profile.role });
     } catch (err: any) {
       console.error("PIN verification error:", err);
       return res.status(500).json({ success: false, error: "Internal server error." });
@@ -456,19 +442,14 @@ async function startServer() {
         return res.status(403).json({ success: false, error: "Account is deactivated." });
       }
 
-      // 2. Rate Limiting / Brute Force Protection
-      const now = new Date();
-      const lastAttempt = profile.last_attempt_at ? new Date(profile.last_attempt_at) : null;
-      const attempts = profile.login_attempts || 0;
+      // 2. Atomic Brute Force Lockout Check
+      const { data: lockoutData, error: lockoutErr } = await adminSupabase.rpc('check_pin_lockout', {
+        p_user_id: profile.id
+      });
 
-      // Lockout logic: 5 attempts, 15 min lockout
-      if (attempts >= 5 && lastAttempt && (now.getTime() - lastAttempt.getTime() < 15 * 60 * 1000)) {
-        const remaining = Math.ceil(15 - (now.getTime() - lastAttempt.getTime()) / (60 * 1000));
-        return res.status(429).json({ success: false, error: `Too many failed attempts. Try again in ${remaining} minutes.` });
+      if (!lockoutErr && lockoutData && lockoutData.locked) {
+        return res.status(429).json({ success: false, error: `Too many failed attempts. Try again in ${lockoutData.remaining_minutes} minutes.` });
       }
-
-      // Reset attempts if last attempt was long ago
-      const currentAttempts = (lastAttempt && (now.getTime() - lastAttempt.getTime() > 15 * 60 * 1000)) ? 0 : attempts;
 
       // 3. Verify PIN
       let isPinValid = false;
@@ -483,23 +464,23 @@ async function startServer() {
         }).eq('id', profile.id);
       }
 
-      if (!isPinValid) {
-        await adminSupabase.from('profiles').update({
-          login_attempts: currentAttempts + 1,
-          last_attempt_at: now.toISOString()
-        }).eq('id', profile.id);
+      // 4. Atomically record attempt result
+      await adminSupabase.rpc('record_pin_attempt', {
+        p_user_id: profile.id,
+        p_success: isPinValid
+      });
 
+      if (!isPinValid) {
         return res.status(401).json({ success: false, error: "Invalid PIN." });
       }
 
-      // 4. Check Schedule Enforcement
+      // 5. Check Schedule Enforcement
       const scheduleCheck = verifyStaffSchedule(profile, profile.shop);
       if (!scheduleCheck.allowed) {
         return res.status(403).json({ success: false, error: scheduleCheck.error });
       }
 
-      // 5. Establish Real Supabase Session
-      // Generate a temporary random password and update user
+      // 6. Establish Real Supabase Session
       const tempPassword = crypto.randomBytes(16).toString('hex') + "A1!";
       const { error: updateAuthErr } = await adminSupabase.auth.admin.updateUserById(profile.id, {
         password: tempPassword
@@ -520,13 +501,6 @@ async function startServer() {
         console.error("Auth signin failed during PIN login:", signInErr);
         return res.status(500).json({ success: false, error: "Session establishment failed." });
       }
-
-      // Reset attempts on success
-      await adminSupabase.from('profiles').update({
-        login_attempts: 0,
-        last_attempt_at: null,
-        last_sign_in_at: now.toISOString()
-      }).eq('id', profile.id);
 
       // Audit login
       await logStaffAudit(adminSupabase, {
