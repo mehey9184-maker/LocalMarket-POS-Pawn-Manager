@@ -15,16 +15,102 @@ if (!fs.existsSync(UPLOAD_ROOT)) {
 }
 
 // Server-side Supabase Admin Client helper
-function getSupabaseServerClient() {
+// CRITICAL: MUST require SUPABASE_SERVICE_ROLE_KEY only. Never fall back to public anon key!
+function getSupabaseAdminClient() {
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !serviceKey) return null;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) {
+    return null;
+  }
   return createClient(supabaseUrl, serviceKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false
     }
   });
+}
+
+// Server-side Caller Authentication & Role Verification Helper
+async function authenticateCaller(req: express.Request): Promise<{
+  user?: any;
+  profile?: any;
+  status: number;
+  error?: string;
+}> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return {
+      status: 401,
+      error: "Missing or invalid Authorization header. Expected Bearer <supabase_access_token>."
+    };
+  }
+
+  const token = authHeader.split(" ")[1]?.trim();
+  if (!token) {
+    return {
+      status: 401,
+      error: "Bearer token is empty."
+    };
+  }
+
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !anonKey) {
+    return {
+      status: 503,
+      error: "Supabase connection is not configured on the server."
+    };
+  }
+
+  // Create user-scoped client with the caller's bearer token
+  const userClient = createClient(supabaseUrl, anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    }
+  });
+
+  const { data: authData, error: authError } = await userClient.auth.getUser(token);
+  if (authError || !authData?.user) {
+    return {
+      status: 401,
+      error: "Invalid, expired, or unverified session credentials."
+    };
+  }
+
+  const callerUser = authData.user;
+
+  // Fetch the authoritative profile for the caller
+  const { data: profile, error: profileError } = await userClient
+    .from("profiles")
+    .select("*")
+    .eq("id", callerUser.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    return {
+      status: 403,
+      error: "Authenticated user profile not found in database."
+    };
+  }
+
+  if (profile.is_active === false) {
+    return {
+      status: 403,
+      error: "User profile account is currently inactive."
+    };
+  }
+
+  return {
+    user: callerUser,
+    profile,
+    status: 200
+  };
 }
 
 /**
@@ -128,32 +214,110 @@ async function startServer() {
   app.use("/uploads", express.static(UPLOAD_ROOT));
 
   // --- API ROUTE: VERIFY MANAGER PIN ---
-  app.post("/api/verify-pin", (req, res) => {
-    const { pin } = req.body;
-    const MANAGER_PIN = process.env.MANAGER_PIN || "8419";
+  // Authenticates caller session and verifies owner/manager authorization
+  app.post("/api/verify-pin", async (req, res) => {
+    try {
+      const auth = await authenticateCaller(req);
+      if (auth.status !== 200) {
+        return res.status(auth.status).json({ success: false, error: auth.error || "Authentication required." });
+      }
 
-    if (pin && String(pin) === String(MANAGER_PIN)) {
-      return res.json({ success: true });
+      // Caller role must be manager or owner
+      if (auth.profile.role !== "owner" && auth.profile.role !== "manager") {
+        return res.status(403).json({ success: false, error: "Only authenticated managers or owners can access elevated operations." });
+      }
+
+      const { pin } = req.body;
+      if (!pin) {
+        return res.status(400).json({ success: false, error: "PIN is required." });
+      }
+
+      let isPinValid = false;
+
+      // 1. Check if caller profile has a specific pin_code set
+      if (auth.profile.pin_code && String(auth.profile.pin_code) === String(pin)) {
+        isPinValid = true;
+      }
+
+      // 2. Check if server-side MANAGER_PIN environment variable matches
+      if (!isPinValid && process.env.MANAGER_PIN && String(pin) === String(process.env.MANAGER_PIN)) {
+        isPinValid = true;
+      }
+
+      if (isPinValid) {
+        return res.json({ success: true, authorizedRole: auth.profile.role });
+      }
+
+      return res.status(401).json({ success: false, error: "Invalid Manager PIN for authenticated account." });
+    } catch (err: any) {
+      console.error("PIN verification error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Failed to verify PIN." });
     }
-
-    return res.status(401).json({ success: false, error: "Invalid Manager PIN" });
   });
 
   // --- API ROUTE: STAFF PROVISIONING (Real Auth User + Profile) ---
+  // Strictly authenticates caller, verifies owner/manager role, enforces shop isolation, and audits creation
   app.post("/api/staff/provision", async (req, res) => {
     try {
-      const { shopId, fullName, role, cashierCode, pinCode, email, password } = req.body;
-
-      if (!shopId) {
-        return res.status(400).json({ success: false, error: "shopId is required. Explicit shop assignment is mandatory." });
+      // 1. Authenticate caller
+      const auth = await authenticateCaller(req);
+      if (auth.status !== 200) {
+        return res.status(auth.status).json({ success: false, error: auth.error || "Authentication required." });
       }
+
+      const callerProfile = auth.profile;
+
+      // 2. Verify caller role is owner or manager
+      if (callerProfile.role !== "owner" && callerProfile.role !== "manager") {
+        return res.status(403).json({
+          success: false,
+          error: "Forbidden: Only authenticated Shop Owners and Managers can provision staff."
+        });
+      }
+
+      // 3. Verify caller has an assigned shop_id
+      if (!callerProfile.shop_id) {
+        return res.status(400).json({
+          success: false,
+          error: "Caller profile has no assigned shop branch."
+        });
+      }
+
+      const authoritativeShopId = callerProfile.shop_id;
+
+      // 4. Prevent cross-shop staff provisioning
+      if (req.body.shopId && req.body.shopId !== authoritativeShopId) {
+        return res.status(403).json({
+          success: false,
+          error: "Forbidden: Cross-shop staff provisioning is prohibited. You may only provision staff for your own assigned branch."
+        });
+      }
+
+      const { fullName, role, cashierCode, pinCode, email, password } = req.body;
+
       if (!fullName || !cashierCode || !role) {
-        return res.status(400).json({ success: false, error: "fullName, cashierCode, and role are required." });
+        return res.status(400).json({
+          success: false,
+          error: "fullName, cashierCode, and role are required."
+        });
       }
 
-      const supabase = getSupabaseServerClient();
-      if (!supabase) {
-        return res.status(503).json({ success: false, error: "Backend Supabase connection is not configured." });
+      // 5. Restrict allowed staff roles (Disallow creating owner or admin accounts)
+      const allowedRoles = ["cashier", "senior_cashier", "manager"];
+      if (!allowedRoles.includes(role)) {
+        return res.status(403).json({
+          success: false,
+          error: "Forbidden: Creating owner or admin accounts via standard staff provisioning is strictly forbidden."
+        });
+      }
+
+      // 6. Admin client verification (Service-Role Key only)
+      const adminSupabase = getSupabaseAdminClient();
+      if (!adminSupabase) {
+        return res.status(503).json({
+          success: false,
+          error: "Backend admin service-role key (SUPABASE_SERVICE_ROLE_KEY) is not configured on the server."
+        });
       }
 
       const staffEmail = email || `${cashierCode.toLowerCase().replace(/[^a-z0-9]/g, "")}@localmarketpos.co.za`;
@@ -161,73 +325,57 @@ async function startServer() {
 
       let userId: string | null = null;
 
-      // 1. Try to create Auth User using Admin API
-      if (supabase.auth?.admin) {
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-          email: staffEmail,
-          password: staffPassword,
-          email_confirm: true,
-          user_metadata: {
-            full_name: fullName,
-            fullName,
-            role,
-            shop_id: shopId,
-            cashier_code: cashierCode
-          }
-        });
-
-        if (authError) {
-          // If user already exists in auth, find or sign in
-          console.warn("Supabase auth.admin.createUser error, checking if user exists:", authError.message);
-          // Fallback to checking existing profile or standard signUp
-          const { data: existingProfile } = await supabase
-            .from("profiles")
-            .select("id")
-            .eq("cashier_code", cashierCode)
-            .maybeSingle();
-
-          if (existingProfile?.id) {
-            userId = existingProfile.id;
-          }
-        } else if (authData?.user?.id) {
-          userId = authData.user.id;
+      // 7. Create Auth User using Admin API
+      const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
+        email: staffEmail,
+        password: staffPassword,
+        email_confirm: true,
+        user_metadata: {
+          full_name: fullName,
+          role,
+          shop_id: authoritativeShopId,
+          cashier_code: cashierCode
         }
-      }
+      });
 
-      // 2. If admin API not available, try standard signUp
-      if (!userId) {
-        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-          email: staffEmail,
-          password: staffPassword,
-          options: {
-            data: {
-              full_name: fullName,
-              fullName,
-              role,
-              shop_id: shopId,
-              cashier_code: cashierCode
-            }
+      if (authError) {
+        // If user already exists in auth, check if profile exists
+        console.warn("Supabase auth.admin.createUser note:", authError.message);
+        const { data: existingProfile } = await adminSupabase
+          .from("profiles")
+          .select("id, shop_id")
+          .eq("cashier_code", cashierCode)
+          .maybeSingle();
+
+        if (existingProfile?.id) {
+          if (existingProfile.shop_id && existingProfile.shop_id !== authoritativeShopId) {
+            return res.status(403).json({
+              success: false,
+              error: "Cashier code already belongs to another shop branch."
+            });
           }
-        });
-
-        if (signUpErr && !(signUpData as any)?.user?.id) {
-          console.warn("Supabase signUp warning:", signUpErr.message);
-        } else if ((signUpData as any)?.user?.id) {
-          userId = (signUpData as any).user.id;
+          userId = existingProfile.id;
+        } else {
+          return res.status(400).json({
+            success: false,
+            error: `Auth user creation failed: ${authError.message}`
+          });
         }
+      } else if (authData?.user?.id) {
+        userId = authData.user.id;
       }
 
       if (!userId) {
         return res.status(400).json({
           success: false,
-          error: "Could not create authenticated user account for staff member."
+          error: "Could not create or locate authenticated user account for staff member."
         });
       }
 
-      // 3. Upsert Profile record in profiles table
+      // 8. Upsert Profile record in profiles table
       const profilePayload = {
         id: userId,
-        shop_id: shopId,
+        shop_id: authoritativeShopId,
         email: staffEmail,
         full_name: fullName,
         role: role,
@@ -237,7 +385,7 @@ async function startServer() {
         updated_at: new Date().toISOString()
       };
 
-      const { data: profileRow, error: profileErr } = await supabase
+      const { data: profileRow, error: profileErr } = await adminSupabase
         .from("profiles")
         .upsert(profilePayload, { onConflict: "id" })
         .select()
@@ -245,6 +393,26 @@ async function startServer() {
 
       if (profileErr) {
         return res.status(400).json({ success: false, error: profileErr.message });
+      }
+
+      // 9. Write audit log for staff provisioning
+      try {
+        await adminSupabase.from("system_logs").insert({
+          shop_id: authoritativeShopId,
+          event_type: "STAFF_PROVISIONED",
+          severity: "audit",
+          actor_id: callerProfile.id,
+          actor_name: callerProfile.full_name || "Manager",
+          details: {
+            created_user_id: userId,
+            created_user_role: role,
+            cashier_code: cashierCode,
+            shop_id: authoritativeShopId,
+            timestamp: new Date().toISOString()
+          }
+        });
+      } catch (logErr: any) {
+        console.warn("Audit log creation error (non-blocking):", logErr.message);
       }
 
       return res.json({
@@ -264,15 +432,21 @@ async function startServer() {
   // --- API ROUTE: SECURE IMAGE UPLOAD (Backblaze B2 with local fallback) ---
   app.post("/api/storage/upload", async (req, res) => {
     try {
-      const { image, shopId = "SHOP-SOW-01", itemId = "item-01" } = req.body;
+      // Authenticate caller to enforce shop isolation
+      const auth = await authenticateCaller(req);
+      if (auth.status !== 200) {
+        return res.status(auth.status).json({ error: auth.error || "Authentication required to upload assets." });
+      }
+
+      const safeShopId = (auth.profile.shop_id || "general").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const { image, itemId = "item-01" } = req.body;
 
       if (!image || typeof image !== "string") {
         return res.status(400).json({ error: "No image payload provided" });
       }
 
-      // Sanitize shopId and itemId to prevent path traversal
-      const safeShopId = shopId.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const safeItemId = itemId.replace(/[^a-zA-Z0-9_-]/g, "_");
+      // Sanitize itemId to prevent path traversal
+      const safeItemId = String(itemId).replace(/[^a-zA-Z0-9_-]/g, "_");
       const imageId = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 
       let buffer: Buffer;
@@ -324,11 +498,29 @@ async function startServer() {
   });
 
   // --- API ROUTE: DELETE IMAGE ---
-  app.post("/api/storage/delete", (req, res) => {
+  app.post("/api/storage/delete", async (req, res) => {
     try {
+      // Authenticate caller to enforce shop isolation
+      const auth = await authenticateCaller(req);
+      if (auth.status !== 200) {
+        return res.status(auth.status).json({ error: auth.error || "Authentication required." });
+      }
+
       const { storageKey } = req.body;
       if (!storageKey || typeof storageKey !== "string") {
         return res.status(400).json({ error: "Invalid storage key" });
+      }
+
+      const safeShopId = (auth.profile.shop_id || "").replace(/[^a-zA-Z0-9_-]/g, "_");
+
+      // Verify that caller's shop matches the path (unless admin or owner)
+      if (
+        safeShopId &&
+        !storageKey.includes(safeShopId) &&
+        auth.profile.role !== "owner" &&
+        auth.profile.role !== "admin"
+      ) {
+        return res.status(403).json({ error: "Forbidden: Cannot delete storage files from another shop." });
       }
 
       // Check local file

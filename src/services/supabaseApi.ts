@@ -1148,10 +1148,17 @@ export const staffApi = {
     pinCode?: string;
   }): Promise<{ success: boolean; profile?: ProfileRow; error?: string }> {
     try {
+      const session = await authApi.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        return { success: false, error: 'Authentication required. Please sign in with an authorized Manager or Owner account.' };
+      }
+
       const response = await fetch('/api/staff/provision', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(params)
       });

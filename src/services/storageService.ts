@@ -8,6 +8,8 @@
  * Uploads are mediated by `/api/storage/upload`.
  */
 
+import { authApi } from './supabaseApi';
+
 export interface StorageUploadResult {
   imageUrl: string;
   storageKey: string;
@@ -21,7 +23,7 @@ export const storageService = {
    */
   async uploadItemImage(
     fileOrDataUrl: File | Blob | string,
-    shopId: string = 'SHOP-SOW-01',
+    shopId?: string,
     itemId: string = `item-${Date.now()}`,
     fileName?: string
   ): Promise<StorageUploadResult> {
@@ -40,12 +42,18 @@ export const storageService = {
         });
       }
 
+      const session = await authApi.getSession();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
       // Call secure server-side upload proxy
       const response = await fetch('/api/storage/upload', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           image: base64Payload,
           shopId,
@@ -71,7 +79,7 @@ export const storageService = {
       if (typeof fileOrDataUrl === 'string') {
         return {
           imageUrl: fileOrDataUrl,
-          storageKey: `local/${shopId}/${itemId}.jpg`,
+          storageKey: `local/${shopId || 'offline'}/${itemId}.jpg`,
         };
       }
       return {
@@ -88,11 +96,17 @@ export const storageService = {
     if (!storageKey || storageKey.startsWith('fallback/')) return true;
 
     try {
+      const session = await authApi.getSession();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
       const response = await fetch('/api/storage/delete', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({ storageKey }),
       });
 
