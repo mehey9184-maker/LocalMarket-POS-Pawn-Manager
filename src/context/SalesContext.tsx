@@ -1,11 +1,11 @@
-import React, { createContext, useContext, useMemo, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { SaleTransaction, CartItem, RefundRequest, RefundStatus, PaymentMethod, ReceiptDelivery } from '../types';
 import Fuse from 'fuse.js';
 import { useSync } from './SyncContext';
 import { useAuth } from './AuthContext';
-import { salesApi, refundsApi, isSupabaseConfigured } from '../services/supabaseApi';
+import { salesApi, refundsApi, isSupabaseConfigured, getValidSupabaseSession, isAuthExpiryError } from '../services/supabaseApi';
 
 interface SalesContextType {
   salesHistory: SaleTransaction[];
@@ -53,24 +53,59 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const localRefunds = useLiveQuery(() => db.refundRequests.orderBy('createdAt').reverse().toArray()) || [];
   const [remoteRefunds, setRemoteRefunds] = useState<RefundRequest[]>([]);
 
-  // Fetch remote refund requests when online
+  // In-flight refresh deduplication ref
+  const inFlightRefundRefreshRef = useRef<Promise<void> | null>(null);
+
+  // Fetch remote refund requests when online and authenticated
   const refreshRemoteRefunds = useCallback(async () => {
-    if (isOnline && isSupabaseConfigured()) {
+    if (!isOnline || !isSupabaseConfigured() || !user) {
+      return;
+    }
+
+    if (inFlightRefundRefreshRef.current) {
+      return inFlightRefundRefreshRef.current;
+    }
+
+    const task = (async () => {
       try {
+        const session = await getValidSupabaseSession();
+        if (!session) {
+          return;
+        }
+
         const fetched = await refundsApi.getRefundRequests(shopId || undefined);
         setRemoteRefunds(fetched);
         // Upsert into local Dexie for offline cache
         for (const req of fetched) {
           await db.refundRequests.put(req);
         }
-      } catch (err) {
-        console.warn('Could not refresh remote refund requests:', err);
+      } catch (err: any) {
+        if (!isAuthExpiryError(err)) {
+          console.warn('Remote refund refresh notice:', err?.message || err);
+        }
+      } finally {
+        inFlightRefundRefreshRef.current = null;
       }
-    }
-  }, [isOnline, shopId]);
+    })();
+
+    inFlightRefundRefreshRef.current = task;
+    return task;
+  }, [isOnline, shopId, user]);
 
   useEffect(() => {
     refreshRemoteRefunds();
+
+    // Listen for session recovery / token refreshed event
+    const handleSessionRecovered = () => {
+      refreshRemoteRefunds();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('lm_session_recovered', handleSessionRecovered);
+      return () => {
+        window.removeEventListener('lm_session_recovered', handleSessionRecovered);
+      };
+    }
   }, [refreshRemoteRefunds]);
 
   // Combine and deduplicate refund requests

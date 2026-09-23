@@ -1,5 +1,18 @@
-import { getSupabase, isSupabaseConfigured } from './supabase';
-export { isSupabaseConfigured };
+import { 
+  getSupabase, 
+  isSupabaseConfigured, 
+  getValidSupabaseSession, 
+  refreshSupabaseSession, 
+  isAuthExpiryError, 
+  withAuthRecovery 
+} from './supabase';
+export { 
+  isSupabaseConfigured, 
+  getValidSupabaseSession, 
+  refreshSupabaseSession, 
+  isAuthExpiryError, 
+  withAuthRecovery 
+};
 import { 
   Database, 
   ProfileRow, 
@@ -95,12 +108,11 @@ export const authApi = {
   },
 
   async getSession() {
-    const supabase = getSupabase();
-    if (!supabase) return null;
+    return await getValidSupabaseSession();
+  },
 
-    const { data, error } = await supabase.auth.getSession();
-    if (error) throw error;
-    return data.session;
+  async refreshSession() {
+    return await refreshSupabaseSession();
   },
 
   async getUser() {
@@ -123,12 +135,12 @@ export const authApi = {
     });
   },
 
-  onAuthStateChange(callback: (session: any) => void) {
+  onAuthStateChange(callback: (event: string, session: any) => void) {
     const supabase = getSupabase();
     if (!supabase) return { unsubscribe: () => {} };
 
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      callback(session);
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      callback(event, session);
     });
 
     return {
@@ -218,30 +230,32 @@ export const shopProfilesApi = {
 // ==========================================
 export const profilesApi = {
   async getProfiles(): Promise<ProfileRow[]> {
-    const supabase = getSupabase();
-    if (!supabase) return [];
+    return await withAuthRecovery(async (supabase) => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: true });
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: true });
-
-    if (error) throw error;
-    return data || [];
+      if (error) throw error;
+      return data || [];
+    });
   },
 
   async getProfileById(id: string): Promise<ProfileRow | null> {
-    const supabase = getSupabase();
-    if (!supabase) return null;
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', id)
+          .single();
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (error) return null;
-    return data;
+        if (error) return null;
+        return data;
+      });
+    } catch {
+      return null;
+    }
   },
 
   async getCurrentProfile(): Promise<ProfileRow | null> {
@@ -406,19 +420,22 @@ export const shopItemsApi = {
   },
 
   async changeRetailPriceRpc(itemId: string, newPrice: number, reason?: string): Promise<{ success: boolean; error?: string }> {
-    const supabase = getSupabase();
-    if (!supabase) return { success: false, error: 'Supabase is not configured' };
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { error } = await supabase.rpc('change_retail_price', {
+          p_item_id: itemId,
+          p_new_price: newPrice,
+          p_reason: reason || 'Price updated by authorized user'
+        });
 
-    const { error } = await supabase.rpc('change_retail_price', {
-      p_item_id: itemId,
-      p_new_price: newPrice,
-      p_reason: reason || 'Price updated by authorized user'
-    });
-
-    if (error) {
-      return { success: false, error: error.message };
+        if (error) {
+          return { success: false, error: error.message };
+        }
+        return { success: true };
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to update retail price.' };
     }
-    return { success: true };
   },
 
   mapRowToInventoryItem(row: ShopItemRow): InventoryItem {
@@ -510,23 +527,22 @@ export const customersApi = {
     limit?: number;
     sinceTimestamp?: string;
   }): Promise<CustomerRow[]> {
-    const supabase = getSupabase();
-    if (!supabase) return [];
+    return await withAuthRecovery(async (supabase) => {
+      let query = supabase.from('customers').select('*');
 
-    let query = supabase.from('customers').select('*');
+      if (options?.shopId) query = query.eq('shop_id', options.shopId);
+      if (options?.sinceTimestamp) query = query.gt('updated_at', options.sinceTimestamp);
+      if (options?.search) {
+        query = query.or(`full_name.ilike.%${options.search}%,id_number.ilike.%${options.search}%,mobile.ilike.%${options.search}%`);
+      }
 
-    if (options?.shopId) query = query.eq('shop_id', options.shopId);
-    if (options?.sinceTimestamp) query = query.gt('updated_at', options.sinceTimestamp);
-    if (options?.search) {
-      query = query.or(`full_name.ilike.%${options.search}%,id_number.ilike.%${options.search}%,mobile.ilike.%${options.search}%`);
-    }
+      query = query.order('full_name', { ascending: true });
+      if (options?.limit) query = query.limit(options.limit);
 
-    query = query.order('full_name', { ascending: true });
-    if (options?.limit) query = query.limit(options.limit);
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    });
   },
 
   async getCustomerById(id: string): Promise<CustomerRow | null> {
@@ -613,23 +629,22 @@ export const sellersApi = {
     limit?: number;
     sinceTimestamp?: string;
   }): Promise<SellerRow[]> {
-    const supabase = getSupabase();
-    if (!supabase) return [];
+    return await withAuthRecovery(async (supabase) => {
+      let query = supabase.from('sellers').select('*');
 
-    let query = supabase.from('sellers').select('*');
+      if (options?.shopId) query = query.eq('shop_id', options.shopId);
+      if (options?.sinceTimestamp) query = query.gt('updated_at', options.sinceTimestamp);
+      if (options?.search) {
+        query = query.or(`full_name.ilike.%${options.search}%,id_number.ilike.%${options.search}%,mobile.ilike.%${options.search}%`);
+      }
 
-    if (options?.shopId) query = query.eq('shop_id', options.shopId);
-    if (options?.sinceTimestamp) query = query.gt('updated_at', options.sinceTimestamp);
-    if (options?.search) {
-      query = query.or(`full_name.ilike.%${options.search}%,id_number.ilike.%${options.search}%,mobile.ilike.%${options.search}%`);
-    }
+      query = query.order('created_at', { ascending: false });
+      if (options?.limit) query = query.limit(options.limit);
 
-    query = query.order('created_at', { ascending: false });
-    if (options?.limit) query = query.limit(options.limit);
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    });
   },
 
   async getSellerById(id: string): Promise<SellerRow | null> {
@@ -799,22 +814,21 @@ export const pawnLoansApi = {
     limit?: number;
     sinceTimestamp?: string;
   }): Promise<PawnLoanRow[]> {
-    const supabase = getSupabase();
-    if (!supabase) return [];
+    return await withAuthRecovery(async (supabase) => {
+      let query = supabase.from('pawn_loans').select('*');
 
-    let query = supabase.from('pawn_loans').select('*');
+      if (options?.shopId) query = query.eq('shop_id', options.shopId);
+      if (options?.customerId) query = query.eq('customer_id', options.customerId);
+      if (options?.status && options.status !== 'All') query = query.eq('status', options.status as any);
+      if (options?.sinceTimestamp) query = query.gt('updated_at', options.sinceTimestamp);
 
-    if (options?.shopId) query = query.eq('shop_id', options.shopId);
-    if (options?.customerId) query = query.eq('customer_id', options.customerId);
-    if (options?.status && options.status !== 'All') query = query.eq('status', options.status as any);
-    if (options?.sinceTimestamp) query = query.gt('updated_at', options.sinceTimestamp);
+      query = query.order('expiry_date', { ascending: true });
+      if (options?.limit) query = query.limit(options.limit);
 
-    query = query.order('expiry_date', { ascending: true });
-    if (options?.limit) query = query.limit(options.limit);
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    });
   },
 
   async getLoanByTicket(ticketNumber: string): Promise<PawnLoanRow | null> {
@@ -922,20 +936,19 @@ export const salesApi = {
     limit?: number;
     sinceTimestamp?: string;
   }): Promise<SaleRow[]> {
-    const supabase = getSupabase();
-    if (!supabase) return [];
+    return await withAuthRecovery(async (supabase) => {
+      let query = supabase.from('sales').select('*');
 
-    let query = supabase.from('sales').select('*');
+      if (options?.shopId) query = query.eq('shop_id', options.shopId);
+      if (options?.sinceTimestamp) query = query.gt('created_at', options.sinceTimestamp);
 
-    if (options?.shopId) query = query.eq('shop_id', options.shopId);
-    if (options?.sinceTimestamp) query = query.gt('created_at', options.sinceTimestamp);
+      query = query.order('timestamp', { ascending: false });
+      if (options?.limit) query = query.limit(options.limit);
 
-    query = query.order('timestamp', { ascending: false });
-    if (options?.limit) query = query.limit(options.limit);
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    });
   },
 
   async getSaleByReceiptNumber(receiptNumber: string): Promise<SaleRow | null> {
@@ -973,29 +986,32 @@ export const salesApi = {
     customerMobile?: string;
     cashier: string;
   }): Promise<{ success: boolean; data?: any; error?: string }> {
-    const supabase = getSupabase();
-    if (!supabase) return { success: false, error: 'Supabase is not configured' };
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { data, error } = await supabase.rpc('complete_retail_sale', {
+          p_sale_id: params.saleId,
+          p_receipt_number: params.receiptNumber,
+          p_shop_id: params.shopId,
+          p_items: params.items,
+          p_subtotal: params.subtotal,
+          p_vat_amount: params.vatAmount,
+          p_total: params.total,
+          p_tender_method: params.tenderMethod,
+          p_amount_tendered: params.amountTendered,
+          p_change: params.change,
+          p_receipt_type: params.receiptType,
+          p_customer_mobile: params.customerMobile || null,
+          p_cashier: params.cashier
+        });
 
-    const { data, error } = await supabase.rpc('complete_retail_sale', {
-      p_sale_id: params.saleId,
-      p_receipt_number: params.receiptNumber,
-      p_shop_id: params.shopId,
-      p_items: params.items,
-      p_subtotal: params.subtotal,
-      p_vat_amount: params.vatAmount,
-      p_total: params.total,
-      p_tender_method: params.tenderMethod,
-      p_amount_tendered: params.amountTendered,
-      p_change: params.change,
-      p_receipt_type: params.receiptType,
-      p_customer_mobile: params.customerMobile || null,
-      p_cashier: params.cashier
-    });
-
-    if (error) {
-      return { success: false, error: error.message };
+        if (error) {
+          return { success: false, error: error.message };
+        }
+        return { success: true, data };
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Checkout failed.' };
     }
-    return { success: true, data };
   },
 
   mapSaleToRow(sale: SaleTransaction, shopId?: string): Database['public']['Tables']['sales']['Insert'] {
@@ -1044,16 +1060,15 @@ export const salesApi = {
 // ==========================================
 export const refundsApi = {
   async getRefundRequests(shopId?: string): Promise<RefundRequest[]> {
-    const supabase = getSupabase();
-    if (!supabase) return [];
+    return await withAuthRecovery(async (supabase) => {
+      let query = supabase.from('refund_requests').select('*');
+      if (shopId) query = query.eq('shop_id', shopId);
+      query = query.order('created_at', { ascending: false });
 
-    let query = supabase.from('refund_requests').select('*');
-    if (shopId) query = query.eq('shop_id', shopId);
-    query = query.order('created_at', { ascending: false });
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return (data || []).map(this.mapRowToRefundRequest);
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data || []).map(this.mapRowToRefundRequest);
+    });
   },
 
   async requestRefund(params: {
@@ -1063,21 +1078,24 @@ export const refundsApi = {
     refundAmount: number;
     reason: string;
   }): Promise<{ success: boolean; refundId?: string; error?: string }> {
-    const supabase = getSupabase();
-    if (!supabase) return { success: false, error: 'Supabase is not configured' };
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { data, error } = await supabase.rpc('request_refund', {
+          p_receipt_number: params.receiptNumber,
+          p_item_id: params.itemId,
+          p_quantity: params.quantity,
+          p_refund_amount: params.refundAmount,
+          p_reason: params.reason
+        });
 
-    const { data, error } = await supabase.rpc('request_refund', {
-      p_receipt_number: params.receiptNumber,
-      p_item_id: params.itemId,
-      p_quantity: params.quantity,
-      p_refund_amount: params.refundAmount,
-      p_reason: params.reason
-    });
-
-    if (error) {
-      return { success: false, error: error.message };
+        if (error) {
+          return { success: false, error: error.message };
+        }
+        return { success: true, refundId: (data as any)?.refund_id };
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Refund request failed' };
     }
-    return { success: true, refundId: (data as any)?.refund_id };
   },
 
   async approveRefund(params: {
@@ -1085,19 +1103,22 @@ export const refundsApi = {
     approved: boolean;
     note?: string;
   }): Promise<{ success: boolean; error?: string }> {
-    const supabase = getSupabase();
-    if (!supabase) return { success: false, error: 'Supabase is not configured' };
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { data, error } = await supabase.rpc('approve_refund', {
+          p_refund_id: params.refundId,
+          p_approved: params.approved,
+          p_note: params.note || null
+        });
 
-    const { data, error } = await supabase.rpc('approve_refund', {
-      p_refund_id: params.refundId,
-      p_approved: params.approved,
-      p_note: params.note || null
-    });
-
-    if (error) {
-      return { success: false, error: error.message };
+        if (error) {
+          return { success: false, error: error.message };
+        }
+        return { success: true };
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Refund approval failed' };
     }
-    return { success: true };
   },
 
   mapRowToRefundRequest(row: RefundRequestRow): RefundRequest {
@@ -1184,20 +1205,19 @@ export const sapsApi = {
     limit?: number;
     sinceTimestamp?: string;
   }): Promise<SapsEntryRow[]> {
-    const supabase = getSupabase();
-    if (!supabase) return [];
+    return await withAuthRecovery(async (supabase) => {
+      let query = supabase.from('saps_entries').select('*');
 
-    let query = supabase.from('saps_entries').select('*');
+      if (options?.shopId) query = query.eq('shop_id', options.shopId);
+      if (options?.sinceTimestamp) query = query.gt('created_at', options.sinceTimestamp);
 
-    if (options?.shopId) query = query.eq('shop_id', options.shopId);
-    if (options?.sinceTimestamp) query = query.gt('created_at', options.sinceTimestamp);
+      query = query.order('timestamp', { ascending: false });
+      if (options?.limit) query = query.limit(options.limit);
 
-    query = query.order('timestamp', { ascending: false });
-    if (options?.limit) query = query.limit(options.limit);
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    });
   },
 
   async getEntryByNumber(entryNumber: string): Promise<SapsEntryRow | null> {
@@ -1289,22 +1309,21 @@ export const sapsApi = {
 // ==========================================
 export const logsApi = {
   async getLogs(limit = 50, eventType?: string): Promise<SystemLogRow[]> {
-    const supabase = getSupabase();
-    if (!supabase) return [];
+    return await withAuthRecovery(async (supabase) => {
+      let query = supabase
+        .from('system_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit);
 
-    let query = supabase
-      .from('system_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+      if (eventType) {
+        query = query.eq('event_type', eventType);
+      }
 
-    if (eventType) {
-      query = query.eq('event_type', eventType);
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    });
   },
 
   async createLog(

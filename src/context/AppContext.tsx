@@ -302,7 +302,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }).catch(() => {});
 
-      const authListener = authApi.onAuthStateChange((session) => {
+      const authListener = authApi.onAuthStateChange((_event, session) => {
         setSupabaseUser(session?.user ?? null);
         if (session?.user) {
           profilesApi.getProfileById(session.user.id).then(setCurrentUserProfile).catch(() => {});

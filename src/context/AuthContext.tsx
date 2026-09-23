@@ -50,6 +50,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    let lastFocusCheck = 0;
+
     // Check initial session
     const initAuth = async () => {
       try {
@@ -69,20 +71,100 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initAuth();
 
-    // Listen for auth changes
-    const { unsubscribe } = authApi.onAuthStateChange(async (newSession) => {
-      setSession(newSession);
-      const newUser = newSession?.user ?? null;
-      setUser(newUser);
-      if (newUser?.id) {
-        await fetchProfile(newUser.id);
-      } else {
-        setProfile(null);
-        setManagerElevation(false);
+    // Listen for auth changes (Synchronous callback to satisfy Supabase contract)
+    const { unsubscribe } = authApi.onAuthStateChange((event, newSession) => {
+      switch (event) {
+        case 'INITIAL_SESSION':
+        case 'SIGNED_IN': {
+          setSession(newSession);
+          const newUser = newSession?.user ?? null;
+          setUser(newUser);
+          if (newUser?.id) {
+            // Schedule non-blocking profile fetch
+            setTimeout(() => {
+              fetchProfile(newUser.id);
+            }, 0);
+          }
+          break;
+        }
+        case 'TOKEN_REFRESHED': {
+          setSession(newSession);
+          const newUser = newSession?.user ?? null;
+          if (newUser) {
+            setUser(newUser);
+          }
+          // Notify dependent components that a fresh valid token is available
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('lm_session_recovered'));
+          }
+          break;
+        }
+        case 'USER_UPDATED': {
+          setSession(newSession);
+          const newUser = newSession?.user ?? null;
+          setUser(newUser);
+          if (newUser?.id) {
+            setTimeout(() => {
+              fetchProfile(newUser.id);
+            }, 0);
+          }
+          break;
+        }
+        case 'SIGNED_OUT': {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setManagerElevation(false);
+          break;
+        }
+        default: {
+          if (newSession) {
+            setSession(newSession);
+            setUser(newSession.user);
+          }
+          break;
+        }
       }
     });
 
-    return () => unsubscribe();
+    // Foreground / visibility change handler
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        const validSession = await authApi.getSession();
+        if (validSession) {
+          setSession(validSession);
+          setUser(validSession.user);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('lm_session_recovered'));
+          }
+        }
+      }
+    };
+
+    // Throttled window focus handler
+    const handleWindowFocus = async () => {
+      const now = Date.now();
+      if (now - lastFocusCheck < 10000) return; // At most once every 10 seconds
+      lastFocusCheck = now;
+
+      const validSession = await authApi.getSession();
+      if (validSession) {
+        setSession(validSession);
+        setUser(validSession.user);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('lm_session_recovered'));
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
   }, []);
 
   const rawRole = (profile?.role || 'cashier') as UserRole;

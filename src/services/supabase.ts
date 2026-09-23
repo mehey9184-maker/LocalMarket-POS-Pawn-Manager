@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, Session } from '@supabase/supabase-js';
 
 // Read from localStorage (user UI entry) first, then fallback to Vite environment variables
 export const getActiveSupabaseUrl = (): string => {
@@ -31,6 +31,9 @@ export const isSupabaseConfigured = (): boolean => {
 // Client instance cache
 let clientInstance: SupabaseClient<any> | null = null;
 
+// Mutex / in-flight promise for concurrent session refreshes
+let inFlightRefreshPromise: Promise<Session | null> | null = null;
+
 export const getSupabase = (): SupabaseClient<any> | null => {
   if (!isSupabaseConfigured()) {
     return null;
@@ -49,6 +52,127 @@ export const getSupabase = (): SupabaseClient<any> | null => {
   }
   
   return clientInstance;
+};
+
+/**
+ * Checks if an error returned by PostgREST or Supabase indicates an expired/invalid JWT or 401 auth error.
+ */
+export const isAuthExpiryError = (error: any): boolean => {
+  if (!error) return false;
+  const code = String(error.code || error.statusCode || error.status || '');
+  const msg = String(error.message || error.error_description || error.error || '').toLowerCase();
+  return (
+    code === 'PGRST303' ||
+    code === '401' ||
+    code === 'PGRST301' ||
+    msg.includes('jwt expired') ||
+    msg.includes('invalid jwt') ||
+    msg.includes('token expired') ||
+    msg.includes('expired token') ||
+    msg.includes('unauthorized') ||
+    msg.includes('pgrst303')
+  );
+};
+
+/**
+ * Refreshes the Supabase auth session.
+ * Uses an in-flight promise to prevent racing concurrent refresh requests.
+ */
+export const refreshSupabaseSession = async (): Promise<Session | null> => {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  if (inFlightRefreshPromise) {
+    return inFlightRefreshPromise;
+  }
+
+  inFlightRefreshPromise = (async () => {
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) {
+        // If refresh token is revoked or invalid, do not loop
+        console.warn('Supabase session refresh note:', error.message);
+        return null;
+      }
+      return data?.session ?? null;
+    } catch (err: any) {
+      console.warn('Supabase refreshSession exception:', err?.message);
+      return null;
+    } finally {
+      inFlightRefreshPromise = null;
+    }
+  })();
+
+  return inFlightRefreshPromise;
+};
+
+/**
+ * Returns the currently valid Supabase session.
+ * If the session is missing, returns null.
+ * If the session is expired or within 60s of expiring, safely refreshes it using a mutex.
+ */
+export const getValidSupabaseSession = async (): Promise<Session | null> => {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data?.session) {
+      return null;
+    }
+
+    const session = data.session;
+    // Check if expires within 60 seconds (expires_at is in seconds since epoch)
+    const expiresAtMs = session.expires_at ? session.expires_at * 1000 : 0;
+    const nowMs = Date.now();
+    const isExpiringSoon = expiresAtMs > 0 && expiresAtMs - nowMs < 60000;
+
+    if (isExpiringSoon) {
+      const refreshed = await refreshSupabaseSession();
+      return refreshed || session;
+    }
+
+    return session;
+  } catch (err) {
+    console.warn('Error reading Supabase session:', err);
+    return null;
+  }
+};
+
+/**
+ * Authenticated Request Recovery Wrapper
+ * 1. Obtains a valid session.
+ * 2. Executes request.
+ * 3. If PGRST303 or JWT expired error occurs, refreshes session once and retries exactly once.
+ * 4. Never returns silent empty arrays on auth errors.
+ */
+export const withAuthRecovery = async <T>(
+  operation: (supabase: SupabaseClient<any>, session: Session) => Promise<T>
+): Promise<T> => {
+  const supabase = getSupabase();
+  if (!supabase) {
+    throw new Error('Supabase is not configured.');
+  }
+
+  const session = await getValidSupabaseSession();
+  if (!session) {
+    throw new Error('Authentication required: No active session.');
+  }
+
+  try {
+    return await operation(supabase, session);
+  } catch (err: any) {
+    if (isAuthExpiryError(err)) {
+      // Refresh session once
+      const refreshedSession = await refreshSupabaseSession();
+      if (!refreshedSession) {
+        throw new Error('Session expired. Please sign in again.');
+      }
+      // Retry once with refreshed session
+      return await operation(supabase, refreshedSession);
+    }
+    throw err;
+  }
 };
 
 export const saveSupabaseCredentials = (url: string, anonKey: string): void => {
