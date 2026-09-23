@@ -1,4 +1,5 @@
 import { getSupabase, isSupabaseConfigured } from './supabase';
+export { isSupabaseConfigured };
 import { 
   Database, 
   ProfileRow, 
@@ -9,6 +10,7 @@ import {
   SellerTransactionRow,
   PawnLoanRow,
   SaleRow,
+  RefundRequestRow,
   SapsEntryRow,
   SystemLogRow, 
   UserRole 
@@ -20,6 +22,7 @@ import {
   SellerTransaction, 
   PawnLoan, 
   SaleTransaction, 
+  RefundRequest,
   SapsEntry 
 } from '../types';
 
@@ -400,6 +403,22 @@ export const shopItemsApi = {
       .eq('id', id);
 
     if (error) throw error;
+  },
+
+  async changeRetailPriceRpc(itemId: string, newPrice: number, reason?: string): Promise<{ success: boolean; error?: string }> {
+    const supabase = getSupabase();
+    if (!supabase) return { success: false, error: 'Supabase is not configured' };
+
+    const { error } = await supabase.rpc('change_retail_price', {
+      p_item_id: itemId,
+      p_new_price: newPrice,
+      p_reason: reason || 'Price updated by authorized user'
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
   },
 
   mapRowToInventoryItem(row: ShopItemRow): InventoryItem {
@@ -939,6 +958,46 @@ export const salesApi = {
     if (error) throw error;
   },
 
+  async completeRetailSaleRpc(params: {
+    saleId: string;
+    receiptNumber: string;
+    shopId: string;
+    items: any[];
+    subtotal: number;
+    vatAmount: number;
+    total: number;
+    tenderMethod: string;
+    amountTendered: number;
+    change: number;
+    receiptType: string;
+    customerMobile?: string;
+    cashier: string;
+  }): Promise<{ success: boolean; data?: any; error?: string }> {
+    const supabase = getSupabase();
+    if (!supabase) return { success: false, error: 'Supabase is not configured' };
+
+    const { data, error } = await supabase.rpc('complete_retail_sale', {
+      p_sale_id: params.saleId,
+      p_receipt_number: params.receiptNumber,
+      p_shop_id: params.shopId,
+      p_items: params.items,
+      p_subtotal: params.subtotal,
+      p_vat_amount: params.vatAmount,
+      p_total: params.total,
+      p_tender_method: params.tenderMethod,
+      p_amount_tendered: params.amountTendered,
+      p_change: params.change,
+      p_receipt_type: params.receiptType,
+      p_customer_mobile: params.customerMobile || null,
+      p_cashier: params.cashier
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true, data };
+  },
+
   mapSaleToRow(sale: SaleTransaction, shopId?: string): Database['public']['Tables']['sales']['Insert'] {
     return {
       id: sale.id,
@@ -977,6 +1036,138 @@ export const salesApi = {
       customerMobile: row.customer_mobile || undefined,
       cashier: row.cashier
     };
+  }
+};
+
+// ==========================================
+// 9b. REFUNDS (Multi-Step Regulated Refunds)
+// ==========================================
+export const refundsApi = {
+  async getRefundRequests(shopId?: string): Promise<RefundRequest[]> {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+
+    let query = supabase.from('refund_requests').select('*');
+    if (shopId) query = query.eq('shop_id', shopId);
+    query = query.order('created_at', { ascending: false });
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).map(this.mapRowToRefundRequest);
+  },
+
+  async requestRefund(params: {
+    receiptNumber: string;
+    itemId: string;
+    quantity: number;
+    refundAmount: number;
+    reason: string;
+  }): Promise<{ success: boolean; refundId?: string; error?: string }> {
+    const supabase = getSupabase();
+    if (!supabase) return { success: false, error: 'Supabase is not configured' };
+
+    const { data, error } = await supabase.rpc('request_refund', {
+      p_receipt_number: params.receiptNumber,
+      p_item_id: params.itemId,
+      p_quantity: params.quantity,
+      p_refund_amount: params.refundAmount,
+      p_reason: params.reason
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true, refundId: (data as any)?.refund_id };
+  },
+
+  async approveRefund(params: {
+    refundId: string;
+    approved: boolean;
+    note?: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    const supabase = getSupabase();
+    if (!supabase) return { success: false, error: 'Supabase is not configured' };
+
+    const { data, error } = await supabase.rpc('approve_refund', {
+      p_refund_id: params.refundId,
+      p_approved: params.approved,
+      p_note: params.note || null
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  },
+
+  mapRowToRefundRequest(row: RefundRequestRow): RefundRequest {
+    return {
+      id: row.id,
+      shopId: row.shop_id,
+      saleId: row.sale_id || undefined,
+      receiptNumber: row.receipt_number,
+      itemId: row.item_id,
+      itemSku: row.item_sku,
+      itemTitle: row.item_title,
+      quantity: row.quantity,
+      refundAmount: Number(row.refund_amount),
+      reason: row.reason,
+      status: row.status as any,
+      requestedBy: row.requested_by || undefined,
+      requestedByName: row.requested_by_name,
+      approvedBy: row.approved_by || undefined,
+      approvedByName: row.approved_by_name || undefined,
+      rejectionReason: row.rejection_reason || undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+};
+
+// ==========================================
+// 9c. STAFF PROVISIONING (Owner / Manager Staff Management)
+// ==========================================
+export const staffApi = {
+  async getStaffProfiles(shopId: string): Promise<ProfileRow[]> {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('shop_id', shopId)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async provisionStaff(params: {
+    shopId: string;
+    fullName: string;
+    role: 'cashier' | 'senior_cashier' | 'manager';
+    cashierCode: string;
+    pinCode?: string;
+  }): Promise<{ success: boolean; profile?: ProfileRow; error?: string }> {
+    const supabase = getSupabase();
+    if (!supabase) return { success: false, error: 'Supabase is not configured' };
+
+    const id = crypto.randomUUID();
+    const { data, error } = await supabase
+      .from('profiles')
+      .insert({
+        id,
+        shop_id: params.shopId,
+        full_name: params.fullName,
+        role: params.role,
+        cashier_code: params.cashierCode,
+        pin_code: params.pinCode || null,
+        is_active: true,
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, profile: data };
   }
 };
 

@@ -58,16 +58,16 @@ export const INITIAL_SHOP_PROFILE: ShopProfile = {
   trading_name: 'LocalMarket Pawnbrokers & Retail (Pty) Ltd',
   registration_number: '2019/581920/07',
   vat_number: 'ZA4891029381',
-  saps_dealer_license: 'SAPS-SHD-2024-99182',
-  phone: '+27 11 938 1200',
-  email: 'soweto.branch@localmarket.co.za',
-  address: '1482 Vilakazi Street, Orlando West',
-  city: 'Soweto',
+  saps_dealer_license: 'SAPS-SHG-2024-8842',
+  phone: '+27 (0)11 938 4100',
+  email: 'soweto@localmarketpos.co.za',
+  address: 'Shop 42, Vilakazi Precinct, Soweto, Johannesburg',
+  city: 'Johannesburg',
   province: 'Gauteng',
   postal_code: '1804',
   currency: 'ZAR',
-  receipt_header: 'LOCALMARKET PAWNBROKERS & RETAIL\nSOWETO CENTRAL BRANCH • TEL: 011 938 1200\nSAPS LIC: SAPS-SHD-2024-99182 • VAT: 4891029381',
-  receipt_footer: 'THANK YOU FOR YOUR PATRONAGE!\nKEEP RECEIPT FOR WARRANTY & POLICE INSPECTION\nTERMS & NCR ACT 34 OF 2005 APPLY',
+  receipt_header: 'LOCALMARKET POS & PAWN BROKERS\nVAT REG: ZA4891029381 | SAPS LIC: SHG-2024-8842',
+  receipt_footer: 'THANK YOU FOR YOUR BUSINESS\nGoods sold as second-hand under SHG Act 06 of 2009\n7-Day Store Warranty with original slip'
 };
 
 export interface ToastInfo {
@@ -79,22 +79,17 @@ export interface ToastInfo {
 interface AppContextType {
   activeTab: NavTab;
   setActiveTab: (tab: NavTab) => void;
-  inventory: InventoryItem[];
-  customers: Customer[];
-  pawnLoans: PawnLoan[];
-  sapsRegister: SapsEntry[];
   cart: CartItem[];
-  salesHistory: SaleTransaction[];
   selectedLoanForSettlement: PawnLoan | null;
   setSelectedLoanForSettlement: (loan: PawnLoan | null) => void;
   hardwareScannerSource: string;
-  setHardwareScannerSource: (source: string) => void;
+  setHardwareScannerSource: (val: string) => void;
   isScannerModalOpen: boolean;
-  setIsScannerModalOpen: (open: boolean) => void;
+  setIsScannerModalOpen: (val: boolean) => void;
   activeReceiptModal: SaleTransaction | null;
-  setActiveReceiptModal: (receipt: SaleTransaction | null) => void;
+  setActiveReceiptModal: (sale: SaleTransaction | null) => void;
   activeContractModal: PawnLoan | null;
-  setActiveContractModal: (contract: PawnLoan | null) => void;
+  setActiveContractModal: (loan: PawnLoan | null) => void;
   toastMessage: ToastInfo | null;
   showToast: (title: string, desc: string, type?: 'success' | 'amber' | 'info' | 'error') => void;
   isPoliceInspectionMode: boolean;
@@ -146,7 +141,7 @@ interface AppContextType {
   updateCartQuantity: (itemId: string, qty: number) => void;
   updateCartItemPrice: (itemId: string, newPrice: number) => void;
   clearCart: () => void;
-  completeCheckout: (tenderMethod: PaymentMethod, amountTendered: number, receiptType: ReceiptDelivery, customerMobile?: string) => SaleTransaction;
+  completeCheckout: (tenderMethod: PaymentMethod, amountTendered: number, receiptType: ReceiptDelivery, customerMobile?: string) => Promise<SaleTransaction>;
   processRefund: (receiptNumber: string, itemId: string, reason: string) => Promise<boolean>;
 
   // Intake Actions
@@ -161,16 +156,16 @@ interface AppContextType {
     vaultShelf?: string;
     retailPriceEstimate?: number;
     imageUrl?: string;
-  }) => { loan?: PawnLoan; item: InventoryItem; saps: SapsEntry };
+  }) => Promise<{ loan?: PawnLoan; item: InventoryItem; saps: SapsEntry }>;
 
   // Loan Actions
-  redeemLoan: (ticketNumber: string, amountPaid: number) => { success: boolean; loan?: PawnLoan };
-  extendLoan: (ticketNumber: string, feePaid: number) => { success: boolean; loan?: PawnLoan };
-  archiveLoan: (loanId: string) => void;
+  redeemLoan: (ticketNumber: string, amountPaid: number) => Promise<{ success: boolean; error?: string }>;
+  extendLoan: (ticketNumber: string, feePaid: number) => Promise<{ success: boolean; error?: string }>;
+  archiveLoan: (loanId: string) => Promise<void>;
 
   // Vault Actions
-  transferOverdueToFloor: (ticketNumber: string, retailPrice: number, managerPin: string) => { success: boolean; item?: InventoryItem };
-  batchTransferOverdue: (managerPin: string) => { success: boolean; count: number };
+  transferOverdueToFloor: (ticketNumber: string, retailPrice: number) => Promise<{ success: boolean; error?: string }>;
+  batchTransferOverdue: () => Promise<{ success: boolean; count: number; error?: string }>;
 
   // SAPS Actions
   exportSapsCsv: () => void;
@@ -180,6 +175,13 @@ interface AppContextType {
   updateBusinessRules: (rules: Partial<BusinessRules>) => void;
   isRulesModalOpen: boolean;
   setIsRulesModalOpen: (open: boolean) => void;
+
+  // Domain state
+  inventory: InventoryItem[];
+  customers: Customer[];
+  pawnLoans: PawnLoan[];
+  sapsRegister: SapsEntry[];
+  salesHistory: SaleTransaction[];
 
   // General
   resetToDefaultData: () => void;
@@ -246,18 +248,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
 
   // Consume Domain Contexts
-  const { inventory, updateItem } = useInventory();
+  const { inventory, addItem, updateItem } = useInventory();
   const { 
     loans: pawnLoans, 
+    createLoan,
     redeemLoan, 
     extendLoan, 
     transferOverdueToFloor, 
     batchTransferOverdue, 
     archiveLoan 
   } = useLoans();
-  const { customers } = useCustomers();
-  const { salesHistory, recordSale } = useSales();
-  const { sapsEntries: sapsRegister, exportSapsCsv } = useSaps();
+  const { customers, addCustomer } = useCustomers();
+  const { salesHistory, completeAtomicCheckout, requestRefund, approveRefund } = useSales();
+  const { sapsEntries: sapsRegister, addSapsEntry, exportSapsCsv } = useSaps();
   const { syncStatus, triggerSync, queueSyncAction } = useSync();
 
   const total = useMemo(() => {
@@ -352,6 +355,220 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const clearCart = () => setCart([]);
 
+  const completeCheckout = useCallback(async (
+    tenderMethod: PaymentMethod,
+    amountTendered: number,
+    receiptType: ReceiptDelivery,
+    customerMobile?: string
+  ): Promise<SaleTransaction> => {
+    const subtotal = total;
+    const vatAmount = total * 0.15;
+    const res = await completeAtomicCheckout({
+      cart: [...cart],
+      subtotal,
+      vatAmount,
+      total,
+      tenderMethod,
+      amountTendered,
+      change: Math.max(0, amountTendered - total),
+      receiptType,
+      customerMobile,
+      cashierName: currentUserProfile?.full_name || 'Cashier'
+    });
+
+    if (res.success && res.sale) {
+      setActiveReceiptModal(res.sale);
+      setCart([]);
+      showToast('Sale Complete', `Receipt ${res.sale.receiptNumber} generated`, 'success');
+      return res.sale;
+    } else {
+      showToast('Checkout Failed', res.error || 'Could not process retail sale', 'error');
+      throw new Error(res.error || 'Checkout failed');
+    }
+  }, [cart, total, completeAtomicCheckout, currentUserProfile, showToast]);
+
+  const processRefund = useCallback(async (receiptNumber: string, itemId: string, reason: string): Promise<boolean> => {
+    try {
+      // Find sale to get the price
+      const sale = salesHistory.find(s => s.receiptNumber === receiptNumber);
+      const saleItem = sale?.items.find(ci => ci.item.id === itemId);
+      const refundAmount = saleItem ? (saleItem.overridePrice ?? saleItem.item.retailPrice) : 0;
+
+      const reqRes = await requestRefund({
+        receiptNumber,
+        itemId,
+        quantity: 1,
+        refundAmount,
+        reason
+      });
+
+      if (!reqRes.success) {
+        showToast('Refund Request Failed', reqRes.error || 'Failed to request refund', 'error');
+        return false;
+      }
+
+      showToast('Refund Requested', 'Submitted for manager approval', 'info');
+      return true;
+    } catch (err: any) {
+      showToast('Refund Failed', err?.message || 'Error processing refund', 'error');
+      return false;
+    }
+  }, [salesHistory, requestRefund, showToast]);
+
+  const createIntakeTransaction = useCallback(async (data: {
+    customer: Omit<Customer, 'id' | 'createdAt'> & { id?: string };
+    isPawn: boolean;
+    title: string;
+    category: any;
+    serialOrImei: string;
+    condition: ItemCondition;
+    agreedOffer: number;
+    vaultShelf?: string;
+    retailPriceEstimate?: number;
+    imageUrl?: string;
+  }): Promise<{ loan?: PawnLoan; item: InventoryItem; saps: SapsEntry }> => {
+    // 1. Customer registration or reuse
+    let customerId = data.customer.id;
+    if (!customerId) {
+      customerId = await addCustomer({
+        fullName: data.customer.fullName,
+        idNumber: data.customer.idNumber,
+        idType: data.customer.idType,
+        mobile: data.customer.mobile,
+        address: data.customer.address,
+        dob: data.customer.dob,
+        gender: data.customer.gender,
+        verified: data.customer.verified ?? true
+      });
+    }
+
+    const itemId = crypto.randomUUID();
+    const sku = `SKU-${Math.floor(100000 + Math.random() * 900000)}`;
+    const addedAt = new Date().toISOString();
+
+    if (data.isPawn) {
+      const loanId = crypto.randomUUID();
+      const ticketNumber = `#PWN-${Math.floor(1000 + Math.random() * 9000)}`;
+      const retailPrice = data.retailPriceEstimate || Math.round(data.agreedOffer * 1.8);
+
+      const item: InventoryItem = {
+        id: itemId,
+        sku,
+        title: data.title,
+        category: data.category,
+        serialOrImei: data.serialOrImei,
+        condition: data.condition,
+        acquisitionType: 'Pawn',
+        costBasis: data.agreedOffer,
+        retailPrice,
+        status: 'Vault Hold',
+        vaultLocation: data.vaultShelf || 'BIN-A01',
+        imageUrl: data.imageUrl || 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=600&q=80',
+        pawnTicketId: loanId,
+        addedAt
+      };
+      await addItem(item);
+
+      const loan: PawnLoan = {
+        id: loanId,
+        ticketNumber,
+        customerId,
+        customerName: data.customer.fullName,
+        customerIdNumber: data.customer.idNumber,
+        customerMobile: data.customer.mobile,
+        customerAddress: data.customer.address,
+        itemId,
+        itemTitle: data.title,
+        itemCategory: data.category,
+        serialOrImei: data.serialOrImei,
+        condition: data.condition,
+        itemImageUrl: item.imageUrl,
+        principal: data.agreedOffer,
+        ncrMonthlyRate: 0.05,
+        monthlyInterest: data.agreedOffer * 0.05,
+        monthlyStorageAdminFee: data.agreedOffer * 0.08,
+        totalRedemptionAmount: Math.round(data.agreedOffer * 1.13),
+        extensionFee: Math.round(data.agreedOffer * 0.13),
+        startDate: new Date().toISOString().split('T')[0],
+        expiryDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+        daysRemaining: 30,
+        daysElapsed: 0,
+        vaultShelf: data.vaultShelf || 'BIN-A01',
+        status: 'Active',
+        qrToken: `TOKEN-${ticketNumber}`,
+        history: [{
+          date: new Date().toISOString().replace('T', ' ').slice(0, 16),
+          action: 'Created',
+          amount: data.agreedOffer,
+          note: 'Pawn contract initiated.'
+        }]
+      };
+      await createLoan(loan);
+
+      const sapsId = await addSapsEntry({
+        timestamp: addedAt,
+        customerId,
+        customerName: data.customer.fullName,
+        customerIdNumber: data.customer.idNumber,
+        customerAddress: data.customer.address,
+        customerPhone: data.customer.mobile,
+        itemDescription: data.title,
+        category: data.category,
+        serialOrImei: data.serialOrImei,
+        condition: data.condition,
+        acquisitionType: 'Pawn',
+        considerationPaid: data.agreedOffer,
+        officerName: currentUserProfile?.full_name || 'Intake Officer',
+        policeStationRef: 'STN-JHB-01',
+        verificationStatus: 'VERIFIED',
+        barcodeRef: sku
+      });
+
+      const saps = await db.saps.get(sapsId);
+      return { loan, item, saps: saps! };
+    } else {
+      // Outright buy
+      const retailPrice = data.retailPriceEstimate || Math.round(data.agreedOffer * 1.8);
+      const item: InventoryItem = {
+        id: itemId,
+        sku,
+        title: data.title,
+        category: data.category,
+        serialOrImei: data.serialOrImei,
+        condition: data.condition,
+        acquisitionType: 'Buy',
+        costBasis: data.agreedOffer,
+        retailPrice,
+        status: 'Retail Floor',
+        imageUrl: data.imageUrl || 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=600&q=80',
+        addedAt
+      };
+      await addItem(item);
+
+      const sapsId = await addSapsEntry({
+        timestamp: addedAt,
+        customerId,
+        customerName: data.customer.fullName,
+        customerIdNumber: data.customer.idNumber,
+        customerAddress: data.customer.address,
+        customerPhone: data.customer.mobile,
+        itemDescription: data.title,
+        category: data.category,
+        serialOrImei: data.serialOrImei,
+        condition: data.condition,
+        acquisitionType: 'Buy',
+        considerationPaid: data.agreedOffer,
+        officerName: currentUserProfile?.full_name || 'Intake Officer',
+        policeStationRef: 'STN-JHB-01',
+        verificationStatus: 'VERIFIED',
+        barcodeRef: sku
+      });
+
+      const saps = await db.saps.get(sapsId);
+      return { item, saps: saps! };
+    }
+  }, [addCustomer, addItem, createLoan, addSapsEntry, currentUserProfile]);
+
   return (
     <AppContext.Provider
       value={{
@@ -394,7 +611,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateCartQuantity,
         updateCartItemPrice,
         clearCart,
-        // Specialized domain data aggregated into AppContext for backward compatibility
         inventory,
         customers,
         pawnLoans,
@@ -402,67 +618,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         salesHistory,
         syncShopItemsWithSupabase: async () => {},
         fetchSupabaseLogs: async () => {},
-        completeCheckout: useCallback((tenderMethod: PaymentMethod, amountTendered: number, receiptType: ReceiptDelivery, customerMobile?: string) => {
-          const subtotal = total;
-          const vatAmount = total * 0.15;
-          const sale: Omit<SaleTransaction, 'id'> = {
-            receiptNumber: `RCPT-${Math.floor(Math.random() * 90000 + 10000)}`,
-            timestamp: new Date().toISOString(),
-            items: [...cart],
-            subtotal,
-            vatAmount,
-            total,
-            tenderMethod,
-            amountTendered,
-            change: Math.max(0, amountTendered - total),
-            receiptType,
-            customerMobile,
-            cashier: currentUserProfile?.full_name || 'System Operator'
-          };
-
-          // Mark inventory items as sold in local DB and sync queue
-          cart.forEach(ci => {
-            updateItem(ci.item.id, { status: 'Sold' });
-          });
-
-          recordSale(sale);
-          const finalSale = { ...sale, id: crypto.randomUUID() };
-          setActiveReceiptModal(finalSale as any);
-          setCart([]);
-          showToast('Sale Complete', `Receipt ${finalSale.receiptNumber} generated`, 'success');
-          return finalSale as any;
-        }, [cart, total, recordSale, updateItem, currentUserProfile, showToast]),
-        processRefund: useCallback(async (receiptNumber: string, itemId: string, reason: string) => {
-          try {
-            await updateItem(itemId, { status: 'Retail Floor' });
-            await logSystemEvent('RETAIL_REFUND', { receiptNumber, itemId, reason }, 'audit');
-            showToast('Refund Processed', `Item restored to Retail Floor`, 'info');
-            return true;
-          } catch (err: any) {
-            showToast('Refund Failed', err?.message || 'Error processing refund', 'error');
-            return false;
-          }
-        }, [updateItem, logSystemEvent, showToast]),
-        createIntakeTransaction: () => ({} as any),
-        redeemLoan: (ticketNumber: string, amountPaid: number) => {
-          redeemLoan(ticketNumber, amountPaid);
-          return { success: true };
-        },
-        extendLoan: (ticketNumber: string, feePaid: number) => {
-          extendLoan(ticketNumber, feePaid);
-          return { success: true };
-        },
-        transferOverdueToFloor: (ticketNumber: string, retailPrice: number) => {
-          transferOverdueToFloor(ticketNumber, retailPrice);
-          return { success: true };
-        },
-        batchTransferOverdue: () => {
-          batchTransferOverdue();
-          return { success: true, count: 0 };
-        },
-        archiveLoan: (loanId: string) => {
-          archiveLoan(loanId);
-        },
+        completeCheckout,
+        processRefund,
+        createIntakeTransaction,
+        redeemLoan,
+        extendLoan,
+        transferOverdueToFloor,
+        batchTransferOverdue,
+        archiveLoan,
         exportSapsCsv,
         resetToDefaultData: () => {},
         isOnline: syncStatus.isOnline,
@@ -476,7 +639,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         exportDeviceBackup: async () => {
           try {
             const backup = {
-              version: 4,
+              version: 5,
               exportedAt: new Date().toISOString(),
               shopProfile,
               businessRules,
@@ -486,7 +649,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               sellerTransactions: await db.sellerTransactions.toArray(),
               loans: await db.loans.toArray(),
               saps: await db.saps.toArray(),
-              sales: await db.sales.toArray()
+              sales: await db.sales.toArray(),
+              refundRequests: await db.refundRequests.toArray()
             };
             const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -516,6 +680,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (Array.isArray(data.loans)) await db.loans.bulkPut(data.loans);
             if (Array.isArray(data.saps)) await db.saps.bulkPut(data.saps);
             if (Array.isArray(data.sales)) await db.sales.bulkPut(data.sales);
+            if (Array.isArray(data.refundRequests)) await db.refundRequests.bulkPut(data.refundRequests);
             showToast('Restore Complete', 'Local database restored successfully', 'success');
             return { success: true, message: 'Restored successfully' };
           } catch (err: any) {

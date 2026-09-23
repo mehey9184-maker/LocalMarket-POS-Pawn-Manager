@@ -6,7 +6,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export type UserRole = 'cashier' | 'senior_cashier' | 'manager' | 'admin';
+export type UserRole = 'cashier' | 'senior_cashier' | 'manager' | 'owner' | 'admin';
 export type ItemCondition = 'Mint' | 'Excellent' | 'Good' | 'Fair' | 'Damaged';
 export type ItemStatus = 'Vault Hold' | 'Retail Floor' | 'Sold' | 'Redeemed' | 'Reserved' | 'Flagged' | 'InStock' | 'Forfeited' | 'Pending Forfeit';
 export type LoanStatus = 'Active' | 'Extended' | 'Redeemed' | 'Forfeited' | 'Archived' | 'Pending Forfeit';
@@ -14,6 +14,68 @@ export type LoanStatus = 'Active' | 'Extended' | 'Redeemed' | 'Forfeited' | 'Arc
 export interface Database {
   public: {
     Tables: {
+      refund_requests: {
+        Row: {
+          id: string;
+          shop_id: string;
+          sale_id: string | null;
+          receipt_number: string;
+          item_id: string;
+          item_sku: string;
+          item_title: string;
+          quantity: number;
+          refund_amount: number;
+          reason: string;
+          status: string;
+          requested_by: string | null;
+          requested_by_name: string;
+          approved_by: string | null;
+          approved_by_name: string | null;
+          rejection_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          shop_id: string;
+          sale_id?: string | null;
+          receipt_number: string;
+          item_id: string;
+          item_sku: string;
+          item_title: string;
+          quantity?: number;
+          refund_amount: number;
+          reason: string;
+          status?: string;
+          requested_by?: string | null;
+          requested_by_name: string;
+          approved_by?: string | null;
+          approved_by_name?: string | null;
+          rejection_reason?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          shop_id?: string;
+          sale_id?: string | null;
+          receipt_number?: string;
+          item_id?: string;
+          item_sku?: string;
+          item_title?: string;
+          quantity?: number;
+          refund_amount?: number;
+          reason?: string;
+          status?: string;
+          requested_by?: string | null;
+          requested_by_name?: string;
+          approved_by?: string | null;
+          approved_by_name?: string | null;
+          rejection_reason?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       shop_profiles: {
         Row: {
           id: string;
@@ -673,5 +735,6 @@ export type SellerRow = Database['public']['Tables']['sellers']['Row'];
 export type SellerTransactionRow = Database['public']['Tables']['seller_transactions']['Row'];
 export type PawnLoanRow = Database['public']['Tables']['pawn_loans']['Row'];
 export type SaleRow = Database['public']['Tables']['sales']['Row'];
+export type RefundRequestRow = Database['public']['Tables']['refund_requests']['Row'];
 export type SapsEntryRow = Database['public']['Tables']['saps_entries']['Row'];
 export type SystemLogRow = Database['public']['Tables']['system_logs']['Row'];

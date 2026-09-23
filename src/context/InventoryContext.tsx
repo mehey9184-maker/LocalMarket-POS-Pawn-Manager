@@ -4,6 +4,8 @@ import { db } from '../db';
 import { InventoryItem, ItemStatus } from '../types';
 import Fuse from 'fuse.js';
 import { useSync } from './SyncContext';
+import { useAuth } from './AuthContext';
+import { shopItemsApi, isSupabaseConfigured } from '../services/supabaseApi';
 
 interface InventoryContextType {
   inventory: InventoryItem[];
@@ -12,6 +14,7 @@ interface InventoryContextType {
   setSearchQuery: (query: string) => void;
   addItem: (item: Omit<InventoryItem, 'id' | 'addedAt'>) => Promise<string>;
   updateItem: (id: string, updates: Partial<InventoryItem>) => Promise<void>;
+  changePermanentRetailPrice: (id: string, newPrice: number, reason?: string) => Promise<{ success: boolean; error?: string }>;
   getItem: (id: string) => Promise<InventoryItem | undefined>;
   getInventoryByStatus: (status: ItemStatus) => InventoryItem[];
 }
@@ -19,7 +22,8 @@ interface InventoryContextType {
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
 
 export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { queueSyncAction } = useSync();
+  const { queueSyncAction, isOnline } = useSync();
+  const { isManager, isOwner } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   
   const inventory = useLiveQuery(() => db.inventory.orderBy('addedAt').reverse().toArray()) || [];
@@ -53,6 +57,36 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     await queueSyncAction('inventory', id, 'update', updates);
   };
 
+  const changePermanentRetailPrice = async (
+    id: string, 
+    newPrice: number, 
+    reason?: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!isManager && !isOwner) {
+      return { success: false, error: 'Unauthorized: Manager or Owner permission required for permanent price alterations.' };
+    }
+
+    if (newPrice < 0) {
+      return { success: false, error: 'Retail price cannot be negative.' };
+    }
+
+    // Update local Dexie immediately
+    await db.inventory.update(id, { retailPrice: newPrice });
+
+    // If online, invoke the hardened Supabase RPC
+    if (isOnline && isSupabaseConfigured()) {
+      const res = await shopItemsApi.changeRetailPriceRpc(id, newPrice, reason);
+      if (!res.success) {
+        console.warn('Supabase change_retail_price RPC failed, queuing sync:', res.error);
+        await queueSyncAction('inventory', id, 'update', { retailPrice: newPrice });
+      }
+    } else {
+      await queueSyncAction('inventory', id, 'update', { retailPrice: newPrice });
+    }
+
+    return { success: true };
+  };
+
   const getItem = async (id: string) => {
     return await db.inventory.get(id);
   };
@@ -69,6 +103,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setSearchQuery,
       addItem,
       updateItem,
+      changePermanentRetailPrice,
       getItem,
       getInventoryByStatus
     }}>

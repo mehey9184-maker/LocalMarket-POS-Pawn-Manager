@@ -8,6 +8,8 @@ import { SyncService } from '../services/SyncService';
 interface SyncContextType {
   syncStatus: SyncStatus;
   syncLogs: SyncLog[];
+  isOnline: boolean;
+  isSyncing: boolean;
   triggerSync: () => Promise<void>;
   retryFailedSync: (logId: number) => Promise<void>;
   clearCompletedLogs: () => Promise<void>;
@@ -95,6 +97,8 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <SyncContext.Provider value={{
       syncStatus: { isOnline, isSyncing, pendingCount, lastSyncTime },
       syncLogs: allLogs,
+      isOnline,
+      isSyncing,
       triggerSync,
       retryFailedSync,
       clearCompletedLogs,

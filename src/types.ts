@@ -181,7 +181,7 @@ export interface BusinessRules {
 
 export interface SyncLog {
   id?: number;
-  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules' | 'sellers' | 'sellerTransactions';
+  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules' | 'sellers' | 'sellerTransactions' | 'refunds';
   entityId: string;
   action: 'create' | 'update' | 'delete';
   payload: any;
@@ -190,6 +190,29 @@ export interface SyncLog {
   createdAt: string;
   syncedAt?: string;
   retryCount: number;
+}
+
+export type RefundStatus = 'Pending Approval' | 'Approved' | 'Rejected';
+
+export interface RefundRequest {
+  id: string;
+  shopId: string;
+  saleId?: string;
+  receiptNumber: string;
+  itemId: string;
+  itemSku: string;
+  itemTitle: string;
+  quantity: number;
+  refundAmount: number;
+  reason: string;
+  status: RefundStatus;
+  requestedBy?: string;
+  requestedByName: string;
+  approvedBy?: string;
+  approvedByName?: string;
+  rejectionReason?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SyncStatus {

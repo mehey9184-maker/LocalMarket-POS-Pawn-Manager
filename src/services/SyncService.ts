@@ -10,6 +10,7 @@ import {
   sellerTransactionsApi, 
   pawnLoansApi, 
   salesApi, 
+  refundsApi,
   sapsApi, 
   logsApi 
 } from './supabaseApi';
@@ -71,8 +72,52 @@ export const SyncService = {
         }
 
         case 'sales': {
-          const row = salesApi.mapSaleToRow(log.payload, shopId);
-          await salesApi.upsertSale(row);
+          const payload = log.payload;
+          if (shopId && payload.items && Array.isArray(payload.items)) {
+            const rpcRes = await salesApi.completeRetailSaleRpc({
+              saleId: payload.id || log.entityId,
+              receiptNumber: payload.receiptNumber,
+              shopId,
+              items: payload.items.map((ci: any) => ({
+                id: ci.item?.id || ci.id,
+                sku: ci.item?.sku || ci.sku,
+                title: ci.item?.title || ci.title,
+                quantity: ci.quantity || 1,
+                overridePrice: ci.overridePrice,
+                retailPrice: ci.item?.retailPrice || ci.retailPrice || 0
+              })),
+              subtotal: payload.subtotal,
+              vatAmount: payload.vatAmount,
+              total: payload.total,
+              tenderMethod: payload.tenderMethod,
+              amountTendered: payload.amountTendered,
+              change: payload.change,
+              receiptType: payload.receiptType || 'thermal',
+              customerMobile: payload.customerMobile,
+              cashier: payload.cashier || 'Cashier'
+            });
+
+            if (!rpcRes.success) {
+              const row = salesApi.mapSaleToRow(payload, shopId);
+              await salesApi.upsertSale(row);
+            }
+          } else {
+            const row = salesApi.mapSaleToRow(payload, shopId);
+            await salesApi.upsertSale(row);
+          }
+          break;
+        }
+
+        case 'refunds': {
+          if (log.action === 'create') {
+            await refundsApi.requestRefund({
+              receiptNumber: log.payload.receiptNumber,
+              itemId: log.payload.itemId,
+              quantity: log.payload.quantity || 1,
+              refundAmount: log.payload.refundAmount,
+              reason: log.payload.reason
+            });
+          }
           break;
         }
 

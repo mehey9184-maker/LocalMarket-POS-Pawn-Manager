@@ -8,6 +8,7 @@ import {
   BusinessRules,
   Seller,
   SellerTransaction,
+  RefundRequest,
   SyncLog
 } from '../types';
 
@@ -21,6 +22,7 @@ export class LocalDatabase extends Dexie {
   loans!: Table<PawnLoan>;
   saps!: Table<SapsEntry>;
   sales!: Table<SaleTransaction>;
+  refundRequests!: Table<RefundRequest>;
   syncLogs!: Table<SyncLog>;
   counters!: Table<{ id: string; value: number }>;
 
@@ -71,6 +73,20 @@ export class LocalDatabase extends Dexie {
       loans: 'id, ticketNumber, customerId, status, expiryDate',
       saps: 'id, entryNumber, timestamp, customerId',
       sales: 'id, receiptNumber, timestamp',
+      syncLogs: '++id, entityType, entityId, status, createdAt',
+      counters: 'id'
+    });
+
+    // Version 5: Added refundRequests table
+    this.version(5).stores({
+      inventory: 'id, sku, status, category, acquisitionType, pawnTicketId, addedAt',
+      customers: 'id, fullName, idNumber, mobile',
+      sellers: 'id, fullName, idNumber, mobile',
+      sellerTransactions: 'id, sellerId, itemId, timestamp',
+      loans: 'id, ticketNumber, customerId, status, expiryDate',
+      saps: 'id, entryNumber, timestamp, customerId',
+      sales: 'id, receiptNumber, timestamp',
+      refundRequests: 'id, receiptNumber, itemId, status, createdAt',
       syncLogs: '++id, entityType, entityId, status, createdAt',
       counters: 'id'
     });
