@@ -4,6 +4,7 @@ import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import { createClient } from "@supabase/supabase-js";
 
 dotenv.config();
 
@@ -11,6 +12,19 @@ dotenv.config();
 const UPLOAD_ROOT = path.join(process.cwd(), "public", "uploads");
 if (!fs.existsSync(UPLOAD_ROOT)) {
   fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
+}
+
+// Server-side Supabase Admin Client helper
+function getSupabaseServerClient() {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !serviceKey) return null;
+  return createClient(supabaseUrl, serviceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
 }
 
 /**
@@ -123,6 +137,128 @@ async function startServer() {
     }
 
     return res.status(401).json({ success: false, error: "Invalid Manager PIN" });
+  });
+
+  // --- API ROUTE: STAFF PROVISIONING (Real Auth User + Profile) ---
+  app.post("/api/staff/provision", async (req, res) => {
+    try {
+      const { shopId, fullName, role, cashierCode, pinCode, email, password } = req.body;
+
+      if (!shopId) {
+        return res.status(400).json({ success: false, error: "shopId is required. Explicit shop assignment is mandatory." });
+      }
+      if (!fullName || !cashierCode || !role) {
+        return res.status(400).json({ success: false, error: "fullName, cashierCode, and role are required." });
+      }
+
+      const supabase = getSupabaseServerClient();
+      if (!supabase) {
+        return res.status(503).json({ success: false, error: "Backend Supabase connection is not configured." });
+      }
+
+      const staffEmail = email || `${cashierCode.toLowerCase().replace(/[^a-z0-9]/g, "")}@localmarketpos.co.za`;
+      const staffPassword = password || `LM-${Math.floor(100000 + Math.random() * 900000)}!`;
+
+      let userId: string | null = null;
+
+      // 1. Try to create Auth User using Admin API
+      if (supabase.auth?.admin) {
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+          email: staffEmail,
+          password: staffPassword,
+          email_confirm: true,
+          user_metadata: {
+            full_name: fullName,
+            fullName,
+            role,
+            shop_id: shopId,
+            cashier_code: cashierCode
+          }
+        });
+
+        if (authError) {
+          // If user already exists in auth, find or sign in
+          console.warn("Supabase auth.admin.createUser error, checking if user exists:", authError.message);
+          // Fallback to checking existing profile or standard signUp
+          const { data: existingProfile } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("cashier_code", cashierCode)
+            .maybeSingle();
+
+          if (existingProfile?.id) {
+            userId = existingProfile.id;
+          }
+        } else if (authData?.user?.id) {
+          userId = authData.user.id;
+        }
+      }
+
+      // 2. If admin API not available, try standard signUp
+      if (!userId) {
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          email: staffEmail,
+          password: staffPassword,
+          options: {
+            data: {
+              full_name: fullName,
+              fullName,
+              role,
+              shop_id: shopId,
+              cashier_code: cashierCode
+            }
+          }
+        });
+
+        if (signUpErr && !(signUpData as any)?.user?.id) {
+          console.warn("Supabase signUp warning:", signUpErr.message);
+        } else if ((signUpData as any)?.user?.id) {
+          userId = (signUpData as any).user.id;
+        }
+      }
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          error: "Could not create authenticated user account for staff member."
+        });
+      }
+
+      // 3. Upsert Profile record in profiles table
+      const profilePayload = {
+        id: userId,
+        shop_id: shopId,
+        email: staffEmail,
+        full_name: fullName,
+        role: role,
+        cashier_code: cashierCode,
+        pin_code: pinCode || null,
+        is_active: true,
+        updated_at: new Date().toISOString()
+      };
+
+      const { data: profileRow, error: profileErr } = await supabase
+        .from("profiles")
+        .upsert(profilePayload, { onConflict: "id" })
+        .select()
+        .single();
+
+      if (profileErr) {
+        return res.status(400).json({ success: false, error: profileErr.message });
+      }
+
+      return res.json({
+        success: true,
+        profile: profileRow,
+        credentials: {
+          email: staffEmail,
+          temporaryPassword: staffPassword
+        }
+      });
+    } catch (err: any) {
+      console.error("Staff provisioning server error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Failed to provision staff." });
+    }
   });
 
   // --- API ROUTE: SECURE IMAGE UPLOAD (Backblaze B2 with local fallback) ---

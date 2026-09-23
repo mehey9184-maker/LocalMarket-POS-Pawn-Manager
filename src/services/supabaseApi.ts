@@ -1147,27 +1147,24 @@ export const staffApi = {
     cashierCode: string;
     pinCode?: string;
   }): Promise<{ success: boolean; profile?: ProfileRow; error?: string }> {
-    const supabase = getSupabase();
-    if (!supabase) return { success: false, error: 'Supabase is not configured' };
+    try {
+      const response = await fetch('/api/staff/provision', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(params)
+      });
 
-    const id = crypto.randomUUID();
-    const { data, error } = await supabase
-      .from('profiles')
-      .insert({
-        id,
-        shop_id: params.shopId,
-        full_name: params.fullName,
-        role: params.role,
-        cashier_code: params.cashierCode,
-        pin_code: params.pinCode || null,
-        is_active: true,
-        updated_at: new Date().toISOString()
-      })
-      .select()
-      .single();
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || 'Failed to provision staff account.' };
+      }
 
-    if (error) return { success: false, error: error.message };
-    return { success: true, profile: data };
+      return { success: true, profile: data.profile };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error provisioning staff.' };
+    }
   }
 };
 

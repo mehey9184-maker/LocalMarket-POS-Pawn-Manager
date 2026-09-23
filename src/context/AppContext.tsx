@@ -25,6 +25,7 @@ import { DEFAULT_BUSINESS_RULES, roundRetailPrice } from '../utils/pricingRules'
 import { useInventory } from './InventoryContext';
 import { useLoans } from './LoanContext';
 import { useCustomers } from './CustomerContext';
+import { useSellers } from './SellerContext';
 import { useSales } from './SalesContext';
 import { useSaps } from './SapsContext';
 import { useSync } from './SyncContext';
@@ -259,6 +260,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     archiveLoan 
   } = useLoans();
   const { customers, addCustomer } = useCustomers();
+  const { addSeller, addSellerTransaction } = useSellers();
   const { salesHistory, completeAtomicCheckout, requestRefund, approveRefund } = useSales();
   const { sapsEntries: sapsRegister, addSapsEntry, exportSapsCsv } = useSaps();
   const { syncStatus, triggerSync, queueSyncAction } = useSync();
@@ -427,26 +429,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     retailPriceEstimate?: number;
     imageUrl?: string;
   }): Promise<{ loan?: PawnLoan; item: InventoryItem; saps: SapsEntry }> => {
-    // 1. Customer registration or reuse
-    let customerId = data.customer.id;
-    if (!customerId) {
-      customerId = await addCustomer({
-        fullName: data.customer.fullName,
-        idNumber: data.customer.idNumber,
-        idType: data.customer.idType,
-        mobile: data.customer.mobile,
-        address: data.customer.address,
-        dob: data.customer.dob,
-        gender: data.customer.gender,
-        verified: data.customer.verified ?? true
-      });
-    }
-
     const itemId = crypto.randomUUID();
     const sku = `SKU-${Math.floor(100000 + Math.random() * 900000)}`;
     const addedAt = new Date().toISOString();
 
     if (data.isPawn) {
+      // 1. Pawn requires a registered Customer
+      let customerId = data.customer.id;
+      if (!customerId) {
+        customerId = await addCustomer({
+          fullName: data.customer.fullName,
+          idNumber: data.customer.idNumber,
+          idType: data.customer.idType,
+          mobile: data.customer.mobile,
+          address: data.customer.address,
+          dob: data.customer.dob,
+          gender: data.customer.gender,
+          verified: data.customer.verified ?? true
+        });
+      }
+
       const loanId = crypto.randomUUID();
       const ticketNumber = `#PWN-${Math.floor(1000 + Math.random() * 9000)}`;
       const retailPrice = data.retailPriceEstimate || Math.round(data.agreedOffer * 1.8);
@@ -527,7 +529,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const saps = await db.saps.get(sapsId);
       return { loan, item, saps: saps! };
     } else {
-      // Outright buy
+      // 2. Outright buy creates a registered Seller + SellerTransaction (Spec Rule 16)
+      let sellerId = data.customer.id;
+      if (!sellerId) {
+        sellerId = await addSeller({
+          fullName: data.customer.fullName,
+          idNumber: data.customer.idNumber,
+          idType: data.customer.idType,
+          mobile: data.customer.mobile,
+          address: data.customer.address,
+          verified: data.customer.verified ?? true
+        });
+      }
+
       const retailPrice = data.retailPriceEstimate || Math.round(data.agreedOffer * 1.8);
       const item: InventoryItem = {
         id: itemId,
@@ -547,7 +561,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const sapsId = await addSapsEntry({
         timestamp: addedAt,
-        customerId,
+        customerId: sellerId,
         customerName: data.customer.fullName,
         customerIdNumber: data.customer.idNumber,
         customerAddress: data.customer.address,
@@ -565,9 +579,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       const saps = await db.saps.get(sapsId);
+
+      // Record Seller Transaction
+      await addSellerTransaction({
+        sellerId,
+        itemId,
+        itemSku: sku,
+        itemTitle: data.title,
+        amountPaid: data.agreedOffer,
+        timestamp: addedAt,
+        sapsRef: saps?.entryNumber || sku
+      });
+
       return { item, saps: saps! };
     }
-  }, [addCustomer, addItem, createLoan, addSapsEntry, currentUserProfile]);
+  }, [addCustomer, addSeller, addSellerTransaction, addItem, createLoan, addSapsEntry, currentUserProfile]);
 
   return (
     <AppContext.Provider
@@ -616,8 +642,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pawnLoans,
         sapsRegister,
         salesHistory,
-        syncShopItemsWithSupabase: async () => {},
-        fetchSupabaseLogs: async () => {},
+        syncShopItemsWithSupabase: async () => {
+          try {
+            if (!isSupabaseConfigured()) {
+              showToast('Supabase Offline', 'Cloud database connection is not configured.', 'info');
+              return;
+            }
+            const items = await shopItemsApi.getItems({ shopId: shopProfile.id });
+            if (items && items.length > 0) {
+              const mapped = items.map(shopItemsApi.mapRowToInventoryItem);
+              await db.inventory.bulkPut(mapped);
+              showToast('Inventory Synced', `Synchronized ${mapped.length} catalog items from Supabase.`, 'success');
+            } else {
+              showToast('Inventory Synced', 'Store catalog is up to date.', 'info');
+            }
+          } catch (err: any) {
+            showToast('Sync Error', err?.message || 'Failed to pull inventory from cloud.', 'error');
+          }
+        },
+        fetchSupabaseLogs: async () => {
+          try {
+            if (!isSupabaseConfigured()) return;
+            const logs = await logsApi.getLogs(100);
+            setSupabaseLogs(logs);
+          } catch (err: any) {
+            console.warn('Failed to fetch system logs from Supabase:', err);
+          }
+        },
         completeCheckout,
         processRefund,
         createIntakeTransaction,
@@ -627,7 +678,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         batchTransferOverdue,
         archiveLoan,
         exportSapsCsv,
-        resetToDefaultData: () => {},
+        resetToDefaultData: async () => {
+          try {
+            await Promise.all([
+              db.inventory.clear(),
+              db.customers.clear(),
+              db.sellers.clear(),
+              db.sellerTransactions.clear(),
+              db.loans.clear(),
+              db.sales.clear(),
+              db.saps.clear(),
+              db.refundRequests.clear(),
+              db.syncLogs.clear()
+            ]);
+            showToast('Reset Complete', 'Local database tables reset.', 'info');
+          } catch (err: any) {
+            showToast('Reset Failed', err?.message || 'Could not reset local tables.', 'error');
+          }
+        },
         isOnline: syncStatus.isOnline,
         isSlowSyncing: syncStatus.isSyncing,
         pendingSyncCount: syncStatus.pendingCount,

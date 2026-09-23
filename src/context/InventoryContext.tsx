@@ -70,17 +70,19 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return { success: false, error: 'Retail price cannot be negative.' };
     }
 
-    // Update local Dexie immediately
-    await db.inventory.update(id, { retailPrice: newPrice });
-
-    // If online, invoke the hardened Supabase RPC
+    // If online, invoke the Supabase RPC first
     if (isOnline && isSupabaseConfigured()) {
       const res = await shopItemsApi.changeRetailPriceRpc(id, newPrice, reason);
       if (!res.success) {
-        console.warn('Supabase change_retail_price RPC failed, queuing sync:', res.error);
-        await queueSyncAction('inventory', id, 'update', { retailPrice: newPrice });
+        return { success: false, error: res.error || 'Server rejected price change.' };
       }
-    } else {
+    }
+
+    // Update local Dexie once authorized / confirmed
+    await db.inventory.update(id, { retailPrice: newPrice });
+
+    // If offline, queue sync action
+    if (!isOnline || !isSupabaseConfigured()) {
       await queueSyncAction('inventory', id, 'update', { retailPrice: newPrice });
     }
 

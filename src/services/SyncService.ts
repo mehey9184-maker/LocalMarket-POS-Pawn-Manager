@@ -38,10 +38,17 @@ export const SyncService = {
     try {
       switch (log.entityType) {
         case 'inventory': {
-          const row = shopItemsApi.mapInventoryItemToRow(log.payload, shopId);
+          const payload = log.payload;
           if (log.action === 'delete') {
             await shopItemsApi.deleteItem(log.entityId);
+          } else if (payload.retailPrice !== undefined && Object.keys(payload).length === 1) {
+            // Dedicated price change transaction sync
+            const priceRes = await shopItemsApi.changeRetailPriceRpc(log.entityId, payload.retailPrice, 'Synced from offline price update');
+            if (!priceRes.success) {
+              throw new Error(priceRes.error || 'Server rejected offline price update');
+            }
           } else {
+            const row = shopItemsApi.mapInventoryItemToRow(payload, shopId);
             await shopItemsApi.upsertItem(row);
           }
           break;
@@ -98,8 +105,7 @@ export const SyncService = {
             });
 
             if (!rpcRes.success) {
-              const row = salesApi.mapSaleToRow(payload, shopId);
-              await salesApi.upsertSale(row);
+              throw new Error(rpcRes.error || 'complete_retail_sale rejected by database');
             }
           } else {
             const row = salesApi.mapSaleToRow(payload, shopId);
@@ -110,13 +116,16 @@ export const SyncService = {
 
         case 'refunds': {
           if (log.action === 'create') {
-            await refundsApi.requestRefund({
+            const refundRes = await refundsApi.requestRefund({
               receiptNumber: log.payload.receiptNumber,
               itemId: log.payload.itemId,
               quantity: log.payload.quantity || 1,
               refundAmount: log.payload.refundAmount,
               reason: log.payload.reason
             });
+            if (!refundRes.success) {
+              throw new Error(refundRes.error || 'Server rejected offline refund request');
+            }
           }
           break;
         }

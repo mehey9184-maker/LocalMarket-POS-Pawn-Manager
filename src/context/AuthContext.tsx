@@ -130,9 +130,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'Unauthorized: Manager or Owner authority required to provision staff.' };
     }
 
-    const targetShopId = shopId || '00000000-0000-0000-0000-000000000001';
+    if (!shopId) {
+      return { 
+        success: false, 
+        error: 'No active shop assignment found. Staff can only be provisioned to an authenticated shop branch.' 
+      };
+    }
+
     return await staffApi.provisionStaff({
-      shopId: targetShopId,
+      shopId,
       fullName: data.fullName,
       role: data.role,
       cashierCode: data.cashierCode,

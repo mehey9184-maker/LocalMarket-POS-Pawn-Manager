@@ -114,7 +114,8 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
    * 2. Generates stable UUID & receipt number
    * 3. Calls public.complete_retail_sale RPC when online
    * 4. Updates local Dexie items to Sold & saves sale
-   * 5. Queues idempotent sync if offline or fallback
+   * 5. Queues idempotent sync if truly offline
+   * 6. Real errors, atomic rollback on failure, NO fake success.
    */
   const completeAtomicCheckout = async (params: {
     cart: CartItem[];
@@ -133,7 +134,10 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     if (params.tenderMethod === 'cash' && params.amountTendered < params.total) {
-      return { success: false, error: `Amount tendered (R${params.amountTendered}) is less than total R${params.total}.` };
+      return { 
+        success: false, 
+        error: `Amount tendered (R${params.amountTendered.toFixed(2)}) is less than total R${params.total.toFixed(2)}.` 
+      };
     }
 
     // Stable identifiers generated ONCE per checkout attempt
@@ -141,13 +145,22 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const receiptNumber = `REC-${Math.floor(100000 + Math.random() * 900000)}`;
     const timestamp = new Date().toISOString();
     const cashier = params.cashierName || profile?.full_name || 'Cashier';
-    const effectiveShopId = shopId || '00000000-0000-0000-0000-000000000001';
+
+    // Normalized items structure ensuring consistent JSON representation
+    const normalizedCart: CartItem[] = params.cart.map(ci => ({
+      item: {
+        ...ci.item,
+        status: 'Sold'
+      },
+      quantity: ci.quantity || 1,
+      overridePrice: ci.overridePrice
+    }));
 
     const saleRecord: SaleTransaction = {
       id: saleId,
       receiptNumber,
       timestamp,
-      items: params.cart,
+      items: normalizedCart,
       subtotal: params.subtotal,
       vatAmount: params.vatAmount,
       total: params.total,
@@ -160,27 +173,20 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     try {
-      // 1. First execute local Dexie transaction to ensure immediate local state
-      await db.transaction('rw', db.sales, db.inventory, db.syncLogs, async () => {
-        // Save sale record
-        await db.sales.put(saleRecord);
-
-        // Update inventory items to 'Sold'
-        for (const ci of params.cart) {
-          const item = ci.item;
-          await db.inventory.update(item.id, {
-            status: 'Sold'
-          });
-        }
-      });
-
-      // 2. If online and Supabase is configured, call atomic RPC
+      // If online and Supabase is configured, call atomic RPC first
       if (isOnline && isSupabaseConfigured() && user) {
+        if (!shopId) {
+          return {
+            success: false,
+            error: 'No active shop branch assignment found on user profile. Cannot complete online sale.'
+          };
+        }
+
         const rpcPayload = {
           saleId,
           receiptNumber,
-          shopId: effectiveShopId,
-          items: params.cart.map(ci => ({
+          shopId,
+          items: normalizedCart.map(ci => ({
             id: ci.item.id,
             sku: ci.item.sku,
             title: ci.item.title,
@@ -201,26 +207,43 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         const rpcResult = await salesApi.completeRetailSaleRpc(rpcPayload);
 
-        if (rpcResult.success) {
-          // Sync succeeded immediately
-          await queueSyncAction('sales', saleId, 'create', saleRecord);
-          // Mark the newly queued log as completed
-          const lastLog = await db.syncLogs.where('entityId').equals(saleId).first();
-          if (lastLog?.id) {
-            await db.syncLogs.update(lastLog.id, {
-              status: 'completed',
-              syncedAt: new Date().toISOString()
-            });
-          }
-          return { success: true, sale: saleRecord };
-        } else {
-          // RPC reported business rule or network error
-          console.warn('Supabase complete_retail_sale RPC failed, queuing for sync:', rpcResult.error);
-          await queueSyncAction('sales', saleId, 'create', saleRecord);
-          return { success: true, sale: saleRecord };
+        if (!rpcResult.success) {
+          // STRICT PRODUCTION RULE: A failed online transaction must NOT be recorded as success!
+          console.error('Online checkout failed on Supabase backend:', rpcResult.error);
+          return {
+            success: false,
+            error: rpcResult.error || 'The database rejected the sale transaction. Inventory was not modified.'
+          };
         }
+
+        // RPC succeeded: commit changes to local Dexie for instant UI sync & offline cache
+        await db.transaction('rw', db.sales, db.inventory, db.syncLogs, async () => {
+          await db.sales.put(saleRecord);
+          for (const ci of normalizedCart) {
+            await db.inventory.update(ci.item.id, { status: 'Sold' });
+          }
+        });
+
+        // Record completed sync log
+        await queueSyncAction('sales', saleId, 'create', saleRecord);
+        const lastLog = await db.syncLogs.where('entityId').equals(saleId).first();
+        if (lastLog?.id) {
+          await db.syncLogs.update(lastLog.id, {
+            status: 'completed',
+            syncedAt: new Date().toISOString()
+          });
+        }
+
+        return { success: true, sale: saleRecord };
       } else {
-        // Offline mode: queue operation with stable UUID
+        // Genuinely offline mode: save locally and queue pending sync action
+        await db.transaction('rw', db.sales, db.inventory, db.syncLogs, async () => {
+          await db.sales.put(saleRecord);
+          for (const ci of normalizedCart) {
+            await db.inventory.update(ci.item.id, { status: 'Sold' });
+          }
+        });
+
         await queueSyncAction('sales', saleId, 'create', saleRecord);
         return { success: true, sale: saleRecord };
       }
@@ -232,7 +255,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   /**
    * REQUEST REFUND (Cashier / Staff)
-   * Validates receipt, item, sold status, and creates a Pending Approval request.
+   * Validates receipt, item, line price limit, and creates a Pending Approval request.
    */
   const requestRefund = async (params: {
     receiptNumber: string;
@@ -259,6 +282,14 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return { success: false, error: 'The selected item was not part of this sale receipt.' };
     }
 
+    const maxAllowedRefund = (saleItem.overridePrice ?? saleItem.item.retailPrice) * (params.quantity || 1);
+    if (params.refundAmount > maxAllowedRefund) {
+      return {
+        success: false,
+        error: `Requested refund amount (R${params.refundAmount.toFixed(2)}) exceeds sold item total (R${maxAllowedRefund.toFixed(2)}).`
+      };
+    }
+
     // Check existing pending refund for this item
     const existingPending = await db.refundRequests
       .where('receiptNumber')
@@ -271,10 +302,15 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     const refundId = crypto.randomUUID();
-    const effectiveShopId = shopId || '00000000-0000-0000-0000-000000000001';
+    const effectiveShopId = shopId || profile?.shop_id;
+
+    if (isOnline && isSupabaseConfigured() && user && !effectiveShopId) {
+      return { success: false, error: 'No active shop assignment found. Cannot submit refund request.' };
+    }
+
     const refundRecord: RefundRequest = {
       id: refundId,
-      shopId: effectiveShopId,
+      shopId: effectiveShopId || '',
       saleId: sale.id,
       receiptNumber: params.receiptNumber,
       itemId: params.itemId,
@@ -290,9 +326,6 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updatedAt: new Date().toISOString()
     };
 
-    // Save in Dexie
-    await db.refundRequests.put(refundRecord);
-
     // Call Supabase RPC if online
     if (isOnline && isSupabaseConfigured() && user) {
       const res = await refundsApi.requestRefund({
@@ -304,20 +337,25 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       if (!res.success) {
-        console.warn('Refund request RPC failed, queuing:', res.error);
-        await queueSyncAction('refunds', refundId, 'create', refundRecord);
+        return { success: false, error: res.error || 'Server rejected refund request.' };
       }
-    } else {
-      await queueSyncAction('refunds', refundId, 'create', refundRecord);
-    }
 
-    await refreshRemoteRefunds();
-    return { success: true, refundId };
+      // Save in Dexie on success
+      await db.refundRequests.put(refundRecord);
+      await refreshRemoteRefunds();
+      return { success: true, refundId: res.refundId || refundId };
+    } else {
+      // Offline mode
+      await db.refundRequests.put(refundRecord);
+      await queueSyncAction('refunds', refundId, 'create', refundRecord);
+      return { success: true, refundId };
+    }
   };
 
   /**
    * APPROVE / REJECT REFUND (Manager / Owner only)
-   * Restores item to 'Retail Floor' upon approval. Never deletes the original sale!
+   * Restores item to 'Retail Floor' upon approval. Never deletes original sale!
+   * Enforces self-approval prevention.
    */
   const approveRefund = async (params: {
     refundId: string;
@@ -333,10 +371,31 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return { success: false, error: 'Refund request record not found.' };
     }
 
+    // Self-approval prevention rule
+    if (req.requestedBy && user?.id && req.requestedBy === user.id) {
+      return {
+        success: false,
+        error: 'Security Policy Violation: Staff members cannot approve their own refund requests. A different Manager or Owner must review this.'
+      };
+    }
+
     const approverName = profile?.full_name || 'Manager';
     const newStatus: RefundStatus = params.approved ? 'Approved' : 'Rejected';
 
-    // Update local Dexie
+    // If online, execute RPC first
+    if (isOnline && isSupabaseConfigured() && user) {
+      const res = await refundsApi.approveRefund({
+        refundId: params.refundId,
+        approved: params.approved,
+        note: params.note
+      });
+
+      if (!res.success) {
+        return { success: false, error: res.error || 'Refund approval was rejected by backend server.' };
+      }
+    }
+
+    // Update local Dexie state
     await db.transaction('rw', db.refundRequests, db.inventory, async () => {
       await db.refundRequests.update(req.id, {
         status: newStatus,
@@ -353,19 +412,6 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
       }
     });
-
-    // Call Supabase RPC
-    if (isOnline && isSupabaseConfigured() && user) {
-      const res = await refundsApi.approveRefund({
-        refundId: params.refundId,
-        approved: params.approved,
-        note: params.note
-      });
-
-      if (!res.success) {
-        return { success: false, error: res.error };
-      }
-    }
 
     await refreshRemoteRefunds();
     return { success: true };
