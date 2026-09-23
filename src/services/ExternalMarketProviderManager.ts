@@ -90,94 +90,89 @@ export class ExternalMarketProviderManager {
     return quota;
   }
 
-  // Load provider quota from Supabase if available
-  public async syncQuotaFromDb(supabaseAdmin: any, provider: string = 'upcitemdb'): Promise<ProviderQuota> {
-    const quota = this.getQuota(provider);
-    if (!supabaseAdmin) return quota;
-
-    try {
-      const { data } = await supabaseAdmin
-        .from('provider_quotas')
-        .select('*')
-        .eq('provider', provider)
-        .maybeSingle();
-
-      if (data) {
-        const now = new Date().getTime();
-        const dbResetAt = new Date(data.reset_at).getTime();
-
-        if (now >= dbResetAt) {
-          quota.requestsToday = 0;
-          const nextReset = new Date();
-          nextReset.setUTCHours(24, 0, 0, 0);
-          quota.resetAt = nextReset.toISOString();
-
-          await supabaseAdmin.from('provider_quotas').upsert({
-            provider,
-            daily_limit: quota.dailyLimit,
-            requests_today: 0,
-            reset_at: quota.resetAt,
-            updated_at: new Date().toISOString()
-          });
-        } else {
-          quota.requestsToday = data.requests_today || 0;
-          quota.dailyLimit = data.daily_limit || quota.dailyLimit;
-          quota.resetAt = data.reset_at;
-          quota.consecutiveFailures = data.consecutive_failures || 0;
-          quota.cooldownUntil = data.cooldown_until || null;
-        }
-      } else {
-        await supabaseAdmin.from('provider_quotas').upsert({
-          provider,
-          daily_limit: quota.dailyLimit,
-          requests_today: quota.requestsToday,
-          reset_at: quota.resetAt,
-          updated_at: new Date().toISOString()
-        });
-      }
-    } catch (err) {
-      console.warn('[ExternalProviderManager] Failed to sync quota from DB:', err);
-    }
-
-    return quota;
-  }
-
-  public canMakeRequest(provider: string = 'upcitemdb'): { allowed: boolean; reason?: string } {
+  /**
+   * Atomic Provider Quota Reservation via Supabase RPC reserve_provider_request.
+   * Lock row -> Check daily reset -> Check cooldown -> Check limit -> Reserve slot (+1).
+   * Fallback to in-memory reservation when DB is absent/mocked.
+   */
+  public async reserveQuota(
+    provider: string = 'upcitemdb',
+    supabaseAdmin?: any
+  ): Promise<{ allowed: boolean; reason?: string; quota?: ProviderQuota }> {
     if (!this.enabled) {
       return { allowed: false, reason: 'External market data disabled via configuration switch' };
     }
 
+    if (supabaseAdmin && typeof supabaseAdmin.rpc === 'function') {
+      try {
+        const { data, error } = await supabaseAdmin.rpc('reserve_provider_request', {
+          p_provider: provider,
+          p_default_limit: this.defaultDailyLimit
+        });
+
+        if (!error && data) {
+          const quota = this.getQuota(provider);
+          quota.requestsToday = data.requests_today ?? quota.requestsToday;
+          quota.dailyLimit = data.daily_limit ?? quota.dailyLimit;
+          quota.resetAt = data.reset_at ?? quota.resetAt;
+          if (data.cooldown_until !== undefined) quota.cooldownUntil = data.cooldown_until;
+          if (data.consecutive_failures !== undefined) quota.consecutiveFailures = data.consecutive_failures;
+
+          return {
+            allowed: !!data.allowed,
+            reason: data.reason || (data.allowed ? undefined : 'Quota exhausted or cooldown active'),
+            quota
+          };
+        }
+        if (error) {
+          console.warn('[ExternalProviderManager] RPC reserve_provider_request error:', error.message || error);
+        }
+      } catch (err) {
+        console.warn('[ExternalProviderManager] RPC call exception:', err);
+      }
+    }
+
+    return this.reserveQuotaInMemory(provider);
+  }
+
+  private reserveQuotaInMemory(provider: string): { allowed: boolean; reason?: string; quota?: ProviderQuota } {
     const quota = this.getQuota(provider);
     const now = Date.now();
 
     if (quota.cooldownUntil && now < new Date(quota.cooldownUntil).getTime()) {
       return {
         allowed: false,
-        reason: `Provider in failure cooldown until ${quota.cooldownUntil}`
+        reason: `Provider in failure cooldown until ${quota.cooldownUntil}`,
+        quota
       };
     }
 
     if (quota.requestsToday >= quota.dailyLimit) {
       return {
         allowed: false,
-        reason: `Daily provider request quota exhausted (${quota.requestsToday}/${quota.dailyLimit})`
+        reason: `Daily provider request quota exhausted (${quota.requestsToday}/${quota.dailyLimit})`,
+        quota
       };
     }
 
-    return { allowed: true };
+    // Reserved slot in memory
+    quota.requestsToday += 1;
+    return { allowed: true, quota };
   }
 
+  /**
+   * Resets failure state upon successful HTTP response.
+   * NOTE: MUST NOT increment requestsToday because the slot was already reserved!
+   */
   public recordSuccess(provider: string = 'upcitemdb', supabaseAdmin?: any): void {
     const quota = this.getQuota(provider);
     quota.consecutiveFailures = 0;
     quota.cooldownUntil = null;
-    quota.requestsToday += 1;
 
     if (supabaseAdmin) {
       supabaseAdmin.from('provider_quotas').upsert({
         provider,
         daily_limit: quota.dailyLimit,
-        requests_today: quota.requestsToday,
         reset_at: quota.resetAt,
         consecutive_failures: 0,
         cooldown_until: null,
@@ -186,6 +181,10 @@ export class ExternalMarketProviderManager {
     }
   }
 
+  /**
+   * Records failure and triggers cooldown upon HTTP error / 429 / timeout.
+   * NOTE: MUST NOT increment requestsToday because the slot was already reserved!
+   */
   public recordFailure(provider: string = 'upcitemdb', statusCode?: number, supabaseAdmin?: any): void {
     const quota = this.getQuota(provider);
     quota.consecutiveFailures = (quota.consecutiveFailures || 0) + 1;
@@ -210,7 +209,6 @@ export class ExternalMarketProviderManager {
       supabaseAdmin.from('provider_quotas').upsert({
         provider,
         daily_limit: quota.dailyLimit,
-        requests_today: quota.requestsToday,
         reset_at: quota.resetAt,
         last_failure_at: new Date().toISOString(),
         consecutive_failures: quota.consecutiveFailures,
@@ -340,11 +338,10 @@ export class ExternalMarketProviderManager {
         }
       }
 
-      // Step 2: Check Budget & Cooldown
-      await this.syncQuotaFromDb(supabaseAdmin, provider);
-      const check = this.canMakeRequest(provider);
+      // Step 2: Atomic Provider Quota Reservation
+      const reservation = await this.reserveQuota(provider, supabaseAdmin);
 
-      if (!check.allowed) {
+      if (!reservation.allowed) {
         if (cachedEntry) {
           return {
             sourceType: 'upcitemdb',
@@ -460,8 +457,7 @@ export class ExternalMarketProviderManager {
 
     try {
       const result = await orchestratorPromise;
-      const checkQuota = this.canMakeRequest(provider);
-      const isQuotaExhausted = !checkQuota.allowed && !result;
+      const isQuotaExhausted = !result && this.getQuota(provider).requestsToday >= this.getQuota(provider).dailyLimit;
 
       return {
         observation: result,

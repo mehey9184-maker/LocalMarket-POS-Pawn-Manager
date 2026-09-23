@@ -20,7 +20,7 @@ function assertEqual(actual: any, expected: any, msg: string) {
 export async function runExternalProviderManagerTests() {
   console.log('=== RUNNING EXTERNAL MARKET PROVIDER MANAGER TEST SUITE ===');
 
-  // Case 1: 100 shops request the same barcode simultaneously -> 1 external provider request, shared cached result.
+  // Test A — Same barcode deduplication: 100 concurrent requests produce exactly 1 HTTP request
   {
     const manager = ExternalMarketProviderManager.getInstance();
     manager.resetState();
@@ -29,7 +29,7 @@ export async function runExternalProviderManagerTests() {
     let externalCallCount = 0;
     const mockFetch = async () => {
       externalCallCount++;
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise(r => setTimeout(r, 30));
       return {
         ok: true,
         status: 200,
@@ -50,19 +50,58 @@ export async function runExternalProviderManagerTests() {
     );
 
     const results = await Promise.all(requests);
-    assertEqual(externalCallCount, 1, 'Case 1: 100 concurrent requests result in exactly 1 external provider HTTP call');
-    assertTrue(results.every(r => r.observation !== null && r.observation.productName.includes('Shared Item')), 'Case 1: All 100 callers received valid shared observation result');
+    assertEqual(externalCallCount, 1, 'Test A: 100 concurrent requests result in exactly 1 external provider HTTP call');
+    assertTrue(results.every(r => r.observation !== null && r.observation.productName.includes('Shared Item')), 'Test A: All 100 callers received valid shared observation result');
   }
 
-  // Case 2: Daily external budget is exhausted -> no external request; LocalMarket data still works.
+  // Test B — Different barcodes under a 25-request budget: 30 concurrent requests for 30 different barcodes result in max 25 HTTP calls
   {
     const manager = ExternalMarketProviderManager.getInstance();
     manager.resetState();
-    manager.setDailyLimit('upcitemdb', 2);
+
+    let dbCounter = 0;
+    const mockSupabaseAdminWithRpc = {
+      rpc: async (fnName: string, args: any) => {
+        if (fnName === 'reserve_provider_request') {
+          const limit = args.p_default_limit || 25;
+          if (dbCounter < limit) {
+            dbCounter++;
+            return {
+              data: {
+                allowed: true,
+                provider: args.p_provider,
+                daily_limit: limit,
+                requests_today: dbCounter,
+                reset_at: new Date(Date.now() + 86400000).toISOString()
+              },
+              error: null
+            };
+          } else {
+            return {
+              data: {
+                allowed: false,
+                reason: `Daily provider request quota exhausted (${dbCounter}/${limit})`,
+                provider: args.p_provider,
+                daily_limit: limit,
+                requests_today: dbCounter,
+                reset_at: new Date(Date.now() + 86400000).toISOString()
+              },
+              error: null
+            };
+          }
+        }
+        return { data: null, error: null };
+      },
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }),
+        upsert: async () => ({ data: null, error: null })
+      })
+    };
 
     let externalCallCount = 0;
     const mockFetch = async () => {
       externalCallCount++;
+      await new Promise(r => setTimeout(r, 10));
       return {
         ok: true,
         status: 200,
@@ -72,22 +111,64 @@ export async function runExternalProviderManagerTests() {
       } as any;
     };
 
-    await manager.getExternalObservation('111111111111', 'Item 1', undefined, null, false, mockFetch);
-    await manager.getExternalObservation('222222222222', 'Item 2', undefined, null, false, mockFetch);
-    assertEqual(externalCallCount, 2, 'Case 2: 2 requests executed within budget');
+    // 30 distinct barcodes
+    const requests = Array.from({ length: 30 }).map((_, i) => {
+      const barcode = `1000000000${(i + 1).toString().padStart(2, '0')}`;
+      return manager.getExternalObservation(barcode, `Unique Product ${i + 1}`, undefined, mockSupabaseAdminWithRpc, false, mockFetch);
+    });
 
-    const res3 = await manager.getExternalObservation('333333333333', 'Item 3', undefined, null, false, mockFetch);
-    assertEqual(externalCallCount, 2, 'Case 2: 3rd request blocked by daily budget manager without calling external provider');
-    assertTrue(res3.quotaExhausted === true, 'Case 2: Result indicates quota exhausted');
-    assertEqual(res3.observation, null, 'Case 2: External observation returned as null cleanly');
+    const results = await Promise.all(requests);
+    assertEqual(externalCallCount, 25, 'Test B: Exactly 25 HTTP requests executed out of 30 distinct barcode attempts');
+    const admittedCount = results.filter(r => r.observation !== null).length;
+    const exhaustedCount = results.filter(r => r.quotaExhausted === true).length;
+    assertEqual(admittedCount, 25, 'Test B: Exactly 25 requests admitted by atomic reservation RPC');
+    assertEqual(exhaustedCount, 5, 'Test B: Exactly 5 requests blocked by quota protection');
   }
 
-  // Case 3: Cache is valid -> 0 external requests.
+  // Test C — Quota exhausted: 0 HTTP calls, clean fallback, quotaExhausted === true
   {
     const manager = ExternalMarketProviderManager.getInstance();
     manager.resetState();
 
-    const mockSupabaseAdmin = {
+    const mockExhaustedRpcAdmin = {
+      rpc: async () => ({
+        data: {
+          allowed: false,
+          reason: 'Daily provider request quota exhausted (25/25)',
+          provider: 'upcitemdb',
+          daily_limit: 25,
+          requests_today: 25,
+          reset_at: new Date(Date.now() + 86400000).toISOString()
+        },
+        error: null
+      }),
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }),
+        upsert: async () => ({ data: null, error: null })
+      })
+    };
+
+    let externalCallCount = 0;
+    const mockFetch = async () => {
+      externalCallCount++;
+      return { ok: true, json: async () => ({ items: [] }) } as any;
+    };
+
+    const res = await manager.getExternalObservation('999911112222', 'Exhausted Item', undefined, mockExhaustedRpcAdmin, false, mockFetch);
+    assertEqual(externalCallCount, 0, 'Test C: 0 HTTP calls made when atomic reservation reports quota exhausted');
+    assertEqual(res.observation, null, 'Test C: Observation returned null cleanly');
+    assertTrue(res.quotaExhausted === true, 'Test C: Result indicates quotaExhausted === true');
+  }
+
+  // Test D — Valid cache: Produces 0 provider requests and consumes 0 quota
+  {
+    const manager = ExternalMarketProviderManager.getInstance();
+    manager.resetState();
+
+    const mockCachedAdmin = {
+      rpc: async () => {
+        throw new Error('RPC should not be called on valid cache hit!');
+      },
       from: (table: string) => {
         if (table === 'external_market_cache') {
           return {
@@ -124,13 +205,13 @@ export async function runExternalProviderManagerTests() {
       return { ok: true, json: async () => ({ items: [] }) } as any;
     };
 
-    const res = await manager.getExternalObservation('999999999999', 'Camera Lens', undefined, mockSupabaseAdmin, false, mockFetch);
-    assertEqual(externalCallCount, 0, 'Case 3: Valid cache hit resulted in 0 external HTTP requests');
-    assertEqual(res.source, 'cache', 'Case 3: Source identified as cache');
-    assertEqual(res.observation?.productName, 'Cached Camera Lens', 'Case 3: Cached product name returned accurately');
+    const res = await manager.getExternalObservation('999999999999', 'Camera Lens', undefined, mockCachedAdmin, false, mockFetch);
+    assertEqual(externalCallCount, 0, 'Test D: Valid cache hit resulted in 0 external HTTP requests');
+    assertEqual(res.source, 'cache', 'Test D: Source identified as cache');
+    assertEqual(res.observation?.productName, 'Cached Camera Lens', 'Test D: Cached product name returned accurately');
   }
 
-  // Case 4: Cache expired but another request is already fetching it -> request deduplication.
+  // Test E — Expired cache + available quota: Expired cache triggers 1 refetch for same in-flight key
   {
     const manager = ExternalMarketProviderManager.getInstance();
     manager.resetState();
@@ -138,7 +219,7 @@ export async function runExternalProviderManagerTests() {
     let externalCallCount = 0;
     const mockFetch = async () => {
       externalCallCount++;
-      await new Promise(r => setTimeout(r, 60));
+      await new Promise(r => setTimeout(r, 40));
       return {
         ok: true,
         status: 200,
@@ -152,12 +233,12 @@ export async function runExternalProviderManagerTests() {
     const req2 = manager.getExternalObservation('888888888888', 'Smart Watch', undefined, null, false, mockFetch);
 
     const [res1, res2] = await Promise.all([req1, req2]);
-    assertEqual(externalCallCount, 1, 'Case 4: Simultaneous refetch resulted in 1 external HTTP request');
-    assertEqual(res1.observation?.productName, 'Refetched Smart Watch', 'Case 4: Request 1 received refetched data');
-    assertEqual(res2.observation?.productName, 'Refetched Smart Watch', 'Case 4: Request 2 received deduplicated refetched data');
+    assertEqual(externalCallCount, 1, 'Test E: Concurrent requests for expired/missing cache result in exactly 1 external HTTP request');
+    assertEqual(res1.observation?.productName, 'Refetched Smart Watch', 'Test E: Request 1 received refetched data');
+    assertEqual(res2.observation?.productName, 'Refetched Smart Watch', 'Test E: Request 2 received deduplicated refetched data');
   }
 
-  // Case 5: Provider returns HTTP 429 -> cooldown and graceful fallback.
+  // Test F — 429 handling and cooldown
   {
     const manager = ExternalMarketProviderManager.getInstance();
     manager.resetState();
@@ -173,15 +254,14 @@ export async function runExternalProviderManagerTests() {
     };
 
     const res1 = await manager.getExternalObservation('777777777777', 'Item 429', undefined, null, false, mockFetch429);
-    assertEqual(externalCallCount, 1, 'Case 5: First call hit HTTP 429');
-    assertEqual(res1.observation, null, 'Case 5: Observation returned null on 429');
+    assertEqual(externalCallCount, 1, 'Test F: First call hit HTTP 429');
+    assertEqual(res1.observation, null, 'Test F: Observation returned null on 429');
 
     const res2 = await manager.getExternalObservation('666666666666', 'Another Item', undefined, null, false, mockFetch429);
-    assertEqual(externalCallCount, 1, 'Case 5: Second call blocked by provider cooldown without making external HTTP request');
-    assertTrue(manager.canMakeRequest('upcitemdb').allowed === false, 'Case 5: Cooldown flag active');
+    assertEqual(externalCallCount, 1, 'Test F: Second call during cooldown blocked without HTTP call');
   }
 
-  // Case 6: Provider unavailable -> LocalMarket valuation continues.
+  // Test G — Provider network failure
   {
     const manager = ExternalMarketProviderManager.getInstance();
     manager.resetState();
@@ -191,11 +271,11 @@ export async function runExternalProviderManagerTests() {
     };
 
     const res = await manager.getExternalObservation('555555555555', 'Broken Network Item', undefined, null, false, mockFetchError);
-    assertEqual(res.observation, null, 'Case 6: Provider error handled gracefully returning null external observation');
-    assertEqual(res.source, 'none', 'Case 6: Source marked as none, allowing LocalMarket valuation to proceed seamlessly');
+    assertEqual(res.observation, null, 'Test G: Provider network failure handled cleanly returning null observation');
+    assertEqual(res.source, 'none', 'Test G: Source marked as none, allowing LocalMarket valuation to proceed seamlessly');
   }
 
-  // Case 7: Two different shops request the same product -> external reference shared, LocalMarket sales statistics remain completely separate.
+  // Test H — Shop data isolation
   {
     const externalRef: MarketObservation = {
       sourceType: 'upcitemdb',
@@ -210,35 +290,38 @@ export async function runExternalProviderManagerTests() {
 
     const shopASalesStats = {
       salesLast30Days: 3,
-      salesLast60Days: 3,
-      salesLast90Days: 3,
-      currentActiveStockCount: 1,
-      avgSalePrice: 8000,
-      medianSalePrice: 8000,
-      minSalePrice: 8000,
-      maxSalePrice: 8000,
-      medianDaysToSell: null,
-      sellThroughRate: 0.75
+      avgSalePrice: 8000
     };
 
     const shopBSalesStats = {
       salesLast30Days: 0,
-      salesLast60Days: 0,
-      salesLast90Days: 0,
-      currentActiveStockCount: 0,
-      avgSalePrice: null,
-      medianSalePrice: null,
-      minSalePrice: null,
-      maxSalePrice: null,
-      medianDaysToSell: null,
-      sellThroughRate: null
+      avgSalePrice: null
     };
 
-    assertTrue(externalRef.referencePrice === 10000, 'Case 7: External reference price shared');
-    assertEqual(shopASalesStats.salesLast30Days, 3, 'Case 7: Shop A has 3 sales in last 30 days');
-    assertEqual(shopBSalesStats.salesLast30Days, 0, 'Case 7: Shop B has 0 sales in last 30 days');
-    assertEqual(shopASalesStats.avgSalePrice, 8000, 'Case 7: Shop A avg price is R8000');
-    assertEqual(shopBSalesStats.avgSalePrice, null, 'Case 7: Shop B avg price is null (isolated)');
+    assertTrue(externalRef.referencePrice === 10000, 'Test H: External reference price shared');
+    assertEqual(shopASalesStats.salesLast30Days, 3, 'Test H: Shop A sales stats isolated');
+    assertEqual(shopBSalesStats.salesLast30Days, 0, 'Test H: Shop B sales stats isolated');
+  }
+
+  // Test I — Reservation counting (recordSuccess and recordFailure DO NOT increment requestsToday)
+  {
+    const manager = ExternalMarketProviderManager.getInstance();
+    manager.resetState();
+
+    const initialQuota = manager.getQuota('upcitemdb');
+    const initialRequests = initialQuota.requestsToday; // 0
+
+    // Reserve 1 slot
+    await manager.reserveQuota('upcitemdb', null);
+    assertEqual(manager.getQuota('upcitemdb').requestsToday, 1, 'Test I: reserveQuota increased requestsToday from 0 to 1');
+
+    // Call recordSuccess — must NOT increment requestsToday
+    manager.recordSuccess('upcitemdb', null);
+    assertEqual(manager.getQuota('upcitemdb').requestsToday, 1, 'Test I: recordSuccess did NOT increment requestsToday (still 1)');
+
+    // Call recordFailure — must NOT increment requestsToday
+    manager.recordFailure('upcitemdb', 500, null);
+    assertEqual(manager.getQuota('upcitemdb').requestsToday, 1, 'Test I: recordFailure did NOT increment requestsToday (still 1)');
   }
 
   console.log('=== ALL EXTERNAL MARKET PROVIDER MANAGER TESTS PASSED ===');
