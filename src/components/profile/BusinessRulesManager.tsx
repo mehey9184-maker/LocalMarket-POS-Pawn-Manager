@@ -14,7 +14,8 @@ import {
   Save,
   Info,
   Calendar,
-  Wallet
+  Wallet,
+  TrendingUp
 } from 'lucide-react';
 
 export const BusinessRulesManager: React.FC = () => {

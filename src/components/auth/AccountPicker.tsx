@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useApp } from '../../context/AppContext';
 import { authApi } from '../../services/supabaseApi';
 import { ProfileRow } from '../../types/supabase';
 import { Loader2, ArrowLeft, Key, User, ShieldCheck } from 'lucide-react';
@@ -10,9 +11,10 @@ export const AccountPicker: React.FC = () => {
     profile: currentProfile, 
     logout, 
     isAccountPickerOpen, 
-    setIsAccountPickerOpen,
-    showToast
+    setIsAccountPickerOpen
   } = useAuth();
+
+  const { showToast } = useApp();
   
   const [selectedStaff, setSelectedStaff] = useState<ProfileRow | null>(null);
   const [pin, setPin] = useState('');
@@ -44,28 +46,10 @@ export const AccountPicker: React.FC = () => {
     setError(null);
 
     try {
-      // 1. Verify PIN and get deterministic password from server
-      const response = await fetch('/api/auth/login-with-pin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cashierCode: selectedStaff.cashier_code,
-          pin
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        setError(data.error || 'Authentication failed');
-        return;
-      }
-
-      // 2. Use the returned credentials to sign in via Supabase
-      const { error: signInErr } = await authApi.signIn(data.email, data.password);
+      const res = await authApi.loginWithPin(selectedStaff.cashier_code, pin);
       
-      if (signInErr) {
-        setError(signInErr.message);
+      if (!res.success) {
+        setError(res.error || 'Authentication failed');
         return;
       }
 

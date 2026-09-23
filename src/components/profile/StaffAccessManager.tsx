@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useApp } from '../../context/AppContext';
 import { ProfileRow } from '../../types/supabase';
 import { 
   User, 
@@ -18,7 +19,8 @@ import {
 } from 'lucide-react';
 
 export const StaffAccessManager: React.FC = () => {
-  const { users, updateStaffProfile, provisionStaff, showToast, isOwner, isManager } = useAuth();
+  const { users, updateStaffProfile, provisionStaff, isOwner, isManager } = useAuth();
+  const { showToast } = useApp();
   const [selectedStaff, setSelectedStaff] = useState<ProfileRow | null>(null);
   const [isAddingStaff, setIsAddingStaff] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -328,7 +330,8 @@ export const StaffAccessManager: React.FC = () => {
 };
 
 const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
-  const { provisionStaff, showToast } = useAuth();
+  const { provisionStaff } = useAuth();
+  const { showToast } = useApp();
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [formData, setFormData] = useState({
     fullName: '',

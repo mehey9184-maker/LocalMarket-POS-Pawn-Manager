@@ -39,7 +39,8 @@ import {
   PawnLoan, 
   SaleTransaction, 
   RefundRequest,
-  SapsEntry 
+  SapsEntry,
+  BusinessRules
 } from '../types';
 
 /**
@@ -150,6 +151,31 @@ export const authApi = {
       unsubscribe: () => data.subscription.unsubscribe(),
     };
   },
+
+  async loginWithPin(cashierCode: string, pin: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await fetch('/api/auth/login-with-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cashierCode, pin })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || 'Authentication failed' };
+      }
+
+      const supabase = getSupabase();
+      if (!supabase) throw new Error('Supabase not configured');
+
+      const { error: sessionErr } = await supabase.auth.setSession(data.session);
+      if (sessionErr) throw sessionErr;
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Connection error during PIN login' };
+    }
+  }
 };
 
 // ==========================================
@@ -1359,19 +1385,33 @@ export const staffApi = {
     }
   },
 
-  async updateStaffProfile(id: string, updates: Partial<ProfileRow>): Promise<{ success: boolean; error?: string }> {
+  async updateStaffProfile(id: string, updates: Partial<ProfileRow>, reason?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      return await withAuthRecovery(async (supabase) => {
-        const { error } = await supabase
-          .from('profiles')
-          .update(updates as any)
-          .eq('id', id);
+      const session = await authApi.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Authentication required');
 
-        if (error) throw error;
-        return { success: true };
+      const response = await fetch('/api/staff/update-profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          targetId: id,
+          updates,
+          reason
+        })
       });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || 'Failed to update staff profile.' };
+      }
+
+      return { success: true };
     } catch (err: any) {
-      return { success: false, error: err?.message || 'Failed to update staff profile.' };
+      return { success: false, error: err?.message || 'Network error updating staff profile.' };
     }
   }
 };

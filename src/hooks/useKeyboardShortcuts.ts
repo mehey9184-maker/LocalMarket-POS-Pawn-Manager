@@ -53,7 +53,8 @@ export const useKeyboardShortcuts = (options?: KeyboardShortcutOptions) => {
             'buy-pawn': 'Buy / Pawn Intake Desk',
             inventory: 'Vault & Stockroom Manager',
             customers: 'Consolidated Records & SAPS',
-            profile: 'Cashier Profile & Performance'
+            profile: 'Cashier Profile & Performance',
+            vault: 'Secure Vault Operations'
           };
           showToast(`Switched Tab`, tabNames[targetTab], 'info');
           return;

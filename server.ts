@@ -34,6 +34,7 @@ function getSupabaseAdminClient() {
 async function authenticateCaller(req: express.Request): Promise<{
   user?: any;
   profile?: any;
+  shop?: any;
   status: number;
   error?: string;
 }> {
@@ -85,10 +86,15 @@ async function authenticateCaller(req: express.Request): Promise<{
 
   const callerUser = authData.user;
 
-  // Fetch the authoritative profile for the caller
-  const { data: profile, error: profileError } = await userClient
+  // Fetch the authoritative profile and shop for the caller
+  const adminClient = getSupabaseAdminClient();
+  if (!adminClient) {
+    return { status: 503, error: "Admin client not available" };
+  }
+
+  const { data: profile, error: profileError } = await adminClient
     .from("profiles")
-    .select("*")
+    .select("*, shop:shop_profiles(*)")
     .eq("id", callerUser.id)
     .maybeSingle();
 
@@ -109,8 +115,120 @@ async function authenticateCaller(req: express.Request): Promise<{
   return {
     user: callerUser,
     profile,
+    shop: profile.shop,
     status: 200
   };
+}
+
+// --- CENTRALIZED SCHEDULE ENGINE ---
+function getShopNow(timezone: string = 'Africa/Johannesburg') {
+  const now = new Date();
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(now);
+    const d: any = {};
+    parts.forEach(p => { if (p.type !== 'literal') d[p.type] = p.value; });
+    return new Date(`${d.year}-${d.month}-${d.day}T${d.hour}:${d.minute}:${d.second}`);
+  } catch (e) {
+    console.error("Timezone error, falling back to local time:", e);
+    return now;
+  }
+}
+
+function verifyStaffSchedule(profile: any, shop: any): { allowed: boolean; error?: string } {
+  // Owners and Admins are always allowed
+  if (profile.role === 'owner' || profile.role === 'admin') return { allowed: true };
+
+  const schedule = profile.schedule as any;
+  if (!schedule) return { allowed: true }; // No schedule restriction
+
+  const timezone = shop?.timezone || 'Africa/Johannesburg';
+  const shopNow = getShopNow(timezone);
+  const currentDay = shopNow.getDay();
+  const currentTotalMinutes = shopNow.getHours() * 60 + shopNow.getMinutes();
+
+  const workingDays = schedule.workingDays || [1, 2, 3, 4, 5];
+  const [startH, startM] = (schedule.startTime || "08:00").split(':').map(Number);
+  const [endH, endM] = (schedule.endTime || "17:00").split(':').map(Number);
+  const earlyMins = schedule.earlyLoginMinutes || 10;
+  const overnight = !!schedule.overnight;
+
+  const startTotalMinutes = startH * 60 + startM;
+  const startWithEarlyTotalMinutes = startTotalMinutes - earlyMins;
+  const endTotalMinutes = endH * 60 + endM;
+
+  // 1. Check shift starting today
+  if (workingDays.includes(currentDay)) {
+    if (!overnight) {
+      if (currentTotalMinutes >= startWithEarlyTotalMinutes && currentTotalMinutes <= endTotalMinutes) {
+        return { allowed: true };
+      }
+    } else {
+      // Overnight: starts today, ends tomorrow. 
+      // If we are currently after the start-with-early time
+      if (currentTotalMinutes >= startWithEarlyTotalMinutes) {
+        return { allowed: true };
+      }
+    }
+  }
+
+  // 2. Check shift starting yesterday (if overnight)
+  const yesterdayDay = (currentDay + 6) % 7;
+  if (workingDays.includes(yesterdayDay) && overnight) {
+    // If we are currently before the end time today
+    if (currentTotalMinutes <= endTotalMinutes) {
+      return { allowed: true };
+    }
+  }
+
+  // Determine user facing error
+  if (!workingDays.includes(currentDay) && (!overnight || currentTotalMinutes > endTotalMinutes)) {
+    return { allowed: false, error: "You are not scheduled to work today." };
+  }
+
+  if (currentTotalMinutes < startWithEarlyTotalMinutes) {
+    return { allowed: false, error: `This shift starts at ${schedule.startTime}.` };
+  }
+
+  return { allowed: false, error: "Your scheduled shift has ended." };
+}
+
+// --- CENTRALIZED STAFF AUDIT LOGGING ---
+async function logStaffAudit(adminClient: any, {
+  shopId,
+  actorId,
+  targetId,
+  eventType,
+  oldValues,
+  newValues,
+  reason
+}: {
+  shopId: string;
+  actorId: string;
+  targetId: string;
+  eventType: string;
+  oldValues?: any;
+  newValues?: any;
+  reason?: string;
+}) {
+  try {
+    await adminClient.from('staff_audit_logs').insert({
+      shop_id: shopId,
+      actor_id: actorId,
+      target_staff_id: targetId,
+      event_type: eventType,
+      old_values: oldValues,
+      new_values: newValues,
+      reason
+    });
+  } catch (err) {
+    console.error("Failed to write staff audit log:", err);
+  }
 }
 
 /**
@@ -222,8 +340,13 @@ async function startServer() {
         return res.status(auth.status).json({ success: false, error: auth.error || "Authentication required." });
       }
 
+      const adminSupabase = getSupabaseAdminClient();
+      if (!adminSupabase) {
+        return res.status(503).json({ success: false, error: "Backend admin service not configured." });
+      }
+
       // Caller role must be manager or owner
-      if (auth.profile.role !== "owner" && auth.profile.role !== "manager") {
+      if (auth.profile.role !== "owner" && auth.profile.role !== "manager" && auth.profile.role !== "admin") {
         return res.status(403).json({ success: false, error: "Only authenticated managers or owners can access elevated operations." });
       }
 
@@ -231,6 +354,18 @@ async function startServer() {
       if (!pin) {
         return res.status(400).json({ success: false, error: "PIN is required." });
       }
+
+      // Brute Force Protection
+      const now = new Date();
+      const lastAttempt = auth.profile.last_attempt_at ? new Date(auth.profile.last_attempt_at) : null;
+      const attempts = auth.profile.login_attempts || 0;
+
+      if (attempts >= 5 && lastAttempt && (now.getTime() - lastAttempt.getTime() < 15 * 60 * 1000)) {
+        const remaining = Math.ceil(15 - (now.getTime() - lastAttempt.getTime()) / (60 * 1000));
+        return res.status(429).json({ success: false, error: `Too many failed attempts. Try again in ${remaining} minutes.` });
+      }
+
+      const currentAttempts = (lastAttempt && (now.getTime() - lastAttempt.getTime() > 15 * 60 * 1000)) ? 0 : attempts;
 
       let isPinValid = false;
 
@@ -245,13 +380,25 @@ async function startServer() {
       }
 
       if (isPinValid) {
+        // Reset attempts on success
+        await adminSupabase.from('profiles').update({
+          login_attempts: 0,
+          last_attempt_at: null
+        }).eq('id', auth.profile.id);
+
         return res.json({ success: true, authorizedRole: auth.profile.role });
       }
 
-      return res.status(401).json({ success: false, error: "Invalid Manager PIN for authenticated account." });
+      // Increment attempts on failure
+      await adminSupabase.from('profiles').update({
+        login_attempts: currentAttempts + 1,
+        last_attempt_at: now.toISOString()
+      }).eq('id', auth.profile.id);
+
+      return res.status(401).json({ success: false, error: "Invalid Manager PIN." });
     } catch (err: any) {
       console.error("PIN verification error:", err);
-      return res.status(500).json({ success: false, error: err.message || "Failed to verify PIN." });
+      return res.status(500).json({ success: false, error: "Internal server error." });
     }
   });
 
@@ -271,75 +418,133 @@ async function startServer() {
       // 1. Find profile by cashier code
       const { data: profile, error: profileErr } = await adminSupabase
         .from("profiles")
-        .select("*")
+        .select("*, shop:shop_profiles(*)")
         .eq("cashier_code", cashierCode)
         .maybeSingle();
 
       if (profileErr || !profile) {
-        return res.status(404).json({ success: false, error: "Staff account not found." });
+        // Generic error to avoid account enumeration
+        return res.status(401).json({ success: false, error: "Invalid credentials." });
       }
 
       if (!profile.is_active) {
         return res.status(403).json({ success: false, error: "Account is deactivated." });
       }
 
-      // 2. Verify PIN
+      // 2. Rate Limiting / Brute Force Protection
+      const now = new Date();
+      const lastAttempt = profile.last_attempt_at ? new Date(profile.last_attempt_at) : null;
+      const attempts = profile.login_attempts || 0;
+
+      // Lockout logic: 5 attempts, 15 min lockout
+      if (attempts >= 5 && lastAttempt && (now.getTime() - lastAttempt.getTime() < 15 * 60 * 1000)) {
+        const remaining = Math.ceil(15 - (now.getTime() - lastAttempt.getTime()) / (60 * 1000));
+        return res.status(429).json({ success: false, error: `Too many failed attempts. Try again in ${remaining} minutes.` });
+      }
+
+      // Reset attempts if last attempt was long ago
+      const currentAttempts = (lastAttempt && (now.getTime() - lastAttempt.getTime() > 15 * 60 * 1000)) ? 0 : attempts;
+
+      // 3. Verify PIN
       if (profile.pin_code !== pin) {
+        await adminSupabase.from('profiles').update({
+          login_attempts: currentAttempts + 1,
+          last_attempt_at: now.toISOString()
+        }).eq('id', profile.id);
+
         return res.status(401).json({ success: false, error: "Invalid PIN." });
       }
 
-      // 3. Check Schedule Enforcement (if not owner/admin)
-      if (profile.role !== 'owner' && profile.role !== 'admin') {
-        const schedule = profile.schedule as any;
-        if (schedule) {
-          const now = new Date();
-          const day = now.getDay(); // 0 is Sunday, 1 is Monday
-          const workingDays = schedule.workingDays || [1, 2, 3, 4, 5];
-          
-          if (!workingDays.includes(day)) {
-             return res.status(403).json({ success: false, error: "You are not scheduled to work today." });
-          }
-
-          const [startH, startM] = (schedule.startTime || "08:00").split(':').map(Number);
-          const [endH, endM] = (schedule.endTime || "17:00").split(':').map(Number);
-          const earlyMins = schedule.earlyLoginMinutes || 10;
-
-          const startTime = new Date(now);
-          startTime.setHours(startH, startM - earlyMins, 0, 0);
-          
-          const endTime = new Date(now);
-          endTime.setHours(endH, endM, 0, 0);
-
-          if (now < startTime) {
-             return res.status(403).json({ 
-               success: false, 
-               error: `Too early. Shift starts at ${schedule.startTime}. Early login allowed ${earlyMins} mins prior.` 
-             });
-          }
-
-          if (now > endTime && !schedule.overnight) {
-             return res.status(403).json({ success: false, error: "Your scheduled shift has ended." });
-          }
-        }
+      // 4. Check Schedule Enforcement
+      const scheduleCheck = verifyStaffSchedule(profile, profile.shop);
+      if (!scheduleCheck.allowed) {
+        return res.status(403).json({ success: false, error: scheduleCheck.error });
       }
 
-      // 4. Return deterministic password for client to sign in with standard Supabase Auth
-      const secret = process.env.STAFF_PASSWORD_SECRET || "LM-SECURE-STAFF-DEFAULT-2026";
-      const staffPassword = crypto.createHmac('sha256', secret)
-        .update(profile.cashier_code.toUpperCase())
-        .digest('hex')
-        .substring(0, 16) + "!";
-      
+      // 5. Establish Real Supabase Session
+      // Generate a temporary random password and update user
+      const tempPassword = crypto.randomBytes(16).toString('hex') + "A1!";
+      const { error: updateAuthErr } = await adminSupabase.auth.admin.updateUserById(profile.id, {
+        password: tempPassword
+      });
+
+      if (updateAuthErr) {
+        console.error("Auth update failed during PIN login:", updateAuthErr);
+        return res.status(500).json({ success: false, error: "Failed to establish secure session." });
+      }
+
+      // Sign in on server to get session
+      const { data: authData, error: signInErr } = await adminSupabase.auth.signInWithPassword({
+        email: profile.email!,
+        password: tempPassword
+      });
+
+      if (signInErr || !authData.session) {
+        console.error("Auth signin failed during PIN login:", signInErr);
+        return res.status(500).json({ success: false, error: "Session establishment failed." });
+      }
+
+      // Reset attempts on success
+      await adminSupabase.from('profiles').update({
+        login_attempts: 0,
+        last_attempt_at: null,
+        last_sign_in_at: now.toISOString()
+      }).eq('id', profile.id);
+
+      // Audit login
+      await logStaffAudit(adminSupabase, {
+        shopId: profile.shop_id!,
+        actorId: profile.id,
+        targetId: profile.id,
+        eventType: 'STAFF_LOGIN_PIN',
+        reason: 'Staff terminal activation'
+      });
+
       return res.json({ 
         success: true, 
-        email: profile.email,
-        password: staffPassword,
-        message: "PIN verified. Authenticating..."
+        session: authData.session,
+        message: "Terminal activated successfully."
       });
 
     } catch (err: any) {
       console.error("Login with PIN error:", err);
-      return res.status(500).json({ success: false, error: err.message || "Login failed." });
+      return res.status(500).json({ success: false, error: "Internal server error during login." });
+    }
+  });
+
+  // --- API ROUTE: SECURE STAFF PROFILE UPDATE ---
+  app.post("/api/staff/update-profile", async (req, res) => {
+    try {
+      const auth = await authenticateCaller(req);
+      if (auth.status !== 200) {
+        return res.status(auth.status).json({ success: false, error: auth.error });
+      }
+
+      const { targetId, updates, reason } = req.body;
+      if (!targetId || !updates) {
+        return res.status(400).json({ success: false, error: "Target ID and updates are required." });
+      }
+
+      const adminSupabase = getSupabaseAdminClient();
+      if (!adminSupabase) {
+        return res.status(503).json({ success: false, error: "Admin client not available." });
+      }
+
+      // Call the secure RPC
+      const { data, error } = await adminSupabase.rpc('secure_update_staff_profile', {
+        p_target_id: targetId,
+        p_updates: updates,
+        p_reason: reason || 'Staff profile update via Admin panel'
+      });
+
+      if (error) {
+        return res.status(400).json({ success: false, error: error.message });
+      }
+
+      return res.json({ success: true, data });
+    } catch (err: any) {
+      console.error("Update staff profile error:", err);
+      return res.status(500).json({ success: false, error: "Failed to update staff profile." });
     }
   });
 
@@ -410,14 +615,8 @@ async function startServer() {
 
       const staffEmail = email || `${cashierCode.toLowerCase().replace(/[^a-z0-9]/g, "")}@localmarketpos.co.za`;
       
-      // Use a deterministic password based on cashierCode and a server-side secret
-      // This allows PIN login to work by having the server verify the PIN and then
-      // telling the client the deterministic password (or just signing them in).
-      const secret = process.env.STAFF_PASSWORD_SECRET || "LM-SECURE-STAFF-DEFAULT-2026";
-      const staffPassword = password || crypto.createHmac('sha256', secret)
-        .update(cashierCode.toUpperCase())
-        .digest('hex')
-        .substring(0, 16) + "!";
+      // Use a random password - users only login via PIN which establishes session on server
+      const staffPassword = password || crypto.randomBytes(16).toString('hex') + "A1!";
 
       let userId: string | null = null;
 
@@ -492,32 +691,22 @@ async function startServer() {
       }
 
       // 9. Write audit log for staff provisioning
-      try {
-        await adminSupabase.from("system_logs").insert({
-          shop_id: authoritativeShopId,
-          event_type: "STAFF_PROVISIONED",
-          severity: "audit",
-          actor_id: callerProfile.id,
-          actor_name: callerProfile.full_name || "Manager",
-          details: {
-            created_user_id: userId,
-            created_user_role: role,
-            cashier_code: cashierCode,
-            shop_id: authoritativeShopId,
-            timestamp: new Date().toISOString()
-          }
-        });
-      } catch (logErr: any) {
-        console.warn("Audit log creation error (non-blocking):", logErr.message);
-      }
+      await logStaffAudit(adminSupabase, {
+        shopId: authoritativeShopId,
+        actorId: callerProfile.id,
+        targetId: userId,
+        eventType: 'STAFF_PROVISIONED',
+        newValues: {
+          full_name: fullName,
+          role,
+          cashier_code: cashierCode
+        },
+        reason: 'New staff member registration'
+      });
 
       return res.json({
         success: true,
-        profile: profileRow,
-        credentials: {
-          email: staffEmail,
-          temporaryPassword: staffPassword
-        }
+        profile: profileRow
       });
     } catch (err: any) {
       console.error("Staff provisioning server error:", err);

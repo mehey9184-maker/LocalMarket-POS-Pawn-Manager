@@ -5,9 +5,7 @@
 
 import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { Header } from './components/Header';
-import { FloatingActionMenu } from './components/FloatingActionMenu';
 import { Toast } from './components/Toast';
 import { Home } from './components/screens/Home';
 import { Sell } from './components/screens/Sell';
