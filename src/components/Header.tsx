@@ -1,6 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp, NavTab } from '../context/AppContext';
-import { Search, Camera, RotateCcw, ChevronDown, MapPin, PlayCircle, X, ShoppingBag, PlusCircle, History, User, MessageSquare } from 'lucide-react';
+import { useSellers } from '../context/SellerContext';
+import { 
+  Search, 
+  User, 
+  Package, 
+  Clock, 
+  ShoppingBag, 
+  Receipt, 
+  Store,
+  ChevronRight,
+  Plus
+} from 'lucide-react';
 
 interface HeaderProps {
   onOpenShortcuts?: () => void;
@@ -12,34 +23,79 @@ export const Header: React.FC<HeaderProps> = () => {
     activeTab,
     setActiveTab,
     setActiveCustomer,
+    inventory,
+    pawnLoans,
     customers,
+    salesHistory,
+    addToCart,
+    setActiveReceiptModal,
     showToast,
     shopProfile,
   } = useApp();
 
+  const { sellers } = useSellers();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
-  const filteredCustomers = searchQuery.length >= 2 
-    ? customers.filter(c => 
-        c.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.idNumber.includes(searchQuery) ||
-        c.mobile.includes(searchQuery)
-      ).slice(0, 5)
-    : [];
+  // Universal Search across domains
+  const searchResults = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (q.length < 2) return null;
 
-  const handleAction = (tab: NavTab, customer: any) => {
+    const matchedInventory = inventory.filter(i => 
+      i.title.toLowerCase().includes(q) ||
+      i.sku.toLowerCase().includes(q) ||
+      (i.serialOrImei && i.serialOrImei.toLowerCase().includes(q))
+    ).slice(0, 3);
+
+    const matchedLoans = pawnLoans.filter(l =>
+      l.ticketNumber.toLowerCase().includes(q) ||
+      l.customerName.toLowerCase().includes(q) ||
+      l.customerIdNumber.includes(q) ||
+      l.itemTitle.toLowerCase().includes(q)
+    ).slice(0, 3);
+
+    const matchedCustomers = customers.filter(c =>
+      c.fullName.toLowerCase().includes(q) ||
+      c.idNumber.includes(q) ||
+      c.mobile.includes(q)
+    ).slice(0, 3);
+
+    const matchedSellers = sellers.filter(s =>
+      s.fullName.toLowerCase().includes(q) ||
+      s.idNumber.includes(q) ||
+      s.mobile.includes(q)
+    ).slice(0, 3);
+
+    const matchedSales = salesHistory.filter(s =>
+      s.receiptNumber.toLowerCase().includes(q)
+    ).slice(0, 2);
+
+    const totalCount = matchedInventory.length + matchedLoans.length + matchedCustomers.length + matchedSellers.length + matchedSales.length;
+
+    return {
+      inventory: matchedInventory,
+      loans: matchedLoans,
+      customers: matchedCustomers,
+      sellers: matchedSellers,
+      sales: matchedSales,
+      totalCount
+    };
+  }, [searchQuery, inventory, pawnLoans, customers, sellers, salesHistory]);
+
+  const handleSelectCustomer = (customer: any, tab: NavTab) => {
     setActiveCustomer(customer);
     setActiveTab(tab);
     setSearchQuery('');
     setIsSearchFocused(false);
-    showToast('Session Started', `Acting for ${customer.fullName}`, 'success');
+    showToast('Customer Selected', `Active client: ${customer.fullName}`, 'info');
   };
 
   const navTabs: { id: NavTab; label: string }[] = [
     { id: 'home', label: 'Home' },
     { id: 'sell', label: 'Sell' },
-    { id: 'buy-pawn', label: 'Buy / Pawn' },
+    { id: 'buy-pawn', label: 'Add Stock' },
     { id: 'inventory', label: 'Inventory' },
     { id: 'customers', label: 'Customers' }
   ];
@@ -53,7 +109,7 @@ export const Header: React.FC<HeaderProps> = () => {
         <button
           type="button"
           onClick={() => setActiveTab('home')}
-          className="flex items-center gap-3 shrink-0 group text-left"
+          className="flex items-center gap-3 shrink-0 group text-left cursor-pointer"
         >
           <div className="w-9 h-9 rounded-xl bg-[#C85A32] flex items-center justify-center text-white font-bold text-sm tracking-wide shadow-sm group-hover:bg-[#A94725] transition-colors">
             LM
@@ -68,12 +124,12 @@ export const Header: React.FC<HeaderProps> = () => {
           </div>
         </button>
 
-        {/* UNIVERSAL SEARCH */}
-        <div className="relative flex-1 max-w-sm hidden md:block">
+        {/* UNIVERSAL OPERATIONAL SEARCH */}
+        <div className="relative flex-1 max-w-md hidden md:block">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input 
             type="text" 
-            placeholder="Search customers or sellers..."
+            placeholder="Search stock SKU, pawn loans, customers, sellers..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => setIsSearchFocused(true)}
@@ -81,45 +137,174 @@ export const Header: React.FC<HeaderProps> = () => {
           />
 
           {/* Actionable Results Dropdown */}
-          {isSearchFocused && filteredCustomers.length > 0 && (
+          {isSearchFocused && searchResults && searchResults.totalCount > 0 && (
             <>
               <div 
                 className="fixed inset-0 z-40" 
                 onClick={() => setIsSearchFocused(false)} 
               />
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
-                <div className="px-4 py-2.5 border-b border-gray-100 bg-[#F8F9FA]">
-                  <span className="text-[11px] font-semibold text-gray-500">Quick Actions</span>
-                </div>
-                {filteredCustomers.map(customer => (
-                  <div key={customer.id} className="p-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[#FDF0EA] text-[#C85A32] font-semibold text-xs flex items-center justify-center">
-                          {customer.fullName.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="text-[13px] font-semibold text-gray-900">{customer.fullName}</p>
-                          <p className="text-[11px] text-gray-500 font-mono">{customer.mobile}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => handleAction('sell', customer)}
-                          className="px-2.5 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition text-[11px] font-medium"
-                        >
-                          Sell
-                        </button>
-                        <button 
-                          onClick={() => handleAction('buy-pawn', customer)}
-                          className="px-2.5 py-1.5 rounded-lg bg-[#FDF0EA] text-[#C85A32] hover:bg-[#C85A32] hover:text-white transition text-[11px] font-medium"
-                        >
-                          Intake
-                        </button>
-                      </div>
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl z-50 overflow-hidden max-h-[460px] overflow-y-auto divide-y divide-gray-100">
+                {/* 1. INVENTORY MATCHES */}
+                {searchResults.inventory.length > 0 && (
+                  <div className="p-2">
+                    <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                      <Package className="w-3 h-3 text-[#C85A32]" />
+                      <span>Stock & Inventory</span>
                     </div>
+                    {searchResults.inventory.map(item => (
+                      <div key={item.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-gray-900 truncate">{item.title}</span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">{item.sku}</span>
+                          </div>
+                          <div className="text-[11px] text-gray-500 flex items-center gap-2 mt-0.5">
+                            <span className="font-mono font-bold text-gray-800">R {item.retailPrice.toLocaleString()}</span>
+                            <span>•</span>
+                            <span className={`text-[10px] font-medium ${item.status === 'Retail Floor' ? 'text-emerald-600' : 'text-amber-600'}`}>{item.status}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {item.status === 'Retail Floor' && (
+                            <button
+                              onClick={() => {
+                                addToCart(item);
+                                setActiveTab('sell');
+                                setIsSearchFocused(false);
+                                setSearchQuery('');
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-[#FDF0EA] text-[#C85A32] hover:bg-[#C85A32] hover:text-white text-xs font-semibold transition"
+                            >
+                              Sell
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              setActiveTab('inventory');
+                              setIsSearchFocused(false);
+                              setSearchQuery('');
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold transition"
+                          >
+                            View
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+
+                {/* 2. PAWN LOANS */}
+                {searchResults.loans.length > 0 && (
+                  <div className="p-2">
+                    <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                      <Clock className="w-3 h-3 text-blue-500" />
+                      <span>Pawn Loans</span>
+                    </div>
+                    {searchResults.loans.map(loan => (
+                      <div key={loan.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-gray-900">{loan.customerName}</span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">{loan.ticketNumber}</span>
+                          </div>
+                          <p className="text-[11px] text-gray-500 truncate">{loan.itemTitle} · Principal: R {loan.principal}</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setActiveTab('customers');
+                            setIsSearchFocused(false);
+                            setSearchQuery('');
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white text-xs font-semibold transition"
+                        >
+                          Ledger
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 3. SELLERS */}
+                {searchResults.sellers.length > 0 && (
+                  <div className="p-2">
+                    <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                      <Store className="w-3 h-3 text-orange-500" />
+                      <span>Outright Sellers</span>
+                    </div>
+                    {searchResults.sellers.map(seller => (
+                      <div key={seller.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-900">{seller.fullName}</p>
+                          <p className="text-[11px] text-gray-500 font-mono">ID: {seller.idNumber} · {seller.mobile}</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setActiveCustomer(seller as any);
+                            setActiveTab('buy-pawn');
+                            setIsSearchFocused(false);
+                            setSearchQuery('');
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-orange-50 text-[#C85A32] hover:bg-[#C85A32] hover:text-white text-xs font-semibold transition"
+                        >
+                          Buy Intake
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 4. CUSTOMERS */}
+                {searchResults.customers.length > 0 && (
+                  <div className="p-2">
+                    <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                      <User className="w-3 h-3 text-emerald-500" />
+                      <span>Pawn Customers</span>
+                    </div>
+                    {searchResults.customers.map(customer => (
+                      <div key={customer.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-900">{customer.fullName}</p>
+                          <p className="text-[11px] text-gray-500 font-mono">ID: {customer.idNumber} · {customer.mobile}</p>
+                        </div>
+                        <button
+                          onClick={() => handleSelectCustomer(customer, 'buy-pawn')}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white text-xs font-semibold transition"
+                        >
+                          Pawn Intake
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 5. SALES RECEIPTS */}
+                {searchResults.sales.length > 0 && (
+                  <div className="p-2">
+                    <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                      <Receipt className="w-3 h-3 text-purple-500" />
+                      <span>Sales Receipts</span>
+                    </div>
+                    {searchResults.sales.map(sale => (
+                      <div key={sale.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
+                        <div>
+                          <p className="text-xs font-bold font-mono text-gray-900">{sale.receiptNumber}</p>
+                          <p className="text-[11px] text-gray-500">R {sale.total.toLocaleString()} · {sale.tenderMethod.toUpperCase()}</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setActiveReceiptModal(sale);
+                            setIsSearchFocused(false);
+                            setSearchQuery('');
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white text-xs font-semibold transition"
+                        >
+                          Receipt
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -137,7 +322,7 @@ export const Header: React.FC<HeaderProps> = () => {
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 rounded-lg text-[13px] font-medium transition-all whitespace-nowrap ${
+              className={`px-4 py-2 rounded-lg text-[13px] font-medium transition-all whitespace-nowrap cursor-pointer ${
                 isActive
                   ? 'bg-white text-gray-900 font-semibold shadow-xs border border-gray-200/50'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
@@ -158,7 +343,7 @@ export const Header: React.FC<HeaderProps> = () => {
         <button 
           type="button"
           onClick={() => setActiveTab('profile')}
-          className="flex items-center gap-3 p-1 rounded-xl transition-colors group"
+          className="flex items-center gap-3 p-1 rounded-xl transition-colors group cursor-pointer"
         >
           <div className="text-right hidden xl:block">
             <p className="text-[11px] font-semibold text-gray-800 leading-none">Shift Active</p>
@@ -176,3 +361,4 @@ export const Header: React.FC<HeaderProps> = () => {
     </header>
   );
 };
+

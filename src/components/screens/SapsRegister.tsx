@@ -45,41 +45,41 @@ const SapsEntryRow: React.FC<{
   const isCancelled = entry.isCancelled;
 
   return (
-    <div style={style} className={`border-b border-[#2A2A2A] flex items-center hover:bg-[#252525] transition group px-4 ${isCancelled ? 'opacity-50 grayscale bg-[#1a1a1a]/40' : ''}`}>
+    <div style={style} className={`border-b border-gray-100 flex items-center hover:bg-gray-50 transition group px-4 ${isCancelled ? 'opacity-50 grayscale bg-gray-50' : ''}`}>
       <div className="w-48 py-2 font-mono whitespace-nowrap">
-        <span className={`font-bold block text-xs ${isCancelled ? 'text-gray-500 line-through' : 'text-[#E87A5D]'}`}>{entry.entryNumber}</span>
-        <span className="text-[10px] text-gray-500 block mt-0.5">{entry.timestamp}</span>
+        <span className={`font-bold block text-xs ${isCancelled ? 'text-gray-400 line-through' : 'text-[#C85A32]'}`}>{entry.entryNumber}</span>
+        <span className="text-[10px] text-gray-400 block mt-0.5">{entry.timestamp}</span>
       </div>
 
       <div className="flex-1 py-2 px-4">
-        <span className="font-semibold text-white block truncate text-xs">{entry.customerName}</span>
-        <span className="text-[10px] font-mono text-gray-500 block mt-0.5">ID: {entry.customerIdNumber}</span>
+        <span className="font-semibold text-gray-900 block truncate text-xs">{entry.customerName}</span>
+        <span className="text-[10px] font-mono text-gray-400 block mt-0.5">ID: {entry.customerIdNumber}</span>
       </div>
 
       <div className="flex-[1.5] py-2 px-4 min-w-0">
-        <span className="text-gray-200 font-medium block truncate text-xs">{entry.itemDescription}</span>
-        <span className={`text-[10px] font-mono block mt-0.5 truncate ${isCancelled ? 'text-gray-500' : 'text-[#E87A5D]'}`}>SN/IMEI: {entry.serialOrImei}</span>
+        <span className="text-gray-800 font-medium block truncate text-xs">{entry.itemDescription}</span>
+        <span className={`text-[10px] font-mono block mt-0.5 truncate ${isCancelled ? 'text-gray-400' : 'text-gray-500'}`}>SN/IMEI: {entry.serialOrImei}</span>
       </div>
 
       <div className="w-32 py-2 px-4 whitespace-nowrap">
         {isCancelled ? (
-          <span className="px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700 text-[9px] font-bold uppercase">CANCELLED</span>
+          <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200 text-[9px] font-bold uppercase">CANCELLED</span>
         ) : (
           <>
             {isPawn && (
-              <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-800/50 text-[9px] font-bold uppercase">PAWN</span>
+              <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 text-[9px] font-bold uppercase">PAWN</span>
             )}
             {isBuy && (
-              <span className="px-2 py-0.5 rounded bg-blue-950 text-blue-400 border border-blue-800/50 text-[9px] font-bold uppercase">BUY</span>
+              <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-bold uppercase">BUY</span>
             )}
             {isForfeit && (
-              <span className="px-2 py-0.5 rounded bg-purple-950 text-purple-400 border border-purple-800/50 text-[9px] font-bold uppercase">FORFEIT</span>
+              <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold uppercase">FORFEIT</span>
             )}
           </>
         )}
       </div>
 
-      <div className={`w-32 py-2 px-4 text-right font-mono font-bold text-xs ${isCancelled ? 'text-gray-500' : 'text-[#C85A32]'}`}>
+      <div className={`w-32 py-2 px-4 text-right font-mono font-bold text-xs ${isCancelled ? 'text-gray-400' : 'text-[#C85A32]'}`}>
         R {entry.considerationPaid.toFixed(2)}
       </div>
 
@@ -88,7 +88,7 @@ const SapsEntryRow: React.FC<{
           <button
             type="button"
             onClick={() => onCancel(entry.id)}
-            className="p-1.5 rounded-lg bg-[#2A2A2A] hover:bg-red-950/40 text-gray-500 hover:text-red-400 transition"
+            className="p-1.5 rounded-lg bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-600 transition cursor-pointer"
             title="Cancel Entry (Statutory Correction)"
           >
             <X className="w-3.5 h-3.5" />
@@ -97,7 +97,8 @@ const SapsEntryRow: React.FC<{
         <button
           type="button"
           onClick={() => onView(entry)}
-          className="p-1.5 rounded-lg bg-[#2A2A2A] hover:bg-[#383838] text-gray-300 hover:text-white transition"
+          className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 transition cursor-pointer"
+          title="View Form 21 Record"
         >
           <Eye className="w-3.5 h-3.5" />
         </button>
@@ -184,65 +185,71 @@ export const SapsRegister: React.FC = () => {
   };
 
   return (
-    <div className={`flex-1 flex flex-col h-full bg-[#121212] p-4 sm:p-6 gap-5 overflow-hidden transition-colors ${isPoliceInspectionMode ? 'border-2 border-blue-800/80 rounded-xl' : ''}`}>
+    <div className={`flex-1 flex flex-col h-full bg-[#F5F6F8] p-4 sm:p-6 gap-5 overflow-hidden transition-colors ${isPoliceInspectionMode ? 'border-2 border-blue-500 rounded-2xl' : ''}`}>
+      {/* POLICE INSPECTION BANNER */}
       {isPoliceInspectionMode && (
-        <div className="bg-blue-950/90 border border-blue-500/80 rounded-xl p-4 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
+        <div className="bg-blue-900 border border-blue-700 rounded-2xl p-4 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0 text-white">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center shrink-0 shadow-md"><Shield className="w-6 h-6 text-white" /></div>
+            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shrink-0 shadow-md">
+              <Shield className="w-6 h-6 text-white" />
+            </div>
             <div>
-              <p className="text-xs font-black uppercase font-mono text-blue-100">Police Inspection Mode</p>
-              <p className="text-[10px] text-blue-300 mt-0.5">Act 6 of 2009 • Station Precinct: Soweto West (00482)</p>
+              <p className="text-xs font-bold uppercase font-mono tracking-wider text-blue-100">Police Inspection Mode</p>
+              <p className="text-[11px] text-blue-200 mt-0.5">Second-Hand Goods Act 6 of 2009 • Station Precinct: Soweto West (00482)</p>
             </div>
           </div>
-          <button onClick={() => setIsLogVisitModalOpen(true)} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold font-mono flex items-center gap-2 transition shadow-md">
+          <button onClick={() => setIsLogVisitModalOpen(true)} className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold font-mono flex items-center gap-2 transition shadow-xs cursor-pointer">
             <BadgeCheck className="w-4 h-4" /><span>Log Visit</span>
           </button>
         </div>
       )}
 
       {recordedVisit && isPoliceInspectionMode && (
-        <div className="bg-[#101726] border border-blue-900/60 rounded-xl px-4 py-2.5 flex items-center justify-between text-[10px] font-mono text-blue-200 shrink-0">
-          <div className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /><span>Audit: <strong className="text-white">{recordedVisit.rank} {recordedVisit.officerName}</strong> • {recordedVisit.timestamp}</span></div>
-          <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/40 font-bold uppercase">Certified</span>
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 flex items-center justify-between text-[11px] font-mono text-blue-900 shrink-0">
+          <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600" /><span>Audit Certified: <strong className="text-gray-900">{recordedVisit.rank} {recordedVisit.officerName}</strong> • {recordedVisit.timestamp}</span></div>
+          <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px] uppercase">Certified</span>
         </div>
       )}
 
+      {/* STATUTORY REGISTERS STATS */}
       <div className="flex flex-col gap-3 shrink-0">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest font-mono">Statutory Registers</span>
-          <button onClick={() => setIsStatsCollapsed(!isStatsCollapsed)} className="text-[10px] text-[#C85A32] font-mono hover:underline">{isStatsCollapsed ? 'Expand Stats' : 'Collapse Stats'}</button>
+          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest font-mono">Statutory Compliance Registers</span>
+          <button onClick={() => setIsStatsCollapsed(!isStatsCollapsed)} className="text-[11px] text-[#C85A32] font-mono hover:underline cursor-pointer">{isStatsCollapsed ? 'Expand Stats' : 'Collapse Stats'}</button>
         </div>
         {!isStatsCollapsed && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4">
-              <span className="text-[9px] text-gray-500 uppercase font-mono block">Form 21 Records</span>
-              <span className="text-xl font-black text-white font-mono">{counts.all}</span>
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs">
+              <span className="text-[10px] text-gray-500 uppercase font-mono block">Form 21 Records</span>
+              <span className="text-xl font-bold text-gray-900 font-mono mt-1 block">{counts.all}</span>
             </div>
-            <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4">
-              <span className="text-[9px] text-gray-500 uppercase font-mono block">Total Consideration</span>
-              <span className="text-xl font-black text-[#C85A32] font-mono">R {totalConsiderationPaid.toLocaleString('en-ZA')}</span>
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs">
+              <span className="text-[10px] text-gray-500 uppercase font-mono block">Total Consideration Paid</span>
+              <span className="text-xl font-bold text-[#C85A32] font-mono mt-1 block">R {totalConsiderationPaid.toLocaleString('en-ZA')}</span>
             </div>
-            <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4">
-              <span className="text-[9px] text-gray-500 uppercase font-mono block">Station Code</span>
-              <span className="text-xl font-black text-emerald-400 font-mono">00482</span>
+            <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs">
+              <span className="text-[10px] text-gray-500 uppercase font-mono block">Police Station Code</span>
+              <span className="text-xl font-bold text-emerald-700 font-mono mt-1 block">00482</span>
             </div>
           </div>
         )}
       </div>
 
+      {/* SEARCH AND CONTROLS */}
       <div className="flex items-center justify-between gap-3 shrink-0">
         <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-500" />
-          <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search records..." className="w-full bg-[#141414] border border-[#2A2A2A] rounded-lg pl-9 pr-4 py-2 text-xs text-white font-mono focus:outline-none focus:border-[#C85A32]" />
+          <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+          <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search records by name, ID number, serial, ref..." className="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-4 py-2 text-xs text-gray-900 font-mono focus:outline-none focus:border-[#C85A32] shadow-xs" />
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={exportSapsCsv} className="p-2.5 rounded-lg bg-[#1A1A1A] border border-[#2A2A2A] text-gray-400 hover:text-white transition"><Download className="w-4 h-4" /></button>
-          <button onClick={() => setIsPoliceInspectionMode(!isPoliceInspectionMode)} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition ${isPoliceInspectionMode ? 'bg-blue-600 text-white' : 'bg-[#C85A32] text-white'}`}>
+          <button onClick={exportSapsCsv} className="p-2.5 rounded-xl bg-white border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition shadow-xs cursor-pointer" title="Export SAPS CSV Register"><Download className="w-4 h-4" /></button>
+          <button onClick={() => setIsPoliceInspectionMode(!isPoliceInspectionMode)} className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-xs cursor-pointer ${isPoliceInspectionMode ? 'bg-blue-700 text-white' : 'bg-[#C85A32] hover:bg-[#A94725] text-white'}`}>
             <Shield className="w-4 h-4" /><span>{isPoliceInspectionMode ? 'Exit Inspection' : 'Police Mode'}</span>
           </button>
         </div>
       </div>
 
+      {/* FILTER TABS */}
       <div className="flex items-center gap-2 shrink-0 overflow-x-auto no-scrollbar pb-1">
         {[
           { id: 'all', label: 'All Logs', count: counts.all },
@@ -250,15 +257,16 @@ export const SapsRegister: React.FC = () => {
           { id: 'Buy', label: 'Buys', count: counts.buy },
           { id: 'Forfeit', label: 'Forfeits', count: counts.forfeit }
         ].map(tab => (
-          <button key={tab.id} onClick={() => setFilterTab(tab.id as any)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition whitespace-nowrap ${filterTab === tab.id ? 'bg-[#C85A32] text-white' : 'bg-[#141414] text-gray-400 border border-[#2A2A2A]'}`}>
+          <button key={tab.id} onClick={() => setFilterTab(tab.id as any)} className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition whitespace-nowrap cursor-pointer ${filterTab === tab.id ? 'bg-[#C85A32] text-white shadow-xs' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>
             <span>{tab.label}</span>
-            <span className="text-[10px] font-mono opacity-60">{tab.count}</span>
+            <span className="text-[10px] font-mono opacity-80 bg-black/10 px-1.5 py-0.5 rounded-full">{tab.count}</span>
           </button>
         ))}
       </div>
 
-      <div className="flex-1 min-h-0 bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden flex flex-col">
-        <div className="bg-[#141414] text-gray-500 font-mono uppercase text-[10px] tracking-widest border-b border-[#2A2A2A] flex px-4 shrink-0">
+      {/* TABLE */}
+      <div className="flex-1 min-h-0 bg-white border border-gray-200 rounded-2xl overflow-hidden flex flex-col shadow-xs">
+        <div className="bg-[#F8F9FA] text-gray-500 font-mono uppercase text-[10px] tracking-widest border-b border-gray-200 flex px-4 shrink-0">
           <div className="w-48 py-3">SAPS Ref</div>
           <div className="flex-1 py-3 px-4">Seller / RSA ID</div>
           <div className="flex-[1.5] py-3 px-4">Asset Specification</div>
@@ -268,9 +276,9 @@ export const SapsRegister: React.FC = () => {
         </div>
         <div className="flex-1 min-h-0 relative">
           {filteredEntries.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-600">
-              <ClipboardList className="w-10 h-10 mb-2 opacity-20" />
-              <p className="text-xs font-mono">No compliance records found</p>
+            <div className="h-full flex flex-col items-center justify-center text-gray-400">
+              <ClipboardList className="w-10 h-10 mb-2 opacity-30 text-gray-300" />
+              <p className="text-xs font-mono text-gray-500">No compliance records found</p>
             </div>
           ) : (
             <AutoSizer>
@@ -291,102 +299,105 @@ export const SapsRegister: React.FC = () => {
         </div>
       </div>
 
+      {/* ENTRY DETAILS MODAL */}
       {selectedEntry && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col animate-in zoom-in-95">
-            <div className="p-4 border-b border-[#2A2A2A] flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col animate-in zoom-in-95">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-[#F8F9FA]">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-emerald-950/30 text-emerald-400 border border-emerald-900/50"><BadgeCheck className="w-5 h-5" /></div>
-                <div><h3 className="font-bold text-sm text-white">SAPS Form 21</h3><p className="text-[10px] text-gray-500 font-mono">Ref: {selectedEntry.entryNumber}</p></div>
+                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200"><BadgeCheck className="w-5 h-5" /></div>
+                <div><h3 className="font-bold text-sm text-gray-900">SAPS Form 21 Inspection Sheet</h3><p className="text-[10px] text-gray-500 font-mono">Ref: {selectedEntry.entryNumber}</p></div>
               </div>
-              <button onClick={() => setSelectedEntry(null)} className="text-gray-500 hover:text-white transition"><X className="w-5 h-5" /></button>
+              <button onClick={() => setSelectedEntry(null)} className="text-gray-400 hover:text-gray-700 transition cursor-pointer"><X className="w-5 h-5" /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              <div className="bg-[#141414] rounded-xl p-4 border border-[#2A2A2A] space-y-3">
-                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest border-b border-[#2A2A2A] pb-2">Seller Identification</p>
+              <div className="bg-[#F8F9FA] rounded-xl p-4 border border-gray-200 space-y-3">
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-200 pb-2">Seller Identification</p>
                 <div className="grid grid-cols-2 gap-4 text-xs font-mono">
-                  <div><span className="text-gray-500 block text-[9px] uppercase">Name</span><span className="text-white font-bold">{selectedEntry.customerName}</span></div>
-                  <div><span className="text-gray-500 block text-[9px] uppercase">RSA ID</span><span className="text-[#E87A5D] font-bold">{selectedEntry.customerIdNumber}</span></div>
-                  <div className="col-span-2"><span className="text-gray-500 block text-[9px] uppercase">Address</span><span className="text-gray-300">{selectedEntry.customerAddress}</span></div>
+                  <div><span className="text-gray-500 block text-[9px] uppercase">Name</span><span className="text-gray-900 font-bold">{selectedEntry.customerName}</span></div>
+                  <div><span className="text-gray-500 block text-[9px] uppercase">RSA ID</span><span className="text-[#C85A32] font-bold">{selectedEntry.customerIdNumber}</span></div>
+                  <div className="col-span-2"><span className="text-gray-500 block text-[9px] uppercase">Address</span><span className="text-gray-700">{selectedEntry.customerAddress}</span></div>
                 </div>
               </div>
-              <div className="bg-[#141414] rounded-xl p-4 border border-[#2A2A2A] space-y-3">
-                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest border-b border-[#2A2A2A] pb-2">Asset Details</p>
+              <div className="bg-[#F8F9FA] rounded-xl p-4 border border-gray-200 space-y-3">
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-200 pb-2">Asset Details</p>
                 <div className="grid grid-cols-2 gap-4 text-xs font-mono">
-                  <div className="col-span-2"><span className="text-gray-500 block text-[9px] uppercase">Description</span><span className="text-white font-bold">{selectedEntry.itemDescription}</span></div>
-                  <div><span className="text-gray-500 block text-[9px] uppercase">Serial / IMEI</span><span className="text-[#E87A5D] font-bold">{selectedEntry.serialOrImei}</span></div>
-                  <div><span className="text-gray-500 block text-[9px] uppercase">Condition</span><span className="text-emerald-400 font-bold">{selectedEntry.condition}</span></div>
+                  <div className="col-span-2"><span className="text-gray-500 block text-[9px] uppercase">Description</span><span className="text-gray-900 font-bold">{selectedEntry.itemDescription}</span></div>
+                  <div><span className="text-gray-500 block text-[9px] uppercase">Serial / IMEI</span><span className="text-[#C85A32] font-bold">{selectedEntry.serialOrImei}</span></div>
+                  <div><span className="text-gray-500 block text-[9px] uppercase">Condition</span><span className="text-emerald-700 font-bold">{selectedEntry.condition}</span></div>
                 </div>
               </div>
-              <div className="bg-[#141414] rounded-xl p-4 border border-[#2A2A2A] space-y-3">
-                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest border-b border-[#2A2A2A] pb-2">Transaction Proof</p>
+              <div className="bg-[#F8F9FA] rounded-xl p-4 border border-gray-200 space-y-3">
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-200 pb-2">Transaction Proof</p>
                 <div className="grid grid-cols-2 gap-4 text-xs font-mono">
-                  <div><span className="text-gray-500 block text-[9px] uppercase">Consideration</span><span className="text-lg font-black text-emerald-400">R {selectedEntry.considerationPaid.toFixed(2)}</span></div>
-                  <div><span className="text-gray-500 block text-[9px] uppercase">Station Code</span><span className="text-white font-bold">{selectedEntry.policeStationRef}</span></div>
+                  <div><span className="text-gray-500 block text-[9px] uppercase">Consideration</span><span className="text-lg font-bold text-emerald-700">R {selectedEntry.considerationPaid.toFixed(2)}</span></div>
+                  <div><span className="text-gray-500 block text-[9px] uppercase">Station Code</span><span className="text-gray-900 font-bold">{selectedEntry.policeStationRef}</span></div>
                 </div>
               </div>
             </div>
-            <div className="p-4 bg-[#141414] border-t border-[#2A2A2A] flex justify-end gap-3">
-              <button onClick={() => showToast('Dispatched', 'SAPS form sent to printer', 'success')} className="px-4 py-2 rounded-lg bg-[#2A2A2A] text-gray-300 text-xs font-bold hover:text-white transition flex items-center gap-2"><Printer className="w-4 h-4" /><span>Print Sheet</span></button>
-              <button onClick={() => setSelectedEntry(null)} className="px-6 py-2 rounded-lg bg-[#C85A32] text-white text-xs font-bold">Close</button>
+            <div className="p-4 bg-[#F8F9FA] border-t border-gray-200 flex justify-end gap-3">
+              <button onClick={() => showToast('Dispatched', 'SAPS form sent to printer', 'success')} className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 transition flex items-center gap-2 cursor-pointer shadow-xs"><Printer className="w-4 h-4" /><span>Print Sheet</span></button>
+              <button onClick={() => setSelectedEntry(null)} className="px-6 py-2 rounded-xl bg-[#C85A32] hover:bg-[#A94725] text-white text-xs font-bold cursor-pointer shadow-xs">Close</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* LOG INSPECTION MODAL */}
       {isLogVisitModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#1A1A1A] border border-blue-600/50 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95">
-            <div className="p-4 bg-blue-950 border-b border-blue-800/50 flex items-center justify-between text-white">
-              <div className="flex items-center gap-2"><Shield className="w-5 h-5 text-blue-400" /><h3 className="font-bold text-sm">Official Inspection Log</h3></div>
-              <button onClick={() => setIsLogVisitModalOpen(false)}><X className="w-5 h-5" /></button>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95">
+            <div className="p-4 bg-blue-900 border-b border-blue-800 flex items-center justify-between text-white">
+              <div className="flex items-center gap-2"><Shield className="w-5 h-5 text-blue-300" /><h3 className="font-bold text-sm">Official Inspection Log</h3></div>
+              <button onClick={() => setIsLogVisitModalOpen(false)} className="cursor-pointer text-white/80 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleRecordInspectorVisit} className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1"><label className="text-[10px] text-gray-500 uppercase font-bold">Rank</label><input type="text" value={officerRank} onChange={e => setOfficerRank(e.target.value)} className="w-full bg-[#141414] border border-[#2A2A2A] rounded-lg px-3 py-2 text-xs text-white" /></div>
-                <div className="space-y-1"><label className="text-[10px] text-gray-500 uppercase font-bold">Name</label><input type="text" value={officerName} onChange={e => setOfficerName(e.target.value)} className="w-full bg-[#141414] border border-[#2A2A2A] rounded-lg px-3 py-2 text-xs text-white" /></div>
+                <div className="space-y-1"><label className="text-[10px] text-gray-600 uppercase font-bold">Rank</label><input type="text" value={officerRank} onChange={e => setOfficerRank(e.target.value)} className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-900" /></div>
+                <div className="space-y-1"><label className="text-[10px] text-gray-600 uppercase font-bold">Name</label><input type="text" value={officerName} onChange={e => setOfficerName(e.target.value)} className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-900" /></div>
               </div>
-              <div className="space-y-1"><label className="text-[10px] text-gray-500 uppercase font-bold">Force Number</label><input type="text" value={officerBadge} onChange={e => setOfficerBadge(e.target.value)} className="w-full bg-[#141414] border border-[#2A2A2A] rounded-lg px-3 py-2 text-xs text-white font-mono" /></div>
-              <div className="space-y-1"><label className="text-[10px] text-gray-500 uppercase font-bold">Inspection Remarks</label><textarea rows={3} value={officerNotes} onChange={e => setOfficerNotes(e.target.value)} className="w-full bg-[#141414] border border-[#2A2A2A] rounded-lg px-3 py-2 text-xs text-white resize-none" /></div>
-              <div className="p-3 bg-blue-900/10 border border-blue-900/30 rounded-lg flex items-start gap-3">
-                <input type="checkbox" id="signoff" checked={hasConfirmedSignoff} onChange={e => setHasConfirmedSignoff(e.target.checked)} className="mt-1 rounded border-[#2A2A2A] bg-transparent" />
-                <label htmlFor="signoff" className="text-[10px] text-blue-300 leading-tight">I certify that this inspection was conducted in compliance with the Second-Hand Goods Act 6 of 2009.</label>
+              <div className="space-y-1"><label className="text-[10px] text-gray-600 uppercase font-bold">Force Number</label><input type="text" value={officerBadge} onChange={e => setOfficerBadge(e.target.value)} className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-900 font-mono" /></div>
+              <div className="space-y-1"><label className="text-[10px] text-gray-600 uppercase font-bold">Inspection Remarks</label><textarea rows={3} value={officerNotes} onChange={e => setOfficerNotes(e.target.value)} className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-900 resize-none" /></div>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3">
+                <input type="checkbox" id="signoff" checked={hasConfirmedSignoff} onChange={e => setHasConfirmedSignoff(e.target.checked)} className="mt-1 rounded border-gray-300" />
+                <label htmlFor="signoff" className="text-xs text-blue-900 leading-tight">I certify that this inspection was conducted in compliance with the Second-Hand Goods Act 6 of 2009.</label>
               </div>
               <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsLogVisitModalOpen(false)} className="px-4 py-2 text-xs font-bold text-gray-500">Cancel</button>
-                <button type="submit" disabled={!hasConfirmedSignoff} className="px-6 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold disabled:opacity-50 transition shadow-lg">Certify Inspection</button>
+                <button type="button" onClick={() => setIsLogVisitModalOpen(false)} className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 cursor-pointer">Cancel</button>
+                <button type="submit" disabled={!hasConfirmedSignoff} className="px-6 py-2 rounded-xl bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold disabled:opacity-50 transition shadow-xs cursor-pointer">Certify Inspection</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* CANCEL ENTRY MODAL */}
       {cancellingEntryId && (
-        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#1A1A1A] border border-red-900/50 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95">
-            <div className="p-4 bg-red-950/20 border-b border-red-900/30 flex items-center justify-between">
-              <div className="flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-red-500" /><h3 className="font-bold text-sm text-white">Statutory Correction</h3></div>
-              <button onClick={() => setCancellingEntryId(null)}><X className="w-5 h-5 text-gray-500" /></button>
+        <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95">
+            <div className="p-4 bg-red-50 border-b border-red-200 flex items-center justify-between">
+              <div className="flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-red-600" /><h3 className="font-bold text-sm text-red-900">Statutory Correction</h3></div>
+              <button onClick={() => setCancellingEntryId(null)} className="text-gray-400 hover:text-gray-700 cursor-pointer"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleCancelEntry} className="p-6 space-y-4">
-              <p className="text-xs text-gray-400 leading-relaxed">
-                You are about to mark this entry as <span className="text-red-400 font-bold">CANCELLED</span>. 
+              <p className="text-xs text-gray-600 leading-relaxed">
+                You are about to mark this entry as <span className="text-red-600 font-bold">CANCELLED</span>. 
                 This action is permanent and will be logged for police audit.
               </p>
               <div className="space-y-1">
-                <label className="text-[10px] text-gray-500 uppercase font-bold">Reason for Cancellation</label>
+                <label className="text-[10px] text-gray-600 uppercase font-bold">Reason for Cancellation</label>
                 <textarea 
                   required
                   rows={3} 
                   value={cancelReason} 
                   onChange={e => setCancelReason(e.target.value)} 
                   placeholder="e.g., Clerical error in serial number, Transaction voided..."
-                  className="w-full bg-[#141414] border border-[#2A2A2A] rounded-lg px-3 py-2 text-xs text-white resize-none focus:border-red-500 outline-none" 
+                  className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-900 resize-none focus:border-red-500 outline-none" 
                 />
               </div>
               <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setCancellingEntryId(null)} className="px-4 py-2 text-xs font-bold text-gray-500">Close</button>
-                <button type="submit" className="px-6 py-2 rounded-lg bg-red-600 text-white text-xs font-bold shadow-lg shadow-red-900/20">Confirm Cancellation</button>
+                <button type="button" onClick={() => setCancellingEntryId(null)} className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 cursor-pointer">Close</button>
+                <button type="submit" className="px-6 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-xs cursor-pointer">Confirm Cancellation</button>
               </div>
             </form>
           </div>

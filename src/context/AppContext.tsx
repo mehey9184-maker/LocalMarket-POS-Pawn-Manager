@@ -27,6 +27,8 @@ import { useLoans } from './LoanContext';
 import { useCustomers } from './CustomerContext';
 import { useSales } from './SalesContext';
 import { useSaps } from './SapsContext';
+import { useSync } from './SyncContext';
+import { db } from '../db';
 
 export type NavTab = 'landing' | 'auth' | 'home' | 'sell' | 'buy-pawn' | 'inventory' | 'customers' | 'profile';
 
@@ -145,6 +147,7 @@ interface AppContextType {
   updateCartItemPrice: (itemId: string, newPrice: number) => void;
   clearCart: () => void;
   completeCheckout: (tenderMethod: PaymentMethod, amountTendered: number, receiptType: ReceiptDelivery, customerMobile?: string) => SaleTransaction;
+  processRefund: (receiptNumber: string, itemId: string, reason: string) => Promise<boolean>;
 
   // Intake Actions
   createIntakeTransaction: (data: {
@@ -243,11 +246,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
 
   // Consume Domain Contexts
-  const { inventory } = useInventory();
-  const { loans: pawnLoans } = useLoans();
+  const { inventory, updateItem } = useInventory();
+  const { 
+    loans: pawnLoans, 
+    redeemLoan, 
+    extendLoan, 
+    transferOverdueToFloor, 
+    batchTransferOverdue, 
+    archiveLoan 
+  } = useLoans();
   const { customers } = useCustomers();
   const { salesHistory, recordSale } = useSales();
   const { sapsEntries: sapsRegister, exportSapsCsv } = useSaps();
+  const { syncStatus, triggerSync, queueSyncAction } = useSync();
 
   const total = useMemo(() => {
     return cart.reduce((sum, ci) => sum + (ci.overridePrice ?? ci.item.retailPrice) * ci.quantity, 0);
@@ -408,29 +419,117 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             customerMobile,
             cashier: currentUserProfile?.full_name || 'System Operator'
           };
+
+          // Mark inventory items as sold in local DB and sync queue
+          cart.forEach(ci => {
+            updateItem(ci.item.id, { status: 'Sold' });
+          });
+
           recordSale(sale);
           const finalSale = { ...sale, id: crypto.randomUUID() };
           setActiveReceiptModal(finalSale as any);
           setCart([]);
           showToast('Sale Complete', `Receipt ${finalSale.receiptNumber} generated`, 'success');
           return finalSale as any;
-        }, [cart, total, recordSale, currentUserProfile, showToast]),
+        }, [cart, total, recordSale, updateItem, currentUserProfile, showToast]),
+        processRefund: useCallback(async (receiptNumber: string, itemId: string, reason: string) => {
+          try {
+            await updateItem(itemId, { status: 'Retail Floor' });
+            await logSystemEvent('RETAIL_REFUND', { receiptNumber, itemId, reason }, 'audit');
+            showToast('Refund Processed', `Item restored to Retail Floor`, 'info');
+            return true;
+          } catch (err: any) {
+            showToast('Refund Failed', err?.message || 'Error processing refund', 'error');
+            return false;
+          }
+        }, [updateItem, logSystemEvent, showToast]),
         createIntakeTransaction: () => ({} as any),
-        redeemLoan: () => ({} as any),
-        extendLoan: () => ({} as any),
-        transferOverdueToFloor: () => ({} as any),
-        batchTransferOverdue: () => ({} as any),
-        archiveLoan: () => {},
-        exportSapsCsv: () => {},
+        redeemLoan: (ticketNumber: string, amountPaid: number) => {
+          redeemLoan(ticketNumber, amountPaid);
+          return { success: true };
+        },
+        extendLoan: (ticketNumber: string, feePaid: number) => {
+          extendLoan(ticketNumber, feePaid);
+          return { success: true };
+        },
+        transferOverdueToFloor: (ticketNumber: string, retailPrice: number) => {
+          transferOverdueToFloor(ticketNumber, retailPrice);
+          return { success: true };
+        },
+        batchTransferOverdue: () => {
+          batchTransferOverdue();
+          return { success: true, count: 0 };
+        },
+        archiveLoan: (loanId: string) => {
+          archiveLoan(loanId);
+        },
+        exportSapsCsv,
         resetToDefaultData: () => {},
-        isOnline: true,
-        isSlowSyncing: false,
-        pendingSyncCount: 0,
+        isOnline: syncStatus.isOnline,
+        isSlowSyncing: syncStatus.isSyncing,
+        pendingSyncCount: syncStatus.pendingCount,
         slowSyncProgress: null,
-        triggerManualSlowSync: async () => {},
-        exportDeviceBackup: async () => {},
-        restoreDeviceBackup: async () => ({ success: false, message: '' }),
-        deviceStorageStats: { totalItems: 0, totalSales: 0, pendingOfflineItems: 0, lastBackupTime: null, estimatedLocalSizeKb: 0 }
+        triggerManualSlowSync: async () => {
+          await triggerSync();
+          showToast('Sync Triggered', 'Replicating pending items to Supabase', 'info');
+        },
+        exportDeviceBackup: async () => {
+          try {
+            const backup = {
+              version: 4,
+              exportedAt: new Date().toISOString(),
+              shopProfile,
+              businessRules,
+              inventory: await db.inventory.toArray(),
+              customers: await db.customers.toArray(),
+              sellers: await db.sellers.toArray(),
+              sellerTransactions: await db.sellerTransactions.toArray(),
+              loans: await db.loans.toArray(),
+              saps: await db.saps.toArray(),
+              sales: await db.sales.toArray()
+            };
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `localmarket-backup-${shopProfile.shop_code}-${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            localStorage.setItem('last_backup_time', new Date().toISOString());
+            showToast('Backup Exported', 'Local store snapshot downloaded to disk', 'success');
+          } catch (err: any) {
+            showToast('Backup Error', err?.message || 'Failed to export backup', 'error');
+          }
+        },
+        restoreDeviceBackup: async (fileContent: string) => {
+          try {
+            const data = JSON.parse(fileContent);
+            if (!data.inventory && !data.sales) {
+              throw new Error('Invalid LocalMarket backup file format');
+            }
+            if (data.shopProfile) setShopProfile(data.shopProfile);
+            if (data.businessRules) updateBusinessRules(data.businessRules);
+            if (Array.isArray(data.inventory)) await db.inventory.bulkPut(data.inventory);
+            if (Array.isArray(data.customers)) await db.customers.bulkPut(data.customers);
+            if (Array.isArray(data.sellers)) await db.sellers.bulkPut(data.sellers);
+            if (Array.isArray(data.sellerTransactions)) await db.sellerTransactions.bulkPut(data.sellerTransactions);
+            if (Array.isArray(data.loans)) await db.loans.bulkPut(data.loans);
+            if (Array.isArray(data.saps)) await db.saps.bulkPut(data.saps);
+            if (Array.isArray(data.sales)) await db.sales.bulkPut(data.sales);
+            showToast('Restore Complete', 'Local database restored successfully', 'success');
+            return { success: true, message: 'Restored successfully' };
+          } catch (err: any) {
+            showToast('Restore Failed', err.message || 'Invalid backup', 'error');
+            return { success: false, message: err.message };
+          }
+        },
+        deviceStorageStats: {
+          totalItems: inventory.length,
+          totalSales: salesHistory.length,
+          pendingOfflineItems: syncStatus.pendingCount,
+          lastBackupTime: localStorage.getItem('last_backup_time'),
+          estimatedLocalSizeKb: Math.round((inventory.length * 1.5) + (salesHistory.length * 0.8))
+        }
       }}
     >
       {children}

@@ -32,18 +32,18 @@ const InventoryRow: React.FC<{
   const marginPct = item.retailPrice ? Math.round((profit / item.retailPrice) * 100) : 0;
 
   return (
-    <div style={style} className="border-b border-[#252525] flex items-center hover:bg-[#202020] transition group px-4">
+    <div style={style} className="border-b border-gray-100 flex items-center hover:bg-gray-50 transition group px-4">
       <div className="flex-1 min-w-0 flex items-center gap-3 py-2">
         <img
           src={item.imageUrl}
           alt={item.title}
-          className="w-10 h-10 rounded-lg object-cover bg-[#141414] border border-[#2A2A2A] shrink-0"
+          className="w-10 h-10 rounded-lg object-cover bg-gray-100 border border-gray-200 shrink-0"
           referrerPolicy="no-referrer"
         />
         <div className="min-w-0">
-          <p className="font-semibold text-white group-hover:text-[#E87A5D] transition truncate text-xs">{item.title}</p>
+          <p className="font-semibold text-gray-900 group-hover:text-[#C85A32] transition truncate text-xs">{item.title}</p>
           <div className="flex items-center gap-2 text-[10px] text-gray-500 font-mono mt-0.5 truncate">
-            <span className="text-amber-400 font-bold">{item.sku}</span>
+            <span className="text-[#C85A32] font-bold">{item.sku}</span>
             <span>•</span>
             <span>SN: {item.serialOrImei}</span>
           </div>
@@ -51,23 +51,23 @@ const InventoryRow: React.FC<{
       </div>
 
       <div className="w-48 px-4 py-2">
-        <p className="text-gray-200 font-medium text-[11px] truncate">{item.sellerName}</p>
-        <p className="text-[10px] text-gray-500 font-mono mt-0.5 truncate">{item.sapsRef}</p>
+        <p className="text-gray-800 font-medium text-[11px] truncate">{item.sellerName}</p>
+        <p className="text-[10px] text-gray-400 font-mono mt-0.5 truncate">{item.sapsRef}</p>
       </div>
 
-      <div className="w-28 px-4 py-2 font-mono font-bold text-gray-300 text-xs">
+      <div className="w-28 px-4 py-2 font-mono font-semibold text-gray-700 text-xs">
         R {item.costBasis.toFixed(2)}
       </div>
 
-      <div className="w-28 px-4 py-2 font-mono font-bold text-emerald-400 text-xs">
+      <div className="w-28 px-4 py-2 font-mono font-bold text-gray-900 text-xs">
         R {item.retailPrice.toFixed(2)}
       </div>
 
       <div className="w-32 px-4 py-2">
         <div className="flex items-center gap-1.5">
-          <span className="font-mono text-[11px] font-bold text-white">R {profit.toFixed(0)}</span>
+          <span className="font-mono text-[11px] font-bold text-emerald-700">R {profit.toFixed(0)}</span>
           <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
-            marginPct >= 40 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400'
+            marginPct >= 40 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
           }`}>
             +{marginPct}%
           </span>
@@ -77,10 +77,10 @@ const InventoryRow: React.FC<{
       <div className="w-32 px-4 py-2">
         <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
           item.status === 'Retail Floor'
-            ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/40'
+            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
             : item.status === 'Sold'
-            ? 'bg-blue-950 text-cyan-400 border border-blue-800/40'
-            : 'bg-gray-800 text-gray-400'
+            ? 'bg-blue-50 text-blue-700 border border-blue-200'
+            : 'bg-gray-100 text-gray-600'
         }`}>
           {item.status}
         </span>
@@ -91,14 +91,16 @@ const InventoryRow: React.FC<{
           <button
             type="button"
             onClick={() => onPrint(item)}
-            className="p-1.5 rounded-lg bg-[#141414] hover:bg-[#2A2A2A] border border-[#2A2A2A] text-gray-300 hover:text-white transition"
+            className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 transition cursor-pointer"
+            title="Print Barcode Label"
           >
             <Barcode className="w-3.5 h-3.5" />
           </button>
           <button
             type="button"
             onClick={onPOS}
-            className="p-1.5 rounded-lg bg-[#C85A32]/10 hover:bg-[#C85A32] text-[#E87A5D] hover:text-white border border-[#C85A32]/30 transition"
+            className="p-1.5 rounded-lg bg-[#FDF0EA] hover:bg-[#C85A32] text-[#C85A32] hover:text-white transition cursor-pointer"
+            title="Go to POS"
           >
             <ArrowUpRight className="w-3.5 h-3.5" />
           </button>
@@ -175,55 +177,70 @@ export const OutrightBuysLedger: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#121212] p-4 sm:p-6 gap-5 overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-[#F5F6F8] p-4 sm:p-6 gap-5 overflow-hidden">
+      {/* METRIC CARDS */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 shrink-0">
-        <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between text-gray-400 text-xs mb-1"><span>Capital Invested</span><DollarSign className="w-4 h-4 text-[#E87A5D]" /></div>
-          <div className="text-xl sm:text-2xl font-black font-mono text-white">R {metrics.totalCost.toLocaleString('en-ZA')}</div>
-          <p className="text-[10px] text-gray-500 mt-1 font-mono">{metrics.totalCount} items</p>
+        <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
+            <span>Capital Invested</span>
+            <DollarSign className="w-4 h-4 text-[#C85A32]" />
+          </div>
+          <div className="text-xl sm:text-2xl font-black font-mono text-gray-900">R {metrics.totalCost.toLocaleString('en-ZA')}</div>
+          <p className="text-[10px] text-gray-500 mt-1 font-mono">{metrics.totalCount} items purchased</p>
         </div>
-        <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between text-gray-400 text-xs mb-1"><span>Retail Value</span><Tag className="w-4 h-4 text-emerald-400" /></div>
-          <div className="text-xl sm:text-2xl font-black font-mono text-white">R {metrics.totalRetail.toLocaleString('en-ZA')}</div>
-          <p className="text-[10px] text-emerald-400/80 mt-1 font-mono">{metrics.activeFloorCount} on floor</p>
+        <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
+            <span>Retail Value</span>
+            <Tag className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div className="text-xl sm:text-2xl font-black font-mono text-gray-900">R {metrics.totalRetail.toLocaleString('en-ZA')}</div>
+          <p className="text-[10px] text-emerald-600 mt-1 font-mono">{metrics.activeFloorCount} currently on floor</p>
         </div>
-        <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between text-gray-400 text-xs mb-1"><span>Gross Margin</span><TrendingUp className="w-4 h-4 text-cyan-400" /></div>
-          <div className="text-xl sm:text-2xl font-black font-mono text-cyan-400">R {metrics.totalProfit.toLocaleString('en-ZA')}</div>
-          <p className="text-[10px] text-cyan-500/80 mt-1 font-mono">{metrics.avgMargin.toFixed(1)}% blended</p>
+        <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
+            <span>Projected Profit</span>
+            <TrendingUp className="w-4 h-4 text-blue-600" />
+          </div>
+          <div className="text-xl sm:text-2xl font-black font-mono text-emerald-700">R {metrics.totalProfit.toLocaleString('en-ZA')}</div>
+          <p className="text-[10px] text-blue-600 mt-1 font-mono">{metrics.avgMargin.toFixed(1)}% blended margin</p>
         </div>
-        <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between text-gray-400 text-xs mb-1"><span>SAPS Compliance</span><CheckCircle2 className="w-4 h-4 text-emerald-400" /></div>
-          <div className="text-sm font-semibold text-gray-200">100% Registered</div>
+        <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
+            <span>SAPS Compliance</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div className="text-sm font-bold text-gray-900">100% Registered</div>
           <p className="text-[10px] text-gray-500 font-mono">Form 21 Verified</p>
         </div>
       </div>
 
-      <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-3.5 sm:p-4 space-y-3 shrink-0">
+      {/* FILTER BAR */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-3.5 sm:p-4 space-y-3 shrink-0 shadow-xs">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3.5 top-3.5 text-gray-500" />
+            <Search className="w-4 h-4 absolute left-3.5 top-3.5 text-gray-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search bought inventory..."
-              className="w-full h-11 pl-10 pr-4 rounded-xl bg-[#141414] border border-[#2A2A2A] text-white placeholder-gray-500 text-xs sm:text-sm font-mono focus:border-[#C85A32] focus:outline-none transition"
+              placeholder="Search bought inventory by title, SKU, seller name, serial..."
+              className="w-full h-11 pl-10 pr-4 rounded-xl bg-[#F8F9FA] border border-gray-200 text-gray-900 placeholder-gray-400 text-xs sm:text-sm font-mono focus:border-[#C85A32] focus:bg-white focus:outline-none transition"
             />
           </div>
-          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-11 bg-[#141414] border border-[#2A2A2A] rounded-xl px-3 text-xs text-gray-300 focus:outline-none focus:border-[#C85A32]">
+          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-11 bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 text-xs text-gray-700 focus:outline-none focus:border-[#C85A32]">
             {categories.map(cat => (<option key={cat} value={cat}>{cat === 'all' ? 'All Categories' : cat}</option>))}
           </select>
         </div>
         <div className="flex items-center gap-2 pt-1 overflow-x-auto no-scrollbar">
-          <button type="button" onClick={() => setStatusFilter('all')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${statusFilter === 'all' ? 'bg-[#C85A32] text-white' : 'bg-[#141414] border border-[#2A2A2A] text-gray-400 hover:text-white'}`}>All Purchases</button>
-          <button type="button" onClick={() => setStatusFilter('Retail Floor')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${statusFilter === 'Retail Floor' ? 'bg-[#C85A32] text-white' : 'bg-[#141414] border border-[#2A2A2A] text-gray-400 hover:text-white'}`}>On Retail Floor</button>
-          <button type="button" onClick={() => setStatusFilter('Sold')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${statusFilter === 'Sold' ? 'bg-[#C85A32] text-white' : 'bg-[#141414] border border-[#2A2A2A] text-gray-400 hover:text-white'}`}>Sold</button>
+          <button type="button" onClick={() => setStatusFilter('all')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer ${statusFilter === 'all' ? 'bg-[#C85A32] text-white shadow-xs' : 'bg-gray-100 border border-gray-200 text-gray-600 hover:text-gray-900'}`}>All Purchases</button>
+          <button type="button" onClick={() => setStatusFilter('Retail Floor')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer ${statusFilter === 'Retail Floor' ? 'bg-[#C85A32] text-white shadow-xs' : 'bg-gray-100 border border-gray-200 text-gray-600 hover:text-gray-900'}`}>On Retail Floor</button>
+          <button type="button" onClick={() => setStatusFilter('Sold')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer ${statusFilter === 'Sold' ? 'bg-[#C85A32] text-white shadow-xs' : 'bg-gray-100 border border-gray-200 text-gray-600 hover:text-gray-900'}`}>Sold</button>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden flex flex-col">
-        <div className="bg-[#141414] text-gray-400 font-mono uppercase text-[10px] tracking-wider border-b border-[#2A2A2A] flex shrink-0 px-4">
+      {/* TABLE */}
+      <div className="flex-1 min-h-0 bg-white border border-gray-200 rounded-2xl overflow-hidden flex flex-col shadow-xs">
+        <div className="bg-[#F8F9FA] text-gray-500 font-mono uppercase text-[10px] tracking-wider border-b border-gray-200 flex shrink-0 px-4">
           <div className="flex-1 py-3">Item &amp; SKU</div>
           <div className="w-48 py-3 px-4">Seller / SAPS Ref</div>
           <div className="w-28 py-3 px-4">Cost Payout</div>
@@ -234,9 +251,9 @@ export const OutrightBuysLedger: React.FC = () => {
         </div>
         <div className="flex-1 min-h-0 relative">
           {filteredItems.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-500">
-              <ShoppingBag className="w-8 h-8 mb-2 text-gray-600" />
-              <p className="text-sm font-semibold text-gray-400">No records found</p>
+            <div className="h-full flex flex-col items-center justify-center text-gray-400">
+              <ShoppingBag className="w-8 h-8 mb-2 text-gray-300" />
+              <p className="text-sm font-semibold text-gray-600">No records found</p>
             </div>
           ) : (
             <AutoSizer>
@@ -262,24 +279,47 @@ export const OutrightBuysLedger: React.FC = () => {
         </div>
       </div>
 
+      {/* ZEBRA BARCODE LABEL MODAL */}
       {selectedItemForLabel && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-[#2A2A2A] pb-3">
-              <div className="flex items-center gap-2"><Printer className="w-4 h-4 text-[#E87A5D]" /><h4 className="text-sm font-bold text-white uppercase">Zebra Thermal Tag</h4></div>
-              <button type="button" onClick={() => setSelectedItemForLabel(null)} className="text-gray-400 hover:text-white text-xs">✕</button>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Printer className="w-4 h-4 text-[#C85A32]" />
+                <h4 className="text-sm font-bold text-gray-900 uppercase">Zebra Thermal Tag</h4>
+              </div>
+              <button type="button" onClick={() => setSelectedItemForLabel(null)} className="text-gray-400 hover:text-gray-700 text-xs cursor-pointer">✕</button>
             </div>
-            <div className="bg-white text-black p-4 rounded-lg font-mono text-xs space-y-2 border border-gray-400 shadow-md">
-              <div className="text-center border-b border-black pb-1"><p className="font-black text-xs">LOCALMARKET SOWETO</p><p className="text-[9px]">REG #00482</p></div>
-              <div className="py-1"><div className="w-full h-8 bg-black rounded flex items-center justify-around px-2 text-white"><div className="w-1 h-6 bg-white"></div><div className="w-2 h-6 bg-white"></div><div className="w-1 h-6 bg-white"></div><div className="w-3 h-6 bg-white"></div></div><p className="text-center text-[9px] font-black tracking-widest mt-0.5">*{selectedItemForLabel.sku}*</p></div>
-              <div className="space-y-0.5 text-[10px] border-t border-black/20 pt-1">
-                <p className="font-bold text-xs truncate">{selectedItemForLabel.title}</p>
-                <div className="flex justify-between font-bold pt-1 border-t border-black/10 text-sm"><span>PRICE:</span><span className="font-black">R {selectedItemForLabel.retailPrice.toFixed(2)}</span></div>
+            <div className="bg-[#FAFAFA] text-black p-4 rounded-xl font-mono text-xs space-y-2 border border-gray-300 shadow-xs">
+              <div className="text-center border-b border-gray-300 pb-1">
+                <p className="font-bold text-xs text-gray-900">LOCALMARKET SOWETO</p>
+                <p className="text-[9px] text-gray-500">REG #00482</p>
+              </div>
+              <div className="py-2 text-center">
+                <div className="w-full h-8 bg-gray-900 rounded flex items-center justify-around px-2 text-white">
+                  <div className="w-1 h-6 bg-white"></div>
+                  <div className="w-2 h-6 bg-white"></div>
+                  <div className="w-1 h-6 bg-white"></div>
+                  <div className="w-3 h-6 bg-white"></div>
+                </div>
+                <p className="text-center text-[10px] font-black tracking-widest mt-1">*{selectedItemForLabel.sku}*</p>
+              </div>
+              <div className="space-y-0.5 text-[10px] border-t border-gray-200 pt-2">
+                <p className="font-bold text-xs truncate text-gray-900">{selectedItemForLabel.title}</p>
+                <div className="flex justify-between font-bold pt-1 border-t border-gray-200 text-sm">
+                  <span>PRICE:</span>
+                  <span className="font-black text-[#C85A32]">R {selectedItemForLabel.retailPrice.toFixed(2)}</span>
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <button type="button" onClick={() => setSelectedItemForLabel(null)} className="flex-1 py-2.5 bg-[#C85A32] hover:bg-[#b04d29] text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"><Printer className="w-4 h-4" /><span>Print</span></button>
-              <button type="button" onClick={() => setSelectedItemForLabel(null)} className="px-4 py-2.5 bg-[#141414] hover:bg-[#252525] border border-[#2A2A2A] text-gray-300 rounded-xl text-xs transition">Close</button>
+              <button type="button" onClick={() => setSelectedItemForLabel(null)} className="flex-1 py-2.5 bg-[#C85A32] hover:bg-[#A94725] text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs">
+                <Printer className="w-4 h-4" />
+                <span>Print Tag</span>
+              </button>
+              <button type="button" onClick={() => setSelectedItemForLabel(null)} className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-medium transition cursor-pointer">
+                Close
+              </button>
             </div>
           </div>
         </div>

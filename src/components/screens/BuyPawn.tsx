@@ -34,7 +34,8 @@ import {
   History,
   Package,
   MapPin,
-  Tag
+  Tag,
+  AlertTriangle
 } from 'lucide-react';
 
 export type WorkflowStep = 'mode' | 'customer' | 'item' | 'valuation' | 'location' | 'deal' | 'completion';
@@ -74,7 +75,7 @@ const SellerHistoryDisplay: React.FC<{ sellerId: string }> = ({ sellerId }) => {
 export const BuyPawn: React.FC = () => {
   const { showToast, businessRules, shopProfile, setActiveContractModal } = useApp();
   const { user } = useAuth();
-  const { addItem } = useInventory();
+  const { addItem, inventory } = useInventory();
   const { createLoan } = useLoans();
   const { customers, addCustomer } = useCustomers();
   const { sellers, addSeller, addSellerTransaction } = useSellers();
@@ -141,6 +142,13 @@ export const BuyPawn: React.FC = () => {
       expiryDate: expiry.toISOString().split('T')[0]
     };
   }, [txType, agreedOffer, businessRules]);
+
+  // Serial Number / IMEI duplicate check across store inventory
+  const duplicateSerialMatch = useMemo(() => {
+    const sn = itemData.serialOrImei.trim();
+    if (!sn || sn.toUpperCase() === 'N/A' || sn.length < 4) return null;
+    return inventory.find(i => i.serialOrImei && i.serialOrImei.toLowerCase() === sn.toLowerCase());
+  }, [itemData.serialOrImei, inventory]);
 
   // Dynamic Stepper Configuration
   const workflowSteps = useMemo(() => {
@@ -1137,6 +1145,17 @@ export const BuyPawn: React.FC = () => {
                             onChange={e => setItemData({ ...itemData, serialOrImei: e.target.value })}
                             className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 font-mono focus:outline-none focus:border-[#C85A32]"
                           />
+                          {duplicateSerialMatch && (
+                            <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2">
+                              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                              <div className="min-w-0">
+                                <p className="font-bold text-[11px] leading-tight text-amber-900">Duplicate Serial/IMEI Detected</p>
+                                <p className="text-[10px] text-amber-800 mt-0.5 leading-snug">
+                                  Matches existing item <span className="font-mono font-bold">{duplicateSerialMatch.sku}</span> ("{duplicateSerialMatch.title}") currently marked as <span className="font-semibold">{duplicateSerialMatch.status}</span>. Verify item identity before continuing.
+                                </p>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
 
