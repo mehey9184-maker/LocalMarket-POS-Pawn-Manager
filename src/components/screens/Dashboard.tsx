@@ -51,14 +51,14 @@ export const Dashboard: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           <button 
-            onClick={() => setActiveTab('intake')}
+            onClick={() => setActiveTab('buy-pawn')}
             className="flex items-center gap-2 px-4 py-2 bg-[#C85A32] text-white rounded-xl text-sm font-bold shadow-lg shadow-[#C85A32]/20 hover:bg-[#b04d29] transition"
           >
             <PlusCircle className="w-4 h-4" />
             <span>New Intake</span>
           </button>
           <button 
-            onClick={() => setActiveTab('pos')}
+            onClick={() => setActiveTab('sell')}
             className="flex items-center gap-2 px-4 py-2 bg-[#1E1E1E] border border-[#2A2A2A] text-gray-100 rounded-xl text-sm font-bold hover:bg-[#252525] transition"
           >
             <ShoppingBag className="w-4 h-4" />
@@ -114,7 +114,7 @@ export const Dashboard: React.FC = () => {
                     <p className="text-sm text-amber-400/70 mt-1 max-w-md">Statutory hold periods have expired. Items are eligible for floor transfer.</p>
                     <div className="flex flex-wrap gap-2 mt-4">
                       <button 
-                        onClick={() => setActiveTab('vault')}
+                        onClick={() => setActiveTab('inventory')}
                         className="px-4 py-2 bg-amber-500 text-black rounded-xl text-xs font-bold hover:bg-amber-400 transition flex items-center gap-2"
                       >
                         <span>Transfer to Floor</span>
@@ -189,7 +189,7 @@ export const Dashboard: React.FC = () => {
             </div>
             
             <button 
-              onClick={() => setActiveTab('registry')}
+              onClick={() => setActiveTab('customers')}
               className="w-full py-4 bg-[#141414] border-t border-[#2A2A2A] text-[10px] font-bold text-gray-400 hover:text-white hover:bg-[#1E1E1E] transition flex items-center justify-center gap-2"
             >
               FULL ANALYTICS

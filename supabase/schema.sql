@@ -1,7 +1,17 @@
 -- ==============================================================================
--- SUPABASE FREE TIER SCHEMA: LOCALMARKET POS & PAWN HUB
--- Tables: profiles (Authentication & Staff), shop_items (Inventory), system_logs (Audit & SAPS)
--- Includes: Row Level Security (RLS), Auto-Profile Trigger, Indexes, Seed Data
+-- PRODUCTION SUPABASE SCHEMA: LOCALMARKET POS & PAWN HUB
+-- Tables:
+--   1. shop_profiles (Branch & Legal Compliance)
+--   2. profiles (Staff & Authentication linked to auth.users)
+--   3. shop_items (Inventory & Second-Hand Asset Stock)
+--   4. customers (Pawn & Ongoing Customer Relationships)
+--   5. sellers (Outright Second-Hand Sellers - SHG Act 06 of 2009)
+--   6. seller_transactions (Outright Purchase Acquisitions)
+--   7. pawn_loans (NCR Act 34 of 2005 Secured Pledge Contracts)
+--   8. sales (Retail Point of Sale Transactions)
+--   9. saps_entries (SAPS Form 21 Statutory Second-Hand Register)
+--   10. system_logs (Immutable Audit & Security Trail)
+-- Includes: Row Level Security (RLS), Triggers, Indexes, Realtime, Seed Data
 -- ==============================================================================
 
 -- 1. EXTENSIONS
@@ -21,12 +31,18 @@ EXCEPTION
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE item_status AS ENUM ('Vault Hold', 'Retail Floor', 'Sold', 'Redeemed', 'Reserved', 'Flagged');
+    CREATE TYPE item_status AS ENUM ('Vault Hold', 'Retail Floor', 'Sold', 'Redeemed', 'Reserved', 'Flagged', 'InStock', 'Forfeited', 'Pending Forfeit');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
--- 2.5 SHOP PROFILES TABLE (Branch Identity, VAT, and SAPS License)
+DO $$ BEGIN
+    CREATE TYPE loan_status AS ENUM ('Active', 'Extended', 'Redeemed', 'Forfeited', 'Archived', 'Pending Forfeit');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+-- 3. SHOP PROFILES TABLE (Branch Identity, VAT, and SAPS License)
 CREATE TABLE IF NOT EXISTS public.shop_profiles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     shop_code TEXT UNIQUE NOT NULL,
@@ -50,7 +66,7 @@ CREATE TABLE IF NOT EXISTS public.shop_profiles (
     updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 3. PROFILES TABLE (Linked with Supabase Auth: auth.users)
+-- 4. PROFILES TABLE (Linked with Supabase Auth: auth.users)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE SET NULL,
@@ -68,7 +84,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 4. SHOP ITEMS TABLE (Retail inventory & second-hand asset stock)
+-- 5. SHOP ITEMS TABLE (Retail inventory & second-hand asset stock)
 CREATE TABLE IF NOT EXISTS public.shop_items (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE SET NULL,
@@ -84,6 +100,7 @@ CREATE TABLE IF NOT EXISTS public.shop_items (
     status item_status DEFAULT 'Retail Floor'::item_status NOT NULL,
     days_in_vault INT DEFAULT 0,
     image_url TEXT,
+    storage_key TEXT,
     specs TEXT,
     pawn_ticket_id TEXT,
     created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
@@ -91,11 +108,154 @@ CREATE TABLE IF NOT EXISTS public.shop_items (
     updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 5. SYSTEM & AUDIT LOGS TABLE (Cashier logs, SAPS filings, and Security events)
+-- 6. CUSTOMERS TABLE (Pawn & ongoing loan relationships)
+CREATE TABLE IF NOT EXISTS public.customers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE SET NULL,
+    full_name TEXT NOT NULL,
+    id_type TEXT DEFAULT 'RSA Smart ID' NOT NULL,
+    id_number TEXT NOT NULL,
+    mobile TEXT NOT NULL,
+    address TEXT,
+    dob TEXT,
+    gender TEXT,
+    verified BOOLEAN DEFAULT true,
+    is_flagged BOOLEAN DEFAULT false,
+    last_communication_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 7. SELLERS TABLE (Outright Sellers - Second-Hand Goods Act)
+CREATE TABLE IF NOT EXISTS public.sellers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE SET NULL,
+    full_name TEXT NOT NULL,
+    id_type TEXT DEFAULT 'RSA Smart ID' NOT NULL,
+    id_number TEXT NOT NULL,
+    mobile TEXT NOT NULL,
+    email TEXT,
+    address TEXT,
+    verified BOOLEAN DEFAULT true,
+    verification_status TEXT DEFAULT 'verified',
+    verification_method TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 8. SELLER TRANSACTIONS TABLE (Outright Buys History)
+CREATE TABLE IF NOT EXISTS public.seller_transactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE SET NULL,
+    seller_id UUID REFERENCES public.sellers(id) ON DELETE CASCADE NOT NULL,
+    item_id UUID REFERENCES public.shop_items(id) ON DELETE SET NULL,
+    item_sku TEXT,
+    item_title TEXT,
+    transaction_type TEXT DEFAULT 'Buy' NOT NULL,
+    amount_paid NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    sku TEXT,
+    asset_tag TEXT,
+    compliance_reference TEXT,
+    saps_reference TEXT,
+    cashier_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    status TEXT DEFAULT 'Completed' NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    timestamp TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 9. PAWN LOANS TABLE (NCR Act 34 of 2005 Secured Contracts)
+CREATE TABLE IF NOT EXISTS public.pawn_loans (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE SET NULL,
+    ticket_number TEXT UNIQUE NOT NULL,
+    customer_id UUID REFERENCES public.customers(id) ON DELETE CASCADE NOT NULL,
+    customer_name TEXT,
+    customer_id_number TEXT,
+    customer_mobile TEXT,
+    customer_address TEXT,
+    item_id UUID REFERENCES public.shop_items(id) ON DELETE CASCADE,
+    item_title TEXT,
+    item_category TEXT,
+    serial_or_imei TEXT,
+    condition TEXT,
+    item_image_url TEXT,
+    principal NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    ncr_monthly_rate NUMERIC(6, 4) DEFAULT 0.05 NOT NULL,
+    monthly_interest NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    monthly_storage_admin_fee NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    total_redemption_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    extension_fee NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    start_date DATE NOT NULL,
+    expiry_date DATE NOT NULL,
+    days_remaining INT DEFAULT 30,
+    days_elapsed INT DEFAULT 0,
+    vault_shelf TEXT,
+    status loan_status DEFAULT 'Active'::loan_status NOT NULL,
+    qr_token TEXT,
+    history JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 10. SALES TABLE (Retail Point of Sale Transactions)
+CREATE TABLE IF NOT EXISTS public.sales (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE SET NULL,
+    receipt_number TEXT UNIQUE NOT NULL,
+    timestamp TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    items JSONB DEFAULT '[]'::jsonb NOT NULL,
+    subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    vat_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    total NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    tender_method TEXT NOT NULL,
+    amount_tendered NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    change NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    receipt_type TEXT DEFAULT 'thermal' NOT NULL,
+    customer_mobile TEXT,
+    cashier TEXT NOT NULL,
+    status TEXT DEFAULT 'Completed' NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 11. SAPS ENTRIES TABLE (Statutory Second-Hand Goods Register - Form 21)
+CREATE TABLE IF NOT EXISTS public.saps_entries (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE SET NULL,
+    entry_number TEXT UNIQUE NOT NULL,
+    timestamp TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    customer_id TEXT NOT NULL,
+    customer_name TEXT NOT NULL,
+    customer_id_number TEXT NOT NULL,
+    customer_address TEXT,
+    customer_phone TEXT,
+    item_description TEXT NOT NULL,
+    category TEXT,
+    serial_or_imei TEXT,
+    condition TEXT,
+    acquisition_type TEXT NOT NULL,
+    consideration_paid NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    officer_name TEXT,
+    police_station_ref TEXT,
+    verification_status TEXT DEFAULT 'VERIFIED' NOT NULL,
+    barcode_ref TEXT,
+    is_cancelled BOOLEAN DEFAULT false,
+    cancelled_at TIMESTAMPTZ,
+    cancel_reason TEXT,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 12. SYSTEM & AUDIT LOGS TABLE
 CREATE TABLE IF NOT EXISTS public.system_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    event_type TEXT NOT NULL, -- 'AUTH_SIGN_IN', 'SALE_COMPLETED', 'INTAKE_CREATED', 'VAULT_RELEASE', 'PIN_ROTATED', 'SAPS_VERIFICATION'
-    severity TEXT DEFAULT 'info' NOT NULL, -- 'info', 'warning', 'audit', 'critical'
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE SET NULL,
+    event_type TEXT NOT NULL,
+    severity TEXT DEFAULT 'info' NOT NULL,
     actor_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     actor_name TEXT NOT NULL,
     details JSONB DEFAULT '{}'::jsonb,
@@ -104,42 +264,104 @@ CREATE TABLE IF NOT EXISTS public.system_logs (
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 6. INDEXES FOR PERFORMANCE
+-- 13. INDEXES FOR HIGH-THROUGHPUT LOOKUPS & ISOLATION
+CREATE INDEX IF NOT EXISTS idx_shop_profiles_code ON public.shop_profiles(shop_code);
+CREATE INDEX IF NOT EXISTS idx_profiles_shop_id ON public.profiles(shop_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
+CREATE INDEX IF NOT EXISTS idx_profiles_cashier_code ON public.profiles(cashier_code);
+
+CREATE INDEX IF NOT EXISTS idx_shop_items_shop_id ON public.shop_items(shop_id);
 CREATE INDEX IF NOT EXISTS idx_shop_items_sku ON public.shop_items(sku);
 CREATE INDEX IF NOT EXISTS idx_shop_items_status ON public.shop_items(status);
 CREATE INDEX IF NOT EXISTS idx_shop_items_category ON public.shop_items(category);
+CREATE INDEX IF NOT EXISTS idx_shop_items_updated_at ON public.shop_items(updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_customers_shop_id ON public.customers(shop_id);
+CREATE INDEX IF NOT EXISTS idx_customers_id_number ON public.customers(id_number);
+CREATE INDEX IF NOT EXISTS idx_customers_mobile ON public.customers(mobile);
+CREATE INDEX IF NOT EXISTS idx_customers_full_name ON public.customers(full_name);
+
+CREATE INDEX IF NOT EXISTS idx_sellers_shop_id ON public.sellers(shop_id);
+CREATE INDEX IF NOT EXISTS idx_sellers_id_number ON public.sellers(id_number);
+CREATE INDEX IF NOT EXISTS idx_sellers_mobile ON public.sellers(mobile);
+CREATE INDEX IF NOT EXISTS idx_sellers_full_name ON public.sellers(full_name);
+
+CREATE INDEX IF NOT EXISTS idx_seller_transactions_shop_id ON public.seller_transactions(shop_id);
+CREATE INDEX IF NOT EXISTS idx_seller_transactions_seller_id ON public.seller_transactions(seller_id);
+CREATE INDEX IF NOT EXISTS idx_seller_transactions_item_id ON public.seller_transactions(item_id);
+CREATE INDEX IF NOT EXISTS idx_seller_transactions_timestamp ON public.seller_transactions(timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_pawn_loans_shop_id ON public.pawn_loans(shop_id);
+CREATE INDEX IF NOT EXISTS idx_pawn_loans_ticket ON public.pawn_loans(ticket_number);
+CREATE INDEX IF NOT EXISTS idx_pawn_loans_customer ON public.pawn_loans(customer_id);
+CREATE INDEX IF NOT EXISTS idx_pawn_loans_status ON public.pawn_loans(status);
+CREATE INDEX IF NOT EXISTS idx_pawn_loans_expiry ON public.pawn_loans(expiry_date);
+
+CREATE INDEX IF NOT EXISTS idx_sales_shop_id ON public.sales(shop_id);
+CREATE INDEX IF NOT EXISTS idx_sales_receipt ON public.sales(receipt_number);
+CREATE INDEX IF NOT EXISTS idx_sales_timestamp ON public.sales(timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_saps_entries_shop_id ON public.saps_entries(shop_id);
+CREATE INDEX IF NOT EXISTS idx_saps_entries_number ON public.saps_entries(entry_number);
+CREATE INDEX IF NOT EXISTS idx_saps_entries_customer_id ON public.saps_entries(customer_id_number);
+CREATE INDEX IF NOT EXISTS idx_saps_entries_timestamp ON public.saps_entries(timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_system_logs_shop_id ON public.system_logs(shop_id);
 CREATE INDEX IF NOT EXISTS idx_system_logs_event_type ON public.system_logs(event_type);
 CREATE INDEX IF NOT EXISTS idx_system_logs_created_at ON public.system_logs(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
 
--- 7. AUTOMATIC UPDATED_AT TRIGGER FUNCTION
+-- 14. AUTOMATIC UPDATED_AT TRIGGER FUNCTION
 CREATE OR REPLACE FUNCTION update_modified_column()
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = timezone('utc'::text, now());
     RETURN NEW;
 END;
-$$ language 'plpgsql';
+$$ LANGUAGE plpgsql;
+
+-- Apply triggers
+DROP TRIGGER IF EXISTS update_shop_profiles_timestamp ON public.shop_profiles;
+CREATE TRIGGER update_shop_profiles_timestamp BEFORE UPDATE ON public.shop_profiles FOR EACH ROW EXECUTE FUNCTION update_modified_column();
 
 DROP TRIGGER IF EXISTS update_profiles_timestamp ON public.profiles;
-CREATE TRIGGER update_profiles_timestamp
-    BEFORE UPDATE ON public.profiles
-    FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+CREATE TRIGGER update_profiles_timestamp BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION update_modified_column();
 
 DROP TRIGGER IF EXISTS update_shop_items_timestamp ON public.shop_items;
-CREATE TRIGGER update_shop_items_timestamp
-    BEFORE UPDATE ON public.shop_items
-    FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+CREATE TRIGGER update_shop_items_timestamp BEFORE UPDATE ON public.shop_items FOR EACH ROW EXECUTE FUNCTION update_modified_column();
 
--- 8. AUTOMATIC PROFILE CREATION ON USER SIGNUP (Supabase Auth Hook)
+DROP TRIGGER IF EXISTS update_customers_timestamp ON public.customers;
+CREATE TRIGGER update_customers_timestamp BEFORE UPDATE ON public.customers FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+
+DROP TRIGGER IF EXISTS update_sellers_timestamp ON public.sellers;
+CREATE TRIGGER update_sellers_timestamp BEFORE UPDATE ON public.sellers FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+
+DROP TRIGGER IF EXISTS update_seller_transactions_timestamp ON public.seller_transactions;
+CREATE TRIGGER update_seller_transactions_timestamp BEFORE UPDATE ON public.seller_transactions FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+
+DROP TRIGGER IF EXISTS update_pawn_loans_timestamp ON public.pawn_loans;
+CREATE TRIGGER update_pawn_loans_timestamp BEFORE UPDATE ON public.pawn_loans FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+
+DROP TRIGGER IF EXISTS update_sales_timestamp ON public.sales;
+CREATE TRIGGER update_sales_timestamp BEFORE UPDATE ON public.sales FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+
+DROP TRIGGER IF EXISTS update_saps_entries_timestamp ON public.saps_entries;
+CREATE TRIGGER update_saps_entries_timestamp BEFORE UPDATE ON public.saps_entries FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+
+-- 15. AUTOMATIC PROFILE CREATION HOOK
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
     new_cashier_code TEXT;
+    default_shop_id UUID;
 BEGIN
     new_cashier_code := 'CSH-' || LPAD(FLOOR(RANDOM() * 9000 + 1000)::TEXT, 4, '0');
+    
+    -- Assign to default active shop profile if one exists
+    SELECT id INTO default_shop_id FROM public.shop_profiles WHERE is_active = true ORDER BY created_at ASC LIMIT 1;
+
     INSERT INTO public.profiles (
         id,
+        shop_id,
         email,
         full_name,
         cashier_code,
@@ -149,6 +371,7 @@ BEGIN
     )
     VALUES (
         NEW.id,
+        default_shop_id,
         NEW.email,
         COALESCE(NEW.raw_user_meta_data->>'full_name', SPLIT_PART(NEW.email, '@', 1)),
         new_cashier_code,
@@ -157,14 +380,14 @@ BEGIN
         'Verified: ' || COALESCE(NEW.raw_user_meta_data->>'full_name', SPLIT_PART(NEW.email, '@', 1))
     );
     
-    -- Insert audit log for user registration
-    INSERT INTO public.system_logs (event_type, severity, actor_id, actor_name, details)
+    INSERT INTO public.system_logs (event_type, severity, actor_id, actor_name, details, shop_id)
     VALUES (
         'AUTH_USER_CREATED', 
         'audit', 
         NEW.id, 
         COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email),
-        jsonb_build_object('email', NEW.email, 'cashier_code', new_cashier_code)
+        jsonb_build_object('email', NEW.email, 'cashier_code', new_cashier_code),
+        default_shop_id
     );
 
     RETURN NEW;
@@ -176,66 +399,225 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 9. ROW LEVEL SECURITY (RLS) POLICIES
+-- 16. HELPER FUNCTIONS FOR SHOP-AWARE RLS
+CREATE OR REPLACE FUNCTION public.get_current_user_shop_id()
+RETURNS UUID AS $$
+    SELECT shop_id FROM public.profiles WHERE id = auth.uid();
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.is_current_user_manager_or_admin()
+RETURNS BOOLEAN AS $$
+    SELECT role IN ('manager', 'admin') FROM public.profiles WHERE id = auth.uid();
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+-- 17. ROW LEVEL SECURITY (RLS) POLICIES
+ALTER TABLE public.shop_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shop_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sellers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.seller_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pawn_loans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.saps_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_logs ENABLE ROW LEVEL SECURITY;
 
--- Profiles: Authenticated users can read all profiles; users can update their own profile; managers/admins can update all
-CREATE POLICY "Allow authenticated read profiles" ON public.profiles
-    FOR SELECT TO authenticated USING (true);
+-- Clean existing overly broad policies
+DROP POLICY IF EXISTS "Allow authenticated read profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Allow public anon read profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Allow users update own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Allow public read shop items" ON public.shop_items;
+DROP POLICY IF EXISTS "Allow authenticated insert shop items" ON public.shop_items;
+DROP POLICY IF EXISTS "Allow authenticated update shop items" ON public.shop_items;
+DROP POLICY IF EXISTS "Allow authenticated delete shop items" ON public.shop_items;
+DROP POLICY IF EXISTS "Allow authenticated read system logs" ON public.system_logs;
+DROP POLICY IF EXISTS "Allow authenticated insert system logs" ON public.system_logs;
+DROP POLICY IF EXISTS "Allow public anon insert system logs" ON public.system_logs;
+DROP POLICY IF EXISTS "Allow public anon read system logs" ON public.system_logs;
+DROP POLICY IF EXISTS "Allow public read active shop profiles" ON public.shop_profiles;
+DROP POLICY IF EXISTS "Allow authenticated manage shop profiles" ON public.shop_profiles;
+DROP POLICY IF EXISTS "Allow anon read shop profiles" ON public.shop_profiles;
+DROP POLICY IF EXISTS "Allow anon insert shop profiles" ON public.shop_profiles;
+DROP POLICY IF EXISTS "Allow anon update shop profiles" ON public.shop_profiles;
 
-CREATE POLICY "Allow public anon read profiles" ON public.profiles
-    FOR SELECT TO anon USING (true);
+-- SHOP PROFILES POLICIES
+CREATE POLICY "Staff read active shop profiles" ON public.shop_profiles
+    FOR SELECT TO authenticated USING (is_active = true OR public.is_current_user_manager_or_admin());
 
-CREATE POLICY "Allow users update own profile" ON public.profiles
-    FOR UPDATE TO authenticated USING (auth.uid() = id);
+CREATE POLICY "Managers manage shop profiles" ON public.shop_profiles
+    FOR ALL TO authenticated
+    USING (public.is_current_user_manager_or_admin())
+    WITH CHECK (public.is_current_user_manager_or_admin());
 
--- Shop Items: Everyone (anon & authenticated) can view available inventory
-CREATE POLICY "Allow public read shop items" ON public.shop_items
-    FOR SELECT TO public USING (true);
+-- PROFILES POLICIES (No public anon read)
+CREATE POLICY "Staff read branch profiles" ON public.profiles
+    FOR SELECT TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
 
--- Authenticated users (Cashiers & Managers) can insert, update, or archive shop items
-CREATE POLICY "Allow authenticated insert shop items" ON public.shop_items
-    FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Users update own profile" ON public.profiles
+    FOR UPDATE TO authenticated
+    USING (auth.uid() = id OR public.is_current_user_manager_or_admin());
 
-CREATE POLICY "Allow authenticated update shop items" ON public.shop_items
-    FOR UPDATE TO authenticated USING (true);
+-- SHOP ITEMS POLICIES
+CREATE POLICY "Staff read branch shop items" ON public.shop_items
+    FOR SELECT TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
 
-CREATE POLICY "Allow authenticated delete shop items" ON public.shop_items
-    FOR DELETE TO authenticated USING (true);
+CREATE POLICY "Staff insert branch shop items" ON public.shop_items
+    FOR INSERT TO authenticated
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
 
--- System Logs: Authenticated staff can view logs, insert new logs
-CREATE POLICY "Allow authenticated read system logs" ON public.system_logs
-    FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Staff update branch shop items" ON public.shop_items
+    FOR UPDATE TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
 
-CREATE POLICY "Allow authenticated insert system logs" ON public.system_logs
-    FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Managers delete shop items" ON public.shop_items
+    FOR DELETE TO authenticated
+    USING (public.is_current_user_manager_or_admin());
 
-CREATE POLICY "Allow public anon insert system logs" ON public.system_logs
-    FOR INSERT TO anon WITH CHECK (true);
+-- CUSTOMERS POLICIES
+CREATE POLICY "Staff read branch customers" ON public.customers
+    FOR SELECT TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
 
-CREATE POLICY "Allow public anon read system logs" ON public.system_logs
-    FOR SELECT TO anon USING (true);
+CREATE POLICY "Staff insert branch customers" ON public.customers
+    FOR INSERT TO authenticated
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
 
--- 10. REALTIME SUBSCRIPTIONS REPLICATION (Supabase Free Tier)
--- Enable realtime for shop items and logs so cashiers get instant sync
+CREATE POLICY "Staff update branch customers" ON public.customers
+    FOR UPDATE TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+-- SELLERS POLICIES
+CREATE POLICY "Staff read branch sellers" ON public.sellers
+    FOR SELECT TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+CREATE POLICY "Staff insert branch sellers" ON public.sellers
+    FOR INSERT TO authenticated
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+CREATE POLICY "Staff update branch sellers" ON public.sellers
+    FOR UPDATE TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+-- SELLER TRANSACTIONS POLICIES (Append & audit friendly)
+CREATE POLICY "Staff read branch seller transactions" ON public.seller_transactions
+    FOR SELECT TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+CREATE POLICY "Staff insert branch seller transactions" ON public.seller_transactions
+    FOR INSERT TO authenticated
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+CREATE POLICY "Managers update branch seller transactions" ON public.seller_transactions
+    FOR UPDATE TO authenticated
+    USING (public.is_current_user_manager_or_admin());
+
+-- PAWN LOANS POLICIES
+CREATE POLICY "Staff read branch pawn loans" ON public.pawn_loans
+    FOR SELECT TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+CREATE POLICY "Staff insert branch pawn loans" ON public.pawn_loans
+    FOR INSERT TO authenticated
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+CREATE POLICY "Staff update branch pawn loans" ON public.pawn_loans
+    FOR UPDATE TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+-- SALES POLICIES (Append & audit friendly)
+CREATE POLICY "Staff read branch sales" ON public.sales
+    FOR SELECT TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+CREATE POLICY "Staff insert branch sales" ON public.sales
+    FOR INSERT TO authenticated
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+CREATE POLICY "Managers update branch sales" ON public.sales
+    FOR UPDATE TO authenticated
+    USING (public.is_current_user_manager_or_admin());
+
+-- SAPS ENTRIES POLICIES (Statutory compliance: Strictly append-only, NO DELETE)
+CREATE POLICY "Staff read branch saps entries" ON public.saps_entries
+    FOR SELECT TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+CREATE POLICY "Staff insert branch saps entries" ON public.saps_entries
+    FOR INSERT TO authenticated
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+CREATE POLICY "Staff update branch saps entries" ON public.saps_entries
+    FOR UPDATE TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+-- SYSTEM LOGS POLICIES (Immutable audit trail: NO UPDATE, NO DELETE)
+CREATE POLICY "Staff read branch system logs" ON public.system_logs
+    FOR SELECT TO authenticated
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+
+CREATE POLICY "Staff insert system logs" ON public.system_logs
+    FOR INSERT TO authenticated
+    WITH CHECK (true);
+
+-- 18. REALTIME REPLICATION (For multi-terminal sync)
 ALTER PUBLICATION supabase_realtime ADD TABLE public.shop_items;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.system_logs;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.pawn_loans;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.sales;
 
--- 11. INITIAL SEED DATA FOR LOCALMARKET
-INSERT INTO public.shop_items (sku, title, category, serial_or_imei, condition, acquisition_type, cost_basis, retail_price, vault_location, status, image_url, specs)
+-- 19. INITIAL SEED DATA
+INSERT INTO public.shop_profiles (
+    id,
+    shop_code,
+    shop_name,
+    trading_name,
+    registration_number,
+    vat_number,
+    saps_dealer_license,
+    phone,
+    email,
+    address,
+    city,
+    province,
+    postal_code,
+    currency,
+    receipt_header,
+    receipt_footer
+)
+VALUES (
+    'a0000000-0000-0000-0000-000000000001'::uuid,
+    'SHOP-SOW-01',
+    'LocalMarket Soweto Central',
+    'LocalMarket Pawnbrokers & Retail (Pty) Ltd',
+    '2019/581920/07',
+    'ZA4891029381',
+    'SAPS-SHD-2024-99182',
+    '+27 11 938 1200',
+    'soweto.branch@localmarket.co.za',
+    '1482 Vilakazi Street, Orlando West',
+    'Soweto',
+    'Gauteng',
+    '1804',
+    'ZAR',
+    E'LOCALMARKET PAWNBROKERS & RETAIL\nSOWETO CENTRAL BRANCH • TEL: 011 938 1200\nSAPS LIC: SAPS-SHD-2024-99182 • VAT: 4891029381',
+    E'THANK YOU FOR YOUR PATRONAGE!\nKEEP RECEIPT FOR WARRANTY & POLICE INSPECTION\nTERMS & NCR ACT 34 OF 2005 APPLY'
+)
+ON CONFLICT (shop_code) DO NOTHING;
+
+INSERT INTO public.shop_items (shop_id, sku, title, category, serial_or_imei, condition, acquisition_type, cost_basis, retail_price, vault_location, status, image_url, specs)
 VALUES
-('SKU-IPH15-01', 'Apple iPhone 15 Pro 128GB Titanium', 'Phones & Tech', '359281092837192', 'Mint', 'Buy', 12500.00, 18999.00, 'Display-A1', 'Retail Floor', 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=600&q=80', 'Natural Titanium, Battery 98%, USB-C, Original Box'),
-('SKU-MAK-501', 'Makita 18V LXT Brushless Cordless Drill Kit', 'Power Tools', 'MK-9821734-LXT', 'Excellent', 'Buy', 1600.00, 2750.00, 'Shelf-T03', 'Retail Floor', 'https://images.unsplash.com/photo-1504148455328-c376907d081c?w=600&q=80', 'Includes 2x 4.0Ah Li-ion batteries and rapid charger'),
-('SKU-PS5-009', 'Sony PlayStation 5 Disc Edition 825GB', 'Gaming Consoles', 'PS5-839210-SA', 'Excellent', 'Buy', 5200.00, 7999.00, 'Shelf-G02', 'Retail Floor', 'https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=600&q=80', 'White DualSense controller, HDMI 2.1 cable, power cord'),
-('SKU-JBL-442', 'JBL Boombox 3 Portable Bluetooth Speaker', 'Audio & Visual', 'JBL-BB3-88219', 'Good', 'Buy', 3200.00, 4899.00, 'Display-Audio', 'Retail Floor', 'https://images.unsplash.com/photo-1545454675-3531b543be5d?w=600&q=80', 'Squad Camo, IP67 waterproof, 24hr battery'),
-('SKU-GLD-991', '9ct Yellow Gold Curb Link Chain 22g', 'Fine Jewelry & Gold', 'CERT-GLD-9912', 'Excellent', 'Buy', 9500.00, 14500.00, 'Vault-Safe-01', 'Retail Floor', 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=600&q=80', 'Hallmarked 375, 55cm length, lobster clasp')
+('a0000000-0000-0000-0000-000000000001'::uuid, 'SKU-IPH15-01', 'Apple iPhone 15 Pro 128GB Titanium', 'Phones & Tech', '359281092837192', 'Mint', 'Buy', 12500.00, 18999.00, 'Display-A1', 'Retail Floor', 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=600&q=80', 'Natural Titanium, Battery 98%, USB-C, Original Box'),
+('a0000000-0000-0000-0000-000000000001'::uuid, 'SKU-MAK-501', 'Makita 18V LXT Brushless Cordless Drill Kit', 'Power Tools', 'MK-9821734-LXT', 'Excellent', 'Buy', 1600.00, 2750.00, 'Shelf-T03', 'Retail Floor', 'https://images.unsplash.com/photo-1504148455328-c376907d081c?w=600&q=80', 'Includes 2x 4.0Ah Li-ion batteries and rapid charger'),
+('a0000000-0000-0000-0000-000000000001'::uuid, 'SKU-PS5-009', 'Sony PlayStation 5 Disc Edition 825GB', 'Gaming Consoles', 'PS5-839210-SA', 'Excellent', 'Buy', 5200.00, 7999.00, 'Shelf-G02', 'Retail Floor', 'https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=600&q=80', 'White DualSense controller, HDMI 2.1 cable, power cord'),
+('a0000000-0000-0000-0000-000000000001'::uuid, 'SKU-JBL-442', 'JBL Boombox 3 Portable Bluetooth Speaker', 'Audio & Visual', 'JBL-BB3-88219', 'Good', 'Buy', 3200.00, 4899.00, 'Display-Audio', 'Retail Floor', 'https://images.unsplash.com/photo-1545454675-3531b543be5d?w=600&q=80', 'Squad Camo, IP67 waterproof, 24hr battery'),
+('a0000000-0000-0000-0000-000000000001'::uuid, 'SKU-GLD-991', '9ct Yellow Gold Curb Link Chain 22g', 'Fine Jewelry & Gold', 'CERT-GLD-9912', 'Excellent', 'Buy', 9500.00, 14500.00, 'Vault-Safe-01', 'Retail Floor', 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=600&q=80', 'Hallmarked 375, 55cm length, lobster clasp')
 ON CONFLICT (sku) DO NOTHING;
 
-INSERT INTO public.system_logs (event_type, severity, actor_name, details, saps_reference)
+INSERT INTO public.system_logs (shop_id, event_type, severity, actor_name, details, saps_reference)
 VALUES
-('SYSTEM_INITIALIZED', 'info', 'System Daemon', '{"source": "LocalMarket Supabase Free Tier Sync", "version": "1.0.0"}'::jsonb, NULL),
-('SAPS_REGISTER_EXPORT', 'audit', 'Thabo Molefe', '{"format": "CSV", "recordCount": 18, "station": "Johannesburg Central SAPS"}'::jsonb, 'SAPS-2026-0842'),
-('VAULT_AUDIT_LOG', 'info', 'Thabo Molefe', '{"vaultShelf": "Shelf-A03", "itemsVerified": 12, "status": "Secure"}'::jsonb, NULL);
+('a0000000-0000-0000-0000-000000000001'::uuid, 'SYSTEM_INITIALIZED', 'info', 'System Daemon', '{"source": "LocalMarket Supabase Free Tier Sync", "version": "2.0.0"}'::jsonb, NULL),
+('a0000000-0000-0000-0000-000000000001'::uuid, 'SAPS_REGISTER_EXPORT', 'audit', 'Thabo Molefe', '{"format": "CSV", "recordCount": 18, "station": "Johannesburg Central SAPS"}'::jsonb, 'SAPS-2026-0842');

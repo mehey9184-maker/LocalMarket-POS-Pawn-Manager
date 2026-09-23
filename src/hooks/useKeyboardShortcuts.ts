@@ -35,11 +35,11 @@ export const useKeyboardShortcuts = (options?: KeyboardShortcutOptions) => {
       // --- TAB SWITCHING: Ctrl+1 through Ctrl+5 OR Alt+1 through Alt+5 OR F1-F5 ---
       if ((isCtrlOrCmd || isAlt) && !e.shiftKey) {
         let targetTab: NavTab | null = null;
-        if (key === '1') targetTab = 'dashboard';
-        else if (key === '2') targetTab = 'pos';
-        else if (key === '3') targetTab = 'intake';
-        else if (key === '4') targetTab = 'vault';
-        else if (key === '5') targetTab = 'registry';
+        if (key === '1') targetTab = 'home';
+        else if (key === '2') targetTab = 'sell';
+        else if (key === '3') targetTab = 'buy-pawn';
+        else if (key === '4') targetTab = 'inventory';
+        else if (key === '5') targetTab = 'customers';
         else if (key === '6') targetTab = 'profile';
 
         if (targetTab) {
@@ -48,11 +48,11 @@ export const useKeyboardShortcuts = (options?: KeyboardShortcutOptions) => {
           const tabNames: Record<NavTab, string> = {
             landing: 'System Overview',
             auth: 'Authentication Portal',
-            dashboard: 'Command Center Dashboard',
-            pos: 'Front POS Terminal',
-            intake: 'Buy / Pawn Intake Desk',
-            vault: 'Vault & Stockroom Manager',
-            registry: 'Consolidated Records & SAPS',
+            home: 'Command Center Home',
+            sell: 'Front POS Terminal',
+            'buy-pawn': 'Buy / Pawn Intake Desk',
+            inventory: 'Vault & Stockroom Manager',
+            customers: 'Consolidated Records & SAPS',
             profile: 'Cashier Profile & Performance'
           };
           showToast(`Switched Tab`, tabNames[targetTab], 'info');
@@ -64,29 +64,29 @@ export const useKeyboardShortcuts = (options?: KeyboardShortcutOptions) => {
       if (!isInput) {
         if (key === 'F1') {
           e.preventDefault();
-          setActiveTab('dashboard');
-          showToast('Switched Tab', 'Command Center Dashboard [F1]', 'info');
+          setActiveTab('home');
+          showToast('Switched Tab', 'Command Center Home [F1]', 'info');
           return;
         } else if (key === 'F2') {
           e.preventDefault();
-          setActiveTab('pos');
+          setActiveTab('sell');
           showToast('Switched Tab', 'Front POS Terminal [F2]', 'info');
           return;
         } else if (key === 'F3') {
           e.preventDefault();
-          setActiveTab('intake');
+          setActiveTab('buy-pawn');
           showToast('Switched Tab', 'Buy / Pawn Intake Desk [F3]', 'info');
           return;
         } else if (key === 'F4') {
           e.preventDefault();
-          setActiveTab('vault');
+          setActiveTab('inventory');
           showToast('Switched Tab', 'Vault & Stockroom Manager [F4]', 'info');
           return;
         } else if (key === 'F5' && isCtrlOrCmd) {
           // let normal refresh happen if Ctrl+F5, otherwise switch
         } else if (key === 'F5' && !isCtrlOrCmd) {
           e.preventDefault();
-          setActiveTab('registry');
+          setActiveTab('customers');
           showToast('Switched Tab', 'Consolidated Registry & SAPS [F5]', 'info');
           return;
         } else if (key === 'F6') {
@@ -99,7 +99,7 @@ export const useKeyboardShortcuts = (options?: KeyboardShortcutOptions) => {
 
       // --- POS ACTION: QUICK CHECKOUT (Ctrl+Enter or F9) ---
       if ((isCtrlOrCmd && key === 'Enter') || key === 'F9') {
-        if (activeTab === 'pos') {
+        if (activeTab === 'sell') {
           e.preventDefault();
           if (cart.length === 0) {
             showToast('Cart is Empty', 'Scan or click an item before checkout', 'amber');
@@ -116,7 +116,7 @@ export const useKeyboardShortcuts = (options?: KeyboardShortcutOptions) => {
         (isCtrlOrCmd && (key === 'Backspace' || key === 'Delete')) ||
         (isAlt && (key === 'c' || key === 'C'))
       ) {
-        if (activeTab === 'pos') {
+        if (activeTab === 'sell') {
           e.preventDefault();
           if (cart.length > 0) {
             clearCart();

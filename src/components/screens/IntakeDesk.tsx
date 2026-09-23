@@ -381,7 +381,7 @@ export const IntakeDesk: React.FC = () => {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setActiveTab('registry')}
+                    onClick={() => setActiveTab('customers')}
                     className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#141414] hover:bg-[#202020] border border-[#2A2A2A] text-emerald-400 text-xs font-semibold flex items-center justify-center gap-2 transition"
                   >
                     <ShoppingBag className="w-4 h-4" />

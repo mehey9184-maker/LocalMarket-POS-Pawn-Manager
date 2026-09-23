@@ -171,7 +171,7 @@ export interface BusinessRules {
 
 export interface SyncLog {
   id?: number;
-  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules';
+  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules' | 'sellers' | 'sellerTransactions';
   entityId: string;
   action: 'create' | 'update' | 'delete';
   payload: any;

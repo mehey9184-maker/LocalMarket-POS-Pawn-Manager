@@ -3,10 +3,9 @@ import { useApp } from '../../context/AppContext';
 import { useLoans } from '../../context/LoanContext';
 import { useCustomers } from '../../context/CustomerContext';
 import { PawnLoan } from '../../types';
-import * as ReactWindow from 'react-window';
 import { AutoSizer as AutoSizerComponent } from 'react-virtualized-auto-sizer';
+import { VirtualList } from '../common/VirtualList';
 
-const FixedSizeList = (ReactWindow as any).FixedSizeList;
 const AutoSizer = (AutoSizerComponent as any);
 import {
   Search,
@@ -283,7 +282,7 @@ export const LoansLedger: React.FC = () => {
               const columnWidth = width / columnCount;
               const rowCount = Math.ceil(filteredLoans.length / columnCount);
               return (
-                <FixedSizeList
+                <VirtualList
                   height={height}
                   width={width}
                   itemCount={rowCount}
@@ -311,7 +310,7 @@ export const LoansLedger: React.FC = () => {
                       </div>
                     );
                   }}
-                </FixedSizeList>
+                </VirtualList>
               );
             }}
           </AutoSizer>

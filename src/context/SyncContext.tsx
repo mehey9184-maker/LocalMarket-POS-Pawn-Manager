@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { SyncLog, SyncStatus } from '../types';
 import { isSupabaseConfigured } from '../services/supabase';
-import { shopItemsApi, logsApi } from '../services/supabaseApi';
+import { SyncService } from '../services/SyncService';
 
 interface SyncContextType {
   syncStatus: SyncStatus;
@@ -26,8 +26,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(localStorage.getItem('last_sync_time'));
 
-  const pendingLogs = useLiveQuery(() => db.syncLogs.where('status').equals('pending').toArray()) || [];
-  const allLogs = useLiveQuery(() => db.syncLogs.orderBy('createdAt').reverse().limit(50).toArray()) || [];
+  const allLogs = (useLiveQuery(() => db.syncLogs.orderBy('createdAt').reverse().limit(50).toArray()) || []) as SyncLog[];
   const pendingCount = useLiveQuery(() => db.syncLogs.where('status').equals('pending').count()) || 0;
 
   useEffect(() => {
@@ -58,56 +57,12 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
-  const processSyncItem = async (log: SyncLog) => {
-    if (!isSupabaseConfigured()) return;
-
-    try {
-      if (log.entityType === 'inventory') {
-        if (log.action === 'create') {
-          await shopItemsApi.createItem(log.payload);
-        } else if (log.action === 'update') {
-          await shopItemsApi.updateItem(log.entityId, log.payload);
-        }
-      } else {
-        // Generic log for other types
-        await logsApi.createLog(
-          `${log.action.toUpperCase()}_${log.entityType.toUpperCase()}`,
-          'System Sync',
-          log.payload,
-          'info'
-        );
-      }
-
-      await db.syncLogs.update(log.id!, {
-        status: 'completed',
-        syncedAt: new Date().toISOString(),
-        error: undefined
-      });
-    } catch (error: any) {
-      await db.syncLogs.update(log.id!, {
-        status: 'failed',
-        error: error.message,
-        retryCount: (log.retryCount || 0) + 1
-      });
-      throw error;
-    }
-  };
-
   const triggerSync = useCallback(async () => {
     if (isSyncing || !isOnline || !isSupabaseConfigured()) return;
 
     setIsSyncing(true);
     try {
-      const logs = await db.syncLogs.where('status').anyOf('pending', 'failed').toArray();
-      for (const log of logs) {
-        await db.syncLogs.update(log.id!, { status: 'syncing' });
-        try {
-          await processSyncItem(log);
-        } catch (e) {
-          console.error(`Sync failed for log ${log.id}:`, e);
-          // Continue with next item even if one fails
-        }
-      }
+      await SyncService.processAllPendingSync();
       const now = new Date().toISOString();
       setLastSyncTime(now);
       localStorage.setItem('last_sync_time', now);
@@ -120,7 +75,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const log = await db.syncLogs.get(logId);
     if (log) {
       await db.syncLogs.update(logId, { status: 'syncing' });
-      await processSyncItem(log);
+      await SyncService.syncEntity(log as SyncLog);
     }
   };
 

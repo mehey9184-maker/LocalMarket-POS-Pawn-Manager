@@ -30,7 +30,8 @@ import {
   ChevronLeft,
   X,
   FileText,
-  TrendingUp
+  TrendingUp,
+  History
 } from 'lucide-react';
 
 type WorkflowStep = 'mode' | 'customer' | 'item' | 'valuation' | 'deal' | 'completion';
@@ -232,14 +233,15 @@ export const BuyPawn: React.FC = () => {
 
     // 2. If Pawn, create Loan
     if (txType === 'pawn' && pawnCalculations) {
+      const pCustomer = selectedIdentity as Customer;
       const ticketNumber = `PWN-${Math.floor(Math.random() * 9000 + 1000)}`;
       const loanId = await createLoan({
         ticketNumber,
-        customerId: selectedCustomer.id,
-        customerName: selectedCustomer.fullName,
-        customerIdNumber: selectedCustomer.idNumber,
-        customerMobile: selectedCustomer.mobile,
-        customerAddress: selectedCustomer.address,
+        customerId: pCustomer.id,
+        customerName: pCustomer.fullName,
+        customerIdNumber: pCustomer.idNumber,
+        customerMobile: pCustomer.mobile,
+        customerAddress: pCustomer.address,
         itemId: itemId,
         itemTitle: itemData.title,
         itemCategory: itemData.category,
@@ -266,7 +268,7 @@ export const BuyPawn: React.FC = () => {
           note: 'Loan initiated'
         }]
       });
-      loan = { id: loanId, ticketNumber, ...pawnCalculations, ...selectedCustomer, ...itemData, status: 'Active' } as any;
+      loan = { ...pawnCalculations, ...pCustomer, ...itemData, id: loanId, ticketNumber, status: 'Active' } as any;
     }
 
     // 3. Record SAPS Entry

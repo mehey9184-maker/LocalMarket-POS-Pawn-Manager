@@ -7,21 +7,11 @@ import {
   SaleTransaction,
   BusinessRules,
   Seller,
-  SellerTransaction
+  SellerTransaction,
+  SyncLog
 } from '../types';
 
-export interface SyncLog {
-  id?: number;
-  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules' | 'sellers' | 'sellerTransactions';
-  entityId: string;
-  action: 'create' | 'update' | 'delete';
-  payload: any;
-  status: 'pending' | 'syncing' | 'failed' | 'completed';
-  error?: string;
-  createdAt: string;
-  syncedAt?: string;
-  retryCount: number;
-}
+export type { SyncLog };
 
 export class LocalDatabase extends Dexie {
   inventory!: Table<InventoryItem>;
@@ -36,8 +26,32 @@ export class LocalDatabase extends Dexie {
 
   constructor() {
     super('LocalMarketDB');
-    this.version(3).stores({
+
+    // Initial Schema (Version 1)
+    this.version(1).stores({
       inventory: 'id, sku, status, pawnTicketId, addedAt',
+      customers: 'id, fullName, idNumber, mobile',
+      loans: 'id, ticketNumber, customerId, status, expiryDate',
+      saps: 'id, entryNumber, timestamp, customerId',
+      sales: 'id, receiptNumber, timestamp',
+      syncLogs: '++id, entityType, entityId, status, createdAt',
+      counters: 'id'
+    });
+
+    // Version 2: Added inventory categories and search indexes
+    this.version(2).stores({
+      inventory: 'id, sku, status, category, pawnTicketId, addedAt',
+      customers: 'id, fullName, idNumber, mobile',
+      loans: 'id, ticketNumber, customerId, status, expiryDate',
+      saps: 'id, entryNumber, timestamp, customerId',
+      sales: 'id, receiptNumber, timestamp',
+      syncLogs: '++id, entityType, entityId, status, createdAt',
+      counters: 'id'
+    });
+
+    // Version 3: Added dedicated Sellers and SellerTransactions tables
+    this.version(3).stores({
+      inventory: 'id, sku, status, category, pawnTicketId, addedAt',
       customers: 'id, fullName, idNumber, mobile',
       sellers: 'id, fullName, idNumber, mobile',
       sellerTransactions: 'id, sellerId, itemId, timestamp',

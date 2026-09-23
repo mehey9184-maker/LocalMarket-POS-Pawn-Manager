@@ -3,10 +3,9 @@ import { useApp } from '../../context/AppContext';
 import { useSaps } from '../../context/SapsContext';
 import { useCustomers } from '../../context/CustomerContext';
 import { SapsEntry } from '../../types';
-import * as ReactWindow from 'react-window';
 import { AutoSizer as AutoSizerComponent } from 'react-virtualized-auto-sizer';
+import { VirtualList } from '../common/VirtualList';
 
-const FixedSizeList = (ReactWindow as any).FixedSizeList;
 const AutoSizer = (AutoSizerComponent as any);
 import {
   Shield,
@@ -276,7 +275,7 @@ export const SapsRegister: React.FC = () => {
           ) : (
             <AutoSizer>
               {({ height, width }: any) => (
-                <FixedSizeList height={height} width={width} itemCount={filteredEntries.length} itemSize={54}>
+                <VirtualList height={height} width={width} itemCount={filteredEntries.length} itemSize={54}>
                   {({ index, style }: any) => (
                     <SapsEntryRow 
                       entry={filteredEntries[index]} 
@@ -285,7 +284,7 @@ export const SapsRegister: React.FC = () => {
                       style={style} 
                     />
                   )}
-                </FixedSizeList>
+                </VirtualList>
               )}
             </AutoSizer>
           )}

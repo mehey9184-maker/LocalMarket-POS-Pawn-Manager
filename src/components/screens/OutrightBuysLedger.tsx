@@ -3,10 +3,9 @@ import { useApp } from '../../context/AppContext';
 import { useInventory } from '../../context/InventoryContext';
 import { useSaps } from '../../context/SapsContext';
 import { InventoryItem } from '../../types';
-import * as ReactWindow from 'react-window';
 import { AutoSizer as AutoSizerComponent } from 'react-virtualized-auto-sizer';
+import { VirtualList } from '../common/VirtualList';
 
-const FixedSizeList = (ReactWindow as any).FixedSizeList;
 const AutoSizer = (AutoSizerComponent as any);
 import {
   Search,
@@ -242,7 +241,7 @@ export const OutrightBuysLedger: React.FC = () => {
           ) : (
             <AutoSizer>
               {({ height, width }: any) => (
-                <FixedSizeList
+                <VirtualList
                   height={height}
                   width={width}
                   itemCount={filteredItems.length}
@@ -252,11 +251,11 @@ export const OutrightBuysLedger: React.FC = () => {
                     <InventoryRow 
                       item={filteredItems[index]} 
                       onPrint={handlePrintBarcode} 
-                      onPOS={() => setActiveTab('pos')}
+                      onPOS={() => setActiveTab('sell')}
                       style={style}
                     />
                   )}
-                </FixedSizeList>
+                </VirtualList>
               )}
             </AutoSizer>
           )}

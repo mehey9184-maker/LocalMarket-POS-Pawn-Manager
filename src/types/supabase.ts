@@ -8,7 +8,8 @@ export type Json =
 
 export type UserRole = 'cashier' | 'senior_cashier' | 'manager' | 'admin';
 export type ItemCondition = 'Mint' | 'Excellent' | 'Good' | 'Fair' | 'Damaged';
-export type ItemStatus = 'Vault Hold' | 'Retail Floor' | 'Sold' | 'Redeemed' | 'Reserved' | 'Flagged';
+export type ItemStatus = 'Vault Hold' | 'Retail Floor' | 'Sold' | 'Redeemed' | 'Reserved' | 'Flagged' | 'InStock' | 'Forfeited' | 'Pending Forfeit';
+export type LoanStatus = 'Active' | 'Extended' | 'Redeemed' | 'Forfeited' | 'Archived' | 'Pending Forfeit';
 
 export interface Database {
   public: {
@@ -84,6 +85,7 @@ export interface Database {
       profiles: {
         Row: {
           id: string;
+          shop_id: string | null;
           email: string | null;
           full_name: string;
           cashier_code: string;
@@ -99,6 +101,7 @@ export interface Database {
         };
         Insert: {
           id: string;
+          shop_id?: string | null;
           email?: string | null;
           full_name: string;
           cashier_code?: string;
@@ -114,6 +117,7 @@ export interface Database {
         };
         Update: {
           id?: string;
+          shop_id?: string | null;
           email?: string | null;
           full_name?: string;
           cashier_code?: string;
@@ -131,6 +135,7 @@ export interface Database {
       shop_items: {
         Row: {
           id: string;
+          shop_id: string | null;
           sku: string;
           title: string;
           category: string;
@@ -143,6 +148,7 @@ export interface Database {
           status: ItemStatus;
           days_in_vault: number;
           image_url: string | null;
+          storage_key: string | null;
           specs: string | null;
           pawn_ticket_id: string | null;
           created_by: string | null;
@@ -151,6 +157,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          shop_id?: string | null;
           sku: string;
           title: string;
           category: string;
@@ -163,6 +170,7 @@ export interface Database {
           status?: ItemStatus;
           days_in_vault?: number;
           image_url?: string | null;
+          storage_key?: string | null;
           specs?: string | null;
           pawn_ticket_id?: string | null;
           created_by?: string | null;
@@ -171,6 +179,7 @@ export interface Database {
         };
         Update: {
           id?: string;
+          shop_id?: string | null;
           sku?: string;
           title?: string;
           category?: string;
@@ -183,6 +192,7 @@ export interface Database {
           status?: ItemStatus;
           days_in_vault?: number;
           image_url?: string | null;
+          storage_key?: string | null;
           specs?: string | null;
           pawn_ticket_id?: string | null;
           created_by?: string | null;
@@ -190,9 +200,412 @@ export interface Database {
           updated_at?: string;
         };
       };
+      customers: {
+        Row: {
+          id: string;
+          shop_id: string | null;
+          full_name: string;
+          id_type: string;
+          id_number: string;
+          mobile: string;
+          address: string | null;
+          dob: string | null;
+          gender: string | null;
+          verified: boolean;
+          is_flagged: boolean;
+          last_communication_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          shop_id?: string | null;
+          full_name: string;
+          id_type?: string;
+          id_number: string;
+          mobile: string;
+          address?: string | null;
+          dob?: string | null;
+          gender?: string | null;
+          verified?: boolean;
+          is_flagged?: boolean;
+          last_communication_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          shop_id?: string | null;
+          full_name?: string;
+          id_type?: string;
+          id_number?: string;
+          mobile?: string;
+          address?: string | null;
+          dob?: string | null;
+          gender?: string | null;
+          verified?: boolean;
+          is_flagged?: boolean;
+          last_communication_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      sellers: {
+        Row: {
+          id: string;
+          shop_id: string | null;
+          full_name: string;
+          id_type: string;
+          id_number: string;
+          mobile: string;
+          email: string | null;
+          address: string | null;
+          verified: boolean;
+          verification_status: string;
+          verification_method: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          shop_id?: string | null;
+          full_name: string;
+          id_type?: string;
+          id_number: string;
+          mobile: string;
+          email?: string | null;
+          address?: string | null;
+          verified?: boolean;
+          verification_status?: string;
+          verification_method?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          shop_id?: string | null;
+          full_name?: string;
+          id_type?: string;
+          id_number?: string;
+          mobile?: string;
+          email?: string | null;
+          address?: string | null;
+          verified?: boolean;
+          verification_status?: string;
+          verification_method?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      seller_transactions: {
+        Row: {
+          id: string;
+          shop_id: string | null;
+          seller_id: string;
+          item_id: string | null;
+          item_sku: string | null;
+          item_title: string | null;
+          transaction_type: string;
+          amount_paid: number;
+          sku: string | null;
+          asset_tag: string | null;
+          compliance_reference: string | null;
+          saps_reference: string | null;
+          cashier_id: string | null;
+          status: string;
+          metadata: Json;
+          timestamp: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          shop_id?: string | null;
+          seller_id: string;
+          item_id?: string | null;
+          item_sku?: string | null;
+          item_title?: string | null;
+          transaction_type?: string;
+          amount_paid: number;
+          sku?: string | null;
+          asset_tag?: string | null;
+          compliance_reference?: string | null;
+          saps_reference?: string | null;
+          cashier_id?: string | null;
+          status?: string;
+          metadata?: Json;
+          timestamp?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          shop_id?: string | null;
+          seller_id?: string;
+          item_id?: string | null;
+          item_sku?: string | null;
+          item_title?: string | null;
+          transaction_type?: string;
+          amount_paid?: number;
+          sku?: string | null;
+          asset_tag?: string | null;
+          compliance_reference?: string | null;
+          saps_reference?: string | null;
+          cashier_id?: string | null;
+          status?: string;
+          metadata?: Json;
+          timestamp?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      pawn_loans: {
+        Row: {
+          id: string;
+          shop_id: string | null;
+          ticket_number: string;
+          customer_id: string;
+          customer_name: string | null;
+          customer_id_number: string | null;
+          customer_mobile: string | null;
+          customer_address: string | null;
+          item_id: string | null;
+          item_title: string | null;
+          item_category: string | null;
+          serial_or_imei: string | null;
+          condition: string | null;
+          item_image_url: string | null;
+          principal: number;
+          ncr_monthly_rate: number;
+          monthly_interest: number;
+          monthly_storage_admin_fee: number;
+          total_redemption_amount: number;
+          extension_fee: number;
+          start_date: string;
+          expiry_date: string;
+          days_remaining: number;
+          days_elapsed: number;
+          vault_shelf: string | null;
+          status: LoanStatus;
+          qr_token: string | null;
+          history: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          shop_id?: string | null;
+          ticket_number: string;
+          customer_id: string;
+          customer_name?: string | null;
+          customer_id_number?: string | null;
+          customer_mobile?: string | null;
+          customer_address?: string | null;
+          item_id?: string | null;
+          item_title?: string | null;
+          item_category?: string | null;
+          serial_or_imei?: string | null;
+          condition?: string | null;
+          item_image_url?: string | null;
+          principal: number;
+          ncr_monthly_rate?: number;
+          monthly_interest?: number;
+          monthly_storage_admin_fee?: number;
+          total_redemption_amount?: number;
+          extension_fee?: number;
+          start_date: string;
+          expiry_date: string;
+          days_remaining?: number;
+          days_elapsed?: number;
+          vault_shelf?: string | null;
+          status?: LoanStatus;
+          qr_token?: string | null;
+          history?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          shop_id?: string | null;
+          ticket_number?: string;
+          customer_id?: string;
+          customer_name?: string | null;
+          customer_id_number?: string | null;
+          customer_mobile?: string | null;
+          customer_address?: string | null;
+          item_id?: string | null;
+          item_title?: string | null;
+          item_category?: string | null;
+          serial_or_imei?: string | null;
+          condition?: string | null;
+          item_image_url?: string | null;
+          principal?: number;
+          ncr_monthly_rate?: number;
+          monthly_interest?: number;
+          monthly_storage_admin_fee?: number;
+          total_redemption_amount?: number;
+          extension_fee?: number;
+          start_date?: string;
+          expiry_date?: string;
+          days_remaining?: number;
+          days_elapsed?: number;
+          vault_shelf?: string | null;
+          status?: LoanStatus;
+          qr_token?: string | null;
+          history?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      sales: {
+        Row: {
+          id: string;
+          shop_id: string | null;
+          receipt_number: string;
+          timestamp: string;
+          items: Json;
+          subtotal: number;
+          vat_amount: number;
+          total: number;
+          tender_method: string;
+          amount_tendered: number;
+          change: number;
+          receipt_type: string;
+          customer_mobile: string | null;
+          cashier: string;
+          status: string;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          shop_id?: string | null;
+          receipt_number: string;
+          timestamp?: string;
+          items: Json;
+          subtotal: number;
+          vat_amount?: number;
+          total: number;
+          tender_method: string;
+          amount_tendered?: number;
+          change?: number;
+          receipt_type?: string;
+          customer_mobile?: string | null;
+          cashier: string;
+          status?: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          shop_id?: string | null;
+          receipt_number?: string;
+          timestamp?: string;
+          items?: Json;
+          subtotal?: number;
+          vat_amount?: number;
+          total?: number;
+          tender_method?: string;
+          amount_tendered?: number;
+          change?: number;
+          receipt_type?: string;
+          customer_mobile?: string | null;
+          cashier?: string;
+          status?: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      saps_entries: {
+        Row: {
+          id: string;
+          shop_id: string | null;
+          entry_number: string;
+          timestamp: string;
+          customer_id: string;
+          customer_name: string;
+          customer_id_number: string;
+          customer_address: string | null;
+          customer_phone: string | null;
+          item_description: string;
+          category: string | null;
+          serial_or_imei: string | null;
+          condition: string | null;
+          acquisition_type: string;
+          consideration_paid: number;
+          officer_name: string | null;
+          police_station_ref: string | null;
+          verification_status: string;
+          barcode_ref: string | null;
+          is_cancelled: boolean;
+          cancelled_at: string | null;
+          cancel_reason: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          shop_id?: string | null;
+          entry_number: string;
+          timestamp?: string;
+          customer_id: string;
+          customer_name: string;
+          customer_id_number: string;
+          customer_address?: string | null;
+          customer_phone?: string | null;
+          item_description: string;
+          category?: string | null;
+          serial_or_imei?: string | null;
+          condition?: string | null;
+          acquisition_type: string;
+          consideration_paid: number;
+          officer_name?: string | null;
+          police_station_ref?: string | null;
+          verification_status?: string;
+          barcode_ref?: string | null;
+          is_cancelled?: boolean;
+          cancelled_at?: string | null;
+          cancel_reason?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          shop_id?: string | null;
+          entry_number?: string;
+          timestamp?: string;
+          customer_id?: string;
+          customer_name?: string;
+          customer_id_number?: string;
+          customer_address?: string | null;
+          customer_phone?: string | null;
+          item_description?: string;
+          category?: string | null;
+          serial_or_imei?: string | null;
+          condition?: string | null;
+          acquisition_type?: string;
+          consideration_paid?: number;
+          officer_name?: string | null;
+          police_station_ref?: string | null;
+          verification_status?: string;
+          barcode_ref?: string | null;
+          is_cancelled?: boolean;
+          cancelled_at?: string | null;
+          cancel_reason?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       system_logs: {
         Row: {
           id: string;
+          shop_id: string | null;
           event_type: string;
           severity: string;
           actor_id: string | null;
@@ -204,6 +617,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          shop_id?: string | null;
           event_type: string;
           severity?: string;
           actor_id?: string | null;
@@ -215,6 +629,7 @@ export interface Database {
         };
         Update: {
           id?: string;
+          shop_id?: string | null;
           event_type?: string;
           severity?: string;
           actor_id?: string | null;
@@ -232,4 +647,10 @@ export interface Database {
 export type ShopProfileRow = Database['public']['Tables']['shop_profiles']['Row'];
 export type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 export type ShopItemRow = Database['public']['Tables']['shop_items']['Row'];
+export type CustomerRow = Database['public']['Tables']['customers']['Row'];
+export type SellerRow = Database['public']['Tables']['sellers']['Row'];
+export type SellerTransactionRow = Database['public']['Tables']['seller_transactions']['Row'];
+export type PawnLoanRow = Database['public']['Tables']['pawn_loans']['Row'];
+export type SaleRow = Database['public']['Tables']['sales']['Row'];
+export type SapsEntryRow = Database['public']['Tables']['saps_entries']['Row'];
 export type SystemLogRow = Database['public']['Tables']['system_logs']['Row'];
