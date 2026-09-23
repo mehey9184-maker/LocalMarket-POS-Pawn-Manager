@@ -255,6 +255,94 @@ async function startServer() {
     }
   });
 
+  // --- API ROUTE: LOGIN WITH PIN ---
+  app.post("/api/auth/login-with-pin", async (req, res) => {
+    try {
+      const { cashierCode, pin } = req.body;
+      if (!cashierCode || !pin) {
+        return res.status(400).json({ success: false, error: "Cashier code and PIN are required." });
+      }
+
+      const adminSupabase = getSupabaseAdminClient();
+      if (!adminSupabase) {
+        return res.status(503).json({ success: false, error: "Backend admin service not configured." });
+      }
+
+      // 1. Find profile by cashier code
+      const { data: profile, error: profileErr } = await adminSupabase
+        .from("profiles")
+        .select("*")
+        .eq("cashier_code", cashierCode)
+        .maybeSingle();
+
+      if (profileErr || !profile) {
+        return res.status(404).json({ success: false, error: "Staff account not found." });
+      }
+
+      if (!profile.is_active) {
+        return res.status(403).json({ success: false, error: "Account is deactivated." });
+      }
+
+      // 2. Verify PIN
+      if (profile.pin_code !== pin) {
+        return res.status(401).json({ success: false, error: "Invalid PIN." });
+      }
+
+      // 3. Check Schedule Enforcement (if not owner/admin)
+      if (profile.role !== 'owner' && profile.role !== 'admin') {
+        const schedule = profile.schedule as any;
+        if (schedule) {
+          const now = new Date();
+          const day = now.getDay(); // 0 is Sunday, 1 is Monday
+          const workingDays = schedule.workingDays || [1, 2, 3, 4, 5];
+          
+          if (!workingDays.includes(day)) {
+             return res.status(403).json({ success: false, error: "You are not scheduled to work today." });
+          }
+
+          const [startH, startM] = (schedule.startTime || "08:00").split(':').map(Number);
+          const [endH, endM] = (schedule.endTime || "17:00").split(':').map(Number);
+          const earlyMins = schedule.earlyLoginMinutes || 10;
+
+          const startTime = new Date(now);
+          startTime.setHours(startH, startM - earlyMins, 0, 0);
+          
+          const endTime = new Date(now);
+          endTime.setHours(endH, endM, 0, 0);
+
+          if (now < startTime) {
+             return res.status(403).json({ 
+               success: false, 
+               error: `Too early. Shift starts at ${schedule.startTime}. Early login allowed ${earlyMins} mins prior.` 
+             });
+          }
+
+          if (now > endTime && !schedule.overnight) {
+             return res.status(403).json({ success: false, error: "Your scheduled shift has ended." });
+          }
+        }
+      }
+
+      // 4. Return deterministic password for client to sign in with standard Supabase Auth
+      const secret = process.env.STAFF_PASSWORD_SECRET || "LM-SECURE-STAFF-DEFAULT-2026";
+      const staffPassword = crypto.createHmac('sha256', secret)
+        .update(profile.cashier_code.toUpperCase())
+        .digest('hex')
+        .substring(0, 16) + "!";
+      
+      return res.json({ 
+        success: true, 
+        email: profile.email,
+        password: staffPassword,
+        message: "PIN verified. Authenticating..."
+      });
+
+    } catch (err: any) {
+      console.error("Login with PIN error:", err);
+      return res.status(500).json({ success: false, error: err.message || "Login failed." });
+    }
+  });
+
   // --- API ROUTE: STAFF PROVISIONING (Real Auth User + Profile) ---
   // Strictly authenticates caller, verifies owner/manager role, enforces shop isolation, and audits creation
   app.post("/api/staff/provision", async (req, res) => {
@@ -321,7 +409,15 @@ async function startServer() {
       }
 
       const staffEmail = email || `${cashierCode.toLowerCase().replace(/[^a-z0-9]/g, "")}@localmarketpos.co.za`;
-      const staffPassword = password || `LM-${Math.floor(100000 + Math.random() * 900000)}!`;
+      
+      // Use a deterministic password based on cashierCode and a server-side secret
+      // This allows PIN login to work by having the server verify the PIN and then
+      // telling the client the deterministic password (or just signing them in).
+      const secret = process.env.STAFF_PASSWORD_SECRET || "LM-SECURE-STAFF-DEFAULT-2026";
+      const staffPassword = password || crypto.createHmac('sha256', secret)
+        .update(cashierCode.toUpperCase())
+        .digest('hex')
+        .substring(0, 16) + "!";
 
       let userId: string | null = null;
 
@@ -426,400 +522,6 @@ async function startServer() {
     } catch (err: any) {
       console.error("Staff provisioning server error:", err);
       return res.status(500).json({ success: false, error: err.message || "Failed to provision staff." });
-    }
-  });
-
-  // --- IN-MEMORY & AUDITED TERMINAL SESSION REGISTRY ---
-  // Authoritative server tracker for concurrent cashier terminal sessions
-  interface ServerTerminalSession {
-    userId: string;
-    userName: string;
-    shopId: string;
-    terminalId: string;
-    terminalName?: string;
-    sessionToken: string;
-    isActive: boolean;
-    isInvalidated: boolean;
-    invalidationReason?: string;
-    activatedAt: string;
-    lastActivityAt: string;
-    invalidatedAt?: string;
-  }
-
-  const activeTerminalSessions = new Map<string, ServerTerminalSession>(); // keyed by userId
-
-  // --- API ROUTE: CHECK TERMINAL SESSION CONFLICT ---
-  app.post("/api/terminal/check-session", async (req, res) => {
-    try {
-      const auth = await authenticateCaller(req);
-      if (auth.status !== 200) {
-        return res.status(auth.status).json({ success: false, error: auth.error });
-      }
-
-      const { terminalId } = req.body;
-      if (!terminalId) {
-        return res.status(400).json({ success: false, error: "terminalId is required." });
-      }
-
-      const userId = auth.user.id;
-      const existing = activeTerminalSessions.get(userId);
-
-      if (!existing) {
-        return res.json({ success: true, hasConflict: false });
-      }
-
-      // If existing session is on a different terminal and was active within the last 15 minutes
-      const now = Date.now();
-      const lastActiveTime = new Date(existing.lastActivityAt).getTime();
-      const isRecent = now - lastActiveTime < 15 * 60 * 1000;
-
-      if (existing.terminalId !== terminalId && existing.isActive && !existing.isInvalidated && isRecent) {
-        return res.json({
-          success: true,
-          hasConflict: true,
-          existingTerminalId: existing.terminalId,
-          existingTerminalName: existing.terminalName || "Terminal",
-          lastActive: existing.lastActivityAt
-        });
-      }
-
-      return res.json({ success: true, hasConflict: false });
-    } catch (err: any) {
-      console.error("Terminal check error:", err);
-      return res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  // --- API ROUTE: ACTIVATE TERMINAL SESSION (Switch or New Login) ---
-  app.post("/api/terminal/activate", async (req, res) => {
-    try {
-      const auth = await authenticateCaller(req);
-      if (auth.status !== 200) {
-        return res.status(auth.status).json({ success: false, error: auth.error });
-      }
-
-      const { terminalId, terminalName, isSwitch } = req.body;
-      if (!terminalId) {
-        return res.status(400).json({ success: false, error: "terminalId is required." });
-      }
-
-      const userId = auth.user.id;
-      const userName = auth.profile.full_name || "Cashier";
-      const shopId = auth.profile.shop_id || "general";
-      const sessionToken = crypto.randomBytes(24).toString("hex");
-      const timestamp = new Date().toISOString();
-
-      const previousSession = activeTerminalSessions.get(userId);
-      let wasSwitched = false;
-
-      if (previousSession && previousSession.terminalId !== terminalId) {
-        // Invalidate old terminal session
-        previousSession.isActive = false;
-        previousSession.isInvalidated = true;
-        previousSession.invalidatedAt = timestamp;
-        previousSession.invalidationReason = `Session switched to terminal ${terminalName || terminalId}`;
-        wasSwitched = true;
-      }
-
-      const newSession: ServerTerminalSession = {
-        userId,
-        userName,
-        shopId,
-        terminalId,
-        terminalName: terminalName || "Terminal POS",
-        sessionToken,
-        isActive: true,
-        isInvalidated: false,
-        activatedAt: timestamp,
-        lastActivityAt: timestamp
-      };
-
-      activeTerminalSessions.set(userId, newSession);
-
-      // Log terminal event
-      const adminSupabase = getSupabaseAdminClient();
-      if (adminSupabase) {
-        try {
-          await adminSupabase.from("system_logs").insert({
-            shop_id: shopId,
-            event_type: wasSwitched ? "STAFF_TERMINAL_SWITCH" : "STAFF_TERMINAL_LOGIN",
-            severity: "audit",
-            actor_id: userId,
-            actor_name: userName,
-            details: {
-              terminal_id: terminalId,
-              terminal_name: terminalName,
-              was_switched: wasSwitched,
-              previous_terminal_id: previousSession?.terminalId || null,
-              timestamp
-            }
-          });
-        } catch (logErr: any) {
-          console.warn("Terminal log error (non-blocking):", logErr.message);
-        }
-      }
-
-      return res.json({
-        success: true,
-        sessionToken,
-        terminalId,
-        activatedAt: timestamp
-      });
-    } catch (err: any) {
-      console.error("Terminal activation error:", err);
-      return res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  // --- API ROUTE: TERMINAL HEARTBEAT ---
-  app.post("/api/terminal/heartbeat", async (req, res) => {
-    try {
-      const auth = await authenticateCaller(req);
-      if (auth.status !== 200) {
-        return res.status(auth.status).json({ success: false, error: auth.error });
-      }
-
-      const { terminalId, sessionToken } = req.body;
-      const userId = auth.user.id;
-      const session = activeTerminalSessions.get(userId);
-
-      if (!session) {
-        // No session registered yet - grant active status
-        return res.json({ success: true, isActive: true, isInvalidated: false });
-      }
-
-      // Check if session was invalidated by another terminal switch
-      if (session.terminalId !== terminalId || session.sessionToken !== sessionToken || session.isInvalidated) {
-        return res.json({
-          success: true,
-          isActive: false,
-          isInvalidated: true,
-          reason: session.invalidationReason || "Terminal session was transferred to another device."
-        });
-      }
-
-      // Update activity timestamp
-      session.lastActivityAt = new Date().toISOString();
-      return res.json({ success: true, isActive: true, isInvalidated: false });
-    } catch (err: any) {
-      console.error("Terminal heartbeat error:", err);
-      return res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  // --- API ROUTE: INVALIDATE TERMINAL SESSION (Logout) ---
-  app.post("/api/terminal/logout", async (req, res) => {
-    try {
-      const auth = await authenticateCaller(req);
-      if (auth.status !== 200) {
-        return res.status(auth.status).json({ success: false, error: auth.error });
-      }
-
-      const { terminalId } = req.body;
-      const userId = auth.user.id;
-      const session = activeTerminalSessions.get(userId);
-
-      if (session && session.terminalId === terminalId) {
-        session.isActive = false;
-        session.isInvalidated = true;
-        session.invalidatedAt = new Date().toISOString();
-        session.invalidationReason = "User logged out";
-      }
-
-      const adminSupabase = getSupabaseAdminClient();
-      if (adminSupabase) {
-        try {
-          await adminSupabase.from("system_logs").insert({
-            shop_id: auth.profile.shop_id || null,
-            event_type: "STAFF_TERMINAL_INVALIDATED",
-            severity: "audit",
-            actor_id: userId,
-            actor_name: auth.profile.full_name || "Staff",
-            details: {
-              terminal_id: terminalId,
-              timestamp: new Date().toISOString()
-            }
-          });
-        } catch (logErr: any) {
-          console.warn("Terminal logout log error:", logErr.message);
-        }
-      }
-
-      return res.json({ success: true });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  // --- API ROUTE: SELLER RETURN / ACQUISITION REVERSAL ---
-  // Requires Manager or Owner role, verifies shop, prevents duplicate reversal, updates item & transaction
-  app.post("/api/seller-transactions/reversal", async (req, res) => {
-    try {
-      const auth = await authenticateCaller(req);
-      if (auth.status !== 200) {
-        return res.status(auth.status).json({ success: false, error: auth.error || "Authentication required." });
-      }
-
-      const callerProfile = auth.profile;
-
-      // 1. Role verification: Manager or Owner required
-      if (callerProfile.role !== "owner" && callerProfile.role !== "manager") {
-        return res.status(403).json({
-          success: false,
-          error: "Forbidden: Cashiers cannot approve seller transaction reversals. Manager or Owner approval is required."
-        });
-      }
-
-      const {
-        transactionId,
-        itemId,
-        reason,
-        reversalAmount,
-        resultingInventoryStatus = "Returned",
-        resultingPaymentStatus = "Reversed"
-      } = req.body;
-
-      if (!transactionId || !reason) {
-        return res.status(400).json({
-          success: false,
-          error: "transactionId and reason are required."
-        });
-      }
-
-      const adminSupabase = getSupabaseAdminClient();
-      if (!adminSupabase) {
-        return res.status(503).json({
-          success: false,
-          error: "Database admin client is not configured on the server."
-        });
-      }
-
-      // 2. Fetch the target seller transaction
-      const { data: tx, error: txErr } = await adminSupabase
-        .from("seller_transactions")
-        .select("*")
-        .eq("id", transactionId)
-        .maybeSingle();
-
-      if (txErr || !tx) {
-        return res.status(404).json({
-          success: false,
-          error: "Seller transaction record not found."
-        });
-      }
-
-      // 3. Verify Shop Isolation
-      if (tx.shop_id && callerProfile.shop_id && tx.shop_id !== callerProfile.shop_id) {
-        return res.status(403).json({
-          success: false,
-          error: "Forbidden: Cross-shop seller transaction reversal is prohibited."
-        });
-      }
-
-      // 4. Duplicate reversal protection
-      if (tx.status === "Reversed" || tx.metadata?.payment_status === "Reversed") {
-        return res.status(409).json({
-          success: false,
-          error: "This seller transaction has already been reversed."
-        });
-      }
-
-      const timestamp = new Date().toISOString();
-      const reversalId = crypto.randomUUID();
-
-      const reversalRecord = {
-        id: reversalId,
-        sellerTransactionId: transactionId,
-        transactionNumber: tx.metadata?.transaction_number || tx.sku || `ST-${transactionId.substring(0, 6).toUpperCase()}`,
-        itemId: itemId || tx.item_id,
-        itemSku: tx.item_sku || tx.sku,
-        itemTitle: tx.item_title,
-        sellerId: tx.seller_id,
-        sellerName: tx.metadata?.seller_name || "Seller",
-        originalPayout: tx.amount_paid,
-        reversalAmount: reversalAmount ?? tx.amount_paid,
-        reason,
-        requestedBy: callerProfile.id,
-        requestedByName: callerProfile.full_name || "Manager",
-        approvedBy: callerProfile.id,
-        approvedByName: callerProfile.full_name || "Manager",
-        status: "Approved",
-        resultingInventoryStatus,
-        resultingPaymentStatus,
-        timestamp,
-        createdAt: timestamp
-      };
-
-      // 5. Update Seller Transaction metadata and status
-      const existingMetadata = (tx.metadata && typeof tx.metadata === "object") ? tx.metadata : {};
-      const existingReversals = Array.isArray(existingMetadata.reversals) ? existingMetadata.reversals : [];
-      
-      const updatedMetadata = {
-        ...existingMetadata,
-        payment_status: resultingPaymentStatus,
-        reversal_reason: reason,
-        reversed_at: timestamp,
-        reversed_by: callerProfile.id,
-        reversed_by_name: callerProfile.full_name,
-        reversals: [...existingReversals, reversalRecord]
-      };
-
-      const { error: updateTxErr } = await adminSupabase
-        .from("seller_transactions")
-        .update({
-          status: "Reversed",
-          metadata: updatedMetadata,
-          updated_at: timestamp
-        })
-        .eq("id", transactionId);
-
-      if (updateTxErr) {
-        return res.status(500).json({ success: false, error: updateTxErr.message });
-      }
-
-      // 6. Update inventory item status if itemId is specified or present on transaction
-      const targetItemId = itemId || tx.item_id;
-      if (targetItemId) {
-        await adminSupabase
-          .from("shop_items")
-          .update({
-            status: resultingInventoryStatus,
-            updated_at: timestamp
-          })
-          .eq("id", targetItemId);
-      }
-
-      // 7. Write immutable audit log
-      try {
-        await adminSupabase.from("system_logs").insert({
-          shop_id: callerProfile.shop_id || tx.shop_id,
-          event_type: "SELLER_ACQUISITION_REVERSED",
-          severity: "audit",
-          actor_id: callerProfile.id,
-          actor_name: callerProfile.full_name || "Manager",
-          details: {
-            transaction_id: transactionId,
-            item_id: targetItemId,
-            seller_id: tx.seller_id,
-            original_payout: tx.amount_paid,
-            reversal_amount: reversalAmount ?? tx.amount_paid,
-            reason,
-            resulting_status: resultingInventoryStatus,
-            timestamp
-          }
-        });
-      } catch (logErr: any) {
-        console.warn("Reversal audit log error (non-blocking):", logErr.message);
-      }
-
-      return res.json({
-        success: true,
-        reversal: reversalRecord,
-        message: "Seller acquisition successfully reversed and item status updated."
-      });
-    } catch (err: any) {
-      console.error("Seller reversal error:", err);
-      return res.status(500).json({ success: false, error: err.message || "Failed to process seller transaction reversal." });
     }
   });
 

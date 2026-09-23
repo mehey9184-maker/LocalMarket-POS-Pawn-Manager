@@ -156,6 +156,8 @@ export interface Database {
           avatar_url: string | null;
           pin_code: string | null;
           digital_signature: string | null;
+          schedule: Json;
+          permissions: Json;
           is_active: boolean;
           last_sign_in_at: string | null;
           created_at: string;
@@ -172,6 +174,8 @@ export interface Database {
           avatar_url?: string | null;
           pin_code?: string | null;
           digital_signature?: string | null;
+          schedule?: Json;
+          permissions?: Json;
           is_active?: boolean;
           last_sign_in_at?: string | null;
           created_at?: string;
@@ -188,6 +192,8 @@ export interface Database {
           avatar_url?: string | null;
           pin_code?: string | null;
           digital_signature?: string | null;
+          schedule?: Json;
+          permissions?: Json;
           is_active?: boolean;
           last_sign_in_at?: string | null;
           created_at?: string;

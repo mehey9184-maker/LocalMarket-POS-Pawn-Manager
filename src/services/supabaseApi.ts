@@ -1357,6 +1357,22 @@ export const staffApi = {
     } catch (err: any) {
       return { success: false, error: err?.message || 'Network error provisioning staff.' };
     }
+  },
+
+  async updateStaffProfile(id: string, updates: Partial<ProfileRow>): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { error } = await supabase
+          .from('profiles')
+          .update(updates as any)
+          .eq('id', id);
+
+        if (error) throw error;
+        return { success: true };
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to update staff profile.' };
+    }
   }
 };
 

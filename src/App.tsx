@@ -18,6 +18,7 @@ import { CashierProfile } from './components/screens/CashierProfile';
 import { VaultManager } from './components/screens/VaultManager';
 import { LandingPage } from './components/screens/LandingPage';
 import { AuthPage } from './components/screens/AuthPage';
+import { AccountPicker } from './components/auth/AccountPicker';
 import { ScannerModal } from './components/modals/ScannerModal';
 import { ReceiptModal } from './components/modals/ReceiptModal';
 import { ContractModal } from './components/modals/ContractModal';
@@ -80,6 +81,9 @@ const MainLayout: React.FC = () => {
 
       {/* Statutory 30-Day NCR Pledge Contract Modal */}
       <ContractModal />
+
+      {/* Account Switcher Picker */}
+      <AccountPicker />
 
       {/* Operational Feedback Toast */}
       <Toast />

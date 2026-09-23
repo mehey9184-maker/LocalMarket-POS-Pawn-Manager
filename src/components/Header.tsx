@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp, NavTab } from '../context/AppContext';
 import { useSellers } from '../context/SellerContext';
+import { useAuth } from '../context/AuthContext';
 import { 
   Search, 
   User, 
@@ -10,7 +11,8 @@ import {
   Receipt, 
   Store,
   ChevronRight,
-  Plus
+  Plus,
+  ArrowLeftRight
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -33,6 +35,7 @@ export const Header: React.FC<HeaderProps> = () => {
     shopProfile,
   } = useApp();
 
+  const { profile, setIsAccountPickerOpen } = useAuth();
   const { sellers } = useSellers();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -339,6 +342,15 @@ export const Header: React.FC<HeaderProps> = () => {
           RIGHT: PROFILE / SESSION
          ============================================================ */}
       <div className="flex items-center gap-4 shrink-0">
+        <button
+          onClick={() => setIsAccountPickerOpen(true)}
+          className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-600 hover:bg-[#FDF0EA] hover:border-[#C85A32] hover:text-[#C85A32] transition-all group"
+          title="Switch Account"
+        >
+          <ArrowLeftRight className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500" />
+          <span className="text-[11px] font-bold">Switch</span>
+        </button>
+
         <div className="h-6 w-px bg-gray-200 hidden xl:block"></div>
         
         <button 
@@ -347,15 +359,23 @@ export const Header: React.FC<HeaderProps> = () => {
           className="flex items-center gap-3 p-1 rounded-xl transition-colors group cursor-pointer"
         >
           <div className="text-right hidden xl:block">
-            <p className="text-[11px] font-semibold text-gray-800 leading-none">Shift Active</p>
-            <p className="text-[10px] text-gray-400 font-mono mt-1">Terminal 01 · {shopProfile.shop_code}</p>
+            <p className="text-[11px] font-bold text-gray-900 leading-none truncate max-w-[120px]">
+              {profile?.full_name || 'Staff Member'}
+            </p>
+            <p className="text-[10px] text-gray-400 font-mono mt-1 uppercase tracking-wider">
+              {profile?.role || 'Shift Active'}
+            </p>
           </div>
           <div className={`w-9 h-9 rounded-xl border flex items-center justify-center text-xs font-semibold transition-all ${
             activeTab === 'profile' 
               ? 'bg-[#C85A32] border-[#C85A32] text-white shadow-xs' 
               : 'bg-white border-gray-200 text-gray-600 group-hover:border-gray-300 group-hover:text-gray-900'
           }`}>
-            <User className="w-4 h-4" />
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="" className="w-full h-full object-cover rounded-lg" />
+            ) : (
+              <User className="w-4 h-4" />
+            )}
           </div>
         </button>
       </div>
