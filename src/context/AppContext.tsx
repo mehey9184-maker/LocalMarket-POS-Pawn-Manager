@@ -582,11 +582,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Record Seller Transaction
       await addSellerTransaction({
+        shopId: shopProfile.id || 'default-shop',
         sellerId,
-        itemId,
-        itemSku: sku,
-        itemTitle: data.title,
-        amountPaid: data.agreedOffer,
+        totalProposedPayout: data.agreedOffer,
+        totalApprovedPayout: data.agreedOffer,
+        paymentStatus: 'Paid',
+        status: 'Acquired',
+        complianceStatus: 'VERIFIED',
+        items: [{
+          id: crypto.randomUUID(),
+          sellerTransactionId: '', // Will be set by addSellerTransaction
+          shopId: shopProfile.id || 'default-shop',
+          itemId,
+          itemSku: sku,
+          itemTitle: data.title,
+          amountPaid: data.agreedOffer,
+          retailPrice: retailPrice,
+          condition: data.condition,
+          serialOrImei: data.serialOrImei,
+          createdAt: addedAt
+        }],
         timestamp: addedAt,
         sapsRef: saps?.entryNumber || sku
       });

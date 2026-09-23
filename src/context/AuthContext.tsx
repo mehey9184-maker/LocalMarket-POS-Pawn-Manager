@@ -6,7 +6,6 @@ interface AuthContextType {
   user: any | null;
   session: any | null;
   profile: ProfileRow | null;
-  currentUserProfile: ProfileRow | null;
   role: UserRole;
   shopId: string | null;
   isLoading: boolean;
@@ -21,9 +20,9 @@ interface AuthContextType {
     pinCode?: string;
   }) => Promise<{ success: boolean; profile?: ProfileRow; error?: string }>;
   logout: () => Promise<void>;
-  signOut: () => Promise<void>;
   logoutManager: () => void;
   refreshProfile: () => Promise<void>;
+  users: ProfileRow[];
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,6 +31,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<any | null>(null);
   const [session, setSession] = useState<any | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [users, setUsers] = useState<ProfileRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [managerElevation, setManagerElevation] = useState(false);
 
@@ -39,6 +39,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const p = await profilesApi.getProfileById(userId);
       setProfile(p);
+      if (p?.shop_id) {
+        const allStaff = await profilesApi.getProfilesByShop(p.shop_id);
+        setUsers(allStaff);
+      }
     } catch (err) {
       console.warn('Failed to load profile for user:', userId, err);
       setProfile(null);
@@ -253,7 +257,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       user, 
       session, 
       profile,
-      currentUserProfile: profile,
       role: rawRole,
       shopId,
       isLoading, 
@@ -263,9 +266,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       verifyManagerPin,
       provisionStaff,
       logout,
-      signOut: logout,
       logoutManager,
-      refreshProfile
+      refreshProfile,
+      users
     }}>
       {children}
     </AuthContext.Provider>

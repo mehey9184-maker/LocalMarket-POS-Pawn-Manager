@@ -15,7 +15,7 @@ interface SellerContextType {
   getSellerById: (id: string) => Promise<Seller | undefined>;
   getSellerByIdNumber: (idNumber: string) => Promise<Seller | undefined>;
   getSellerTransactions: (sellerId: string) => Promise<SellerTransaction[]>;
-  addSellerTransaction: (tx: Omit<SellerTransaction, 'id'>) => Promise<string>;
+  addSellerTransaction: (tx: Omit<SellerTransaction, 'id' | 'transactionNumber'>) => Promise<string>;
   updateSellerTransactionStatus: (txId: string, status: SellerTransactionStatus, paymentStatus?: SellerPaymentStatus) => Promise<void>;
   reverseSellerAcquisition: (txId: string, itemId: string, reason: string, actorId: string, actorName: string, approvingManagerId: string) => Promise<boolean>;
 }
@@ -67,10 +67,30 @@ export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return await db.sellerTransactions.where('sellerId').equals(sellerId).reverse().sortBy('timestamp');
   };
 
-  const addSellerTransaction = async (txData: Omit<SellerTransaction, 'id'>) => {
-    const id = `ST-${Math.floor(Math.random() * 900000 + 100000)}`;
-    const newTx = { ...txData, id };
+  const addSellerTransaction = async (txData: Omit<SellerTransaction, 'id' | 'transactionNumber'>) => {
+    const id = crypto.randomUUID();
+    const transactionNumber = `ST-${Math.floor(Math.random() * 900000 + 100000)}`;
+    const newTx: SellerTransaction = { 
+      ...txData, 
+      id, 
+      transactionNumber,
+      status: txData.status || 'Draft',
+      paymentStatus: txData.paymentStatus || 'Pending',
+      complianceStatus: txData.complianceStatus || 'PENDING'
+    };
+    
     await db.sellerTransactions.add(newTx);
+    
+    // Also add items to the new relation table if present
+    if (newTx.items && newTx.items.length > 0) {
+      const itemsWithIds = newTx.items.map(item => ({
+        ...item,
+        id: item.id || crypto.randomUUID(),
+        sellerTransactionId: id
+      }));
+      await db.sellerTransactionItems.bulkAdd(itemsWithIds);
+    }
+    
     await queueSyncAction('sellerTransactions', id, 'create', newTx);
     return id;
   };

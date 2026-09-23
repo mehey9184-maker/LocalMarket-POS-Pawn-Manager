@@ -34,22 +34,34 @@ export interface Seller {
 }
 
 export interface SellerTransaction {
-  id: string; // e.g. ST-000123
-  shopId?: string;
+  id: string; // UUID
+  transactionNumber: string; // ST-000123
+  shopId: string;
   sellerId: string;
-  itemId?: string;
-  itemSku?: string;
-  itemTitle?: string;
-  amountPaid?: number;
-  items?: SellerTransactionItemRef[];
-  totalProposedPayout?: number;
-  totalApprovedPayout?: number;
-  paymentStatus?: SellerPaymentStatus;
-  status?: SellerTransactionStatus;
-  complianceStatus?: 'VERIFIED' | 'PENDING' | 'FLAGGED';
-  staffName?: string;
+  cashierId?: string;
+  totalProposedPayout: number;
+  totalApprovedPayout: number;
+  paymentMethod?: PaymentMethod | string;
+  paymentStatus: SellerPaymentStatus;
+  status: SellerTransactionStatus;
+  complianceStatus: 'VERIFIED' | 'PENDING' | 'FLAGGED';
   timestamp: string;
-  sapsRef: string;
+  sapsRef?: string;
+  items?: SellerTransactionItem[];
+}
+
+export interface SellerTransactionItem {
+  id: string;
+  sellerTransactionId: string;
+  shopId: string;
+  itemId: string;
+  itemSku: string;
+  itemTitle: string;
+  amountPaid: number;
+  retailPrice: number;
+  serialOrImei?: string;
+  condition?: ItemCondition | string;
+  createdAt: string;
 }
 
 export interface InventoryItem {
@@ -202,18 +214,6 @@ export interface SyncLog {
 
 export type SellerTransactionStatus = 'Draft' | 'Proposed' | 'Approved' | 'Paid' | 'Acquired' | 'Rejected' | 'Cancelled';
 export type SellerPaymentStatus = 'Pending' | 'Paid';
-
-export interface SellerTransactionItemRef {
-  itemId: string;
-  itemSku: string;
-  itemTitle: string;
-  amountPaid: number;
-  retailPrice: number;
-  serialOrImei: string;
-  condition: ItemCondition;
-}
-
-
 
 export type SellerReversalStatus = 'Under Review' | 'Returned' | 'Reversed';
 

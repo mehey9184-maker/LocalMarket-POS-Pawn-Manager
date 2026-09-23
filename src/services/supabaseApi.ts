@@ -21,6 +21,9 @@ import {
   CustomerRow,
   SellerRow,
   SellerTransactionRow,
+  SellerTransactionItemRow,
+  SellerReversalRow,
+  TerminalSessionRow,
   PawnLoanRow,
   SaleRow,
   RefundRequestRow,
@@ -262,6 +265,19 @@ export const profilesApi = {
     const user = await authApi.getUser();
     if (!user) return null;
     return profilesApi.getProfileById(user.id);
+  },
+
+  async getProfilesByShop(shopId: string): Promise<ProfileRow[]> {
+    return await withAuthRecovery(async (supabase) => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('shop_id', shopId)
+        .order('full_name', { ascending: true });
+
+      if (error) throw error;
+      return data || [];
+    });
   },
 
   async updateProfile(id: string, updates: Partial<Database['public']['Tables']['profiles']['Update']>): Promise<ProfileRow> {
@@ -770,19 +786,51 @@ export const sellerTransactionsApi = {
     if (error) throw error;
   },
 
+  async createTransactionBatchRpc(tx: SellerTransaction): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { error } = await supabase.rpc('create_seller_transaction_batch', {
+          p_transaction_id: tx.id,
+          p_transaction_number: tx.transactionNumber,
+          p_seller_id: tx.sellerId,
+          p_items: tx.items?.map(i => ({
+            id: i.itemId,
+            amount_paid: i.amountPaid,
+            retail_price: i.retailPrice
+          })) || [],
+          p_total_proposed: tx.totalProposedPayout,
+          p_total_approved: tx.totalApprovedPayout,
+          p_payment_method: tx.paymentMethod || 'cash',
+          p_payment_status: tx.paymentStatus,
+          p_transaction_status: tx.status,
+          p_compliance_status: tx.complianceStatus,
+          p_saps_ref: tx.sapsRef || null
+        });
+
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Batch creation failed.' };
+    }
+  },
+
   mapTransactionToRow(tx: SellerTransaction, shopId?: string): Database['public']['Tables']['seller_transactions']['Insert'] {
     return {
       id: tx.id,
-      shop_id: shopId || null,
+      shop_id: shopId || tx.shopId || null,
+      transaction_number: tx.transactionNumber,
       seller_id: tx.sellerId,
-      item_id: tx.itemId || null,
-      item_sku: tx.itemSku || null,
-      item_title: tx.itemTitle || null,
       transaction_type: 'Buy',
-      amount_paid: tx.amountPaid ?? 0,
-      sku: tx.itemSku || null,
+      amount_paid: tx.totalApprovedPayout ?? 0,
+      total_proposed_payout: tx.totalProposedPayout ?? 0,
+      total_approved_payout: tx.totalApprovedPayout ?? 0,
+      payment_method: tx.paymentMethod as string || null,
+      payment_status: tx.paymentStatus || 'Pending',
+      transaction_status: tx.status || 'Draft',
+      compliance_status: tx.complianceStatus || 'PENDING',
       saps_reference: tx.sapsRef || null,
-      status: 'Completed',
+      status: tx.status || 'Draft',
       timestamp: tx.timestamp || new Date().toISOString(),
       created_at: tx.timestamp || new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -792,14 +840,97 @@ export const sellerTransactionsApi = {
   mapRowToTransaction(row: SellerTransactionRow): SellerTransaction {
     return {
       id: row.id,
+      transactionNumber: row.transaction_number || '',
+      shopId: row.shop_id || '',
       sellerId: row.seller_id,
-      itemId: row.item_id || '',
-      itemSku: row.item_sku || row.sku || '',
-      itemTitle: row.item_title || '',
-      amountPaid: Number(row.amount_paid),
+      cashierId: row.cashier_id || undefined,
+      totalProposedPayout: Number(row.total_proposed_payout || 0),
+      totalApprovedPayout: Number(row.total_approved_payout || 0),
+      paymentMethod: row.payment_method || undefined,
+      paymentStatus: (row.payment_status || 'Pending') as any,
+      status: (row.transaction_status || row.status || 'Draft') as any,
+      complianceStatus: (row.compliance_status || 'PENDING') as any,
       timestamp: row.timestamp,
       sapsRef: row.saps_reference || ''
     };
+  }
+};
+
+// ==========================================
+// 7b. SELLER REVERSALS (Authoritative Acquisitions Reversal)
+// ==========================================
+export const sellerReversalsApi = {
+  async reverseAcquisitionRpc(params: {
+    reversalId: string;
+    transactionId: string;
+    itemId: string;
+    reason: string;
+    approverId?: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { error } = await supabase.rpc('reverse_seller_acquisition', {
+          p_reversal_id: params.reversalId,
+          p_transaction_id: params.transactionId,
+          p_item_id: params.itemId,
+          p_reason: params.reason,
+          p_approver_id: params.approverId || null
+        });
+
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Reversal failed.' };
+    }
+  }
+};
+
+// ==========================================
+// 7c. TERMINAL SESSIONS (Authoritative Device/Staff Sessions)
+// ==========================================
+export const terminalSessionsApi = {
+  async checkActiveSessionRpc(): Promise<{ has_active_session: boolean; session_id?: string; terminal_id?: string; terminal_name?: string }> {
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { data, error } = await supabase.rpc('check_active_terminal_session');
+        if (error) throw error;
+        return data as any;
+      });
+    } catch (err) {
+      return { has_active_session: false };
+    }
+  },
+
+  async activateSessionRpc(terminalId: string, terminalName?: string): Promise<{ success: boolean; session_id?: string; error?: string }> {
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { data, error } = await supabase.rpc('activate_terminal_session', {
+          p_terminal_id: terminalId,
+          p_terminal_name: terminalName || null
+        });
+
+        if (error) return { success: false, error: error.message };
+        return { success: true, session_id: (data as any)?.session_id };
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Session activation failed.' };
+    }
+  },
+
+  async heartbeatRpc(sessionId: string): Promise<{ success: boolean; status: string; error?: string }> {
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { data, error } = await supabase.rpc('heartbeat_terminal_session', {
+          p_session_id: sessionId
+        });
+
+        if (error) return { success: false, status: 'error', error: error.message };
+        return data as any;
+      });
+    } catch (err: any) {
+      return { success: false, status: 'error', error: err?.message || 'Heartbeat failed.' };
+    }
   }
 };
 

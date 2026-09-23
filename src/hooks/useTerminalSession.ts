@@ -1,136 +1,98 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { terminalService } from '../services/terminalService';
+import { TerminalSession } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { useSync } from '../context/SyncContext';
-import {
-  getOrCreateDeviceId,
-  getTerminalName,
-  checkTerminalConflict,
-  activateTerminalSession,
-  sendTerminalHeartbeat
-} from '../services/terminalService';
 
 export function useTerminalSession() {
-  const { user, currentUserProfile, signOut } = useAuth();
-  const { isOnline } = useSync();
+  const { user, profile } = useAuth();
+  const [session, setSession] = useState<TerminalSession | null>(null);
+  const [conflict, setConflict] = useState<{ active_session: any } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [hasConflict, setHasConflict] = useState(false);
-  const [existingTerminalName, setExistingTerminalName] = useState('Another Terminal');
-  const [lastActiveTime, setLastActiveTime] = useState<string | undefined>(undefined);
-  const [isActivating, setIsActivating] = useState(false);
-  const [isInvalidated, setIsInvalidated] = useState(false);
-  const [invalidationReason, setInvalidationReason] = useState<string | undefined>(undefined);
-
-  const sessionTokenRef = useRef<string | undefined>(undefined);
-  const heartbeatIntervalRef = useRef<any>(null);
-  const terminalId = getOrCreateDeviceId();
-  const terminalName = getTerminalName();
-
-  // Perform conflict check on login / load
-  const runSessionCheck = useCallback(async () => {
-    if (!user || !isOnline) return;
-
-    try {
-      const conflictRes = await checkTerminalConflict(terminalId);
-      if (conflictRes.hasConflict) {
-        setExistingTerminalName(conflictRes.existingTerminalName || 'Another Terminal');
-        setLastActiveTime(conflictRes.lastActive);
-        setHasConflict(true);
-      } else {
-        // No conflict, activate immediately
-        const actRes = await activateTerminalSession(terminalId, terminalName, false);
-        if (actRes.sessionToken) {
-          sessionTokenRef.current = actRes.sessionToken;
-        }
-      }
-    } catch (err) {
-      console.warn('Session check error:', err);
-    }
-  }, [user, isOnline, terminalId, terminalName]);
-
-  // Handle Switch Confirmation
-  const handleSwitchTerminal = async () => {
-    setIsActivating(true);
-    try {
-      const res = await activateTerminalSession(terminalId, terminalName, true);
-      if (res.sessionToken) {
-        sessionTokenRef.current = res.sessionToken;
-      }
-      setHasConflict(false);
-      setIsInvalidated(false);
-    } catch (err) {
-      console.error('Failed to switch terminal:', err);
-    } finally {
-      setIsActivating(false);
-    }
-  };
-
-  // Handle Stay on Previous Terminal (Logout here)
-  const handleStayOnCurrent = async () => {
-    setHasConflict(false);
-    await signOut();
-  };
-
-  // Handle Re-authentication from Lock Modal
-  const handleReAuthenticate = async () => {
-    await handleSwitchTerminal();
-  };
-
-  useEffect(() => {
-    if (!user) {
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-      }
-      setHasConflict(false);
-      setIsInvalidated(false);
+  const checkAndInitialize = useCallback(async () => {
+    if (!user || !profile) {
+      setSession(null);
+      setIsLoading(false);
       return;
     }
 
-    runSessionCheck();
-
-    // Heartbeat loop (every 45s)
-    heartbeatIntervalRef.current = setInterval(async () => {
-      if (!isOnline || isInvalidated) return;
-
-      const heartbeat = await sendTerminalHeartbeat(terminalId, sessionTokenRef.current);
-      if (heartbeat.isInvalidated) {
-        setIsInvalidated(true);
-        setInvalidationReason(heartbeat.reason);
+    setIsLoading(true);
+    const localSession = await terminalService.getCurrentLocalSession();
+    
+    if (localSession && localSession.status === 'active') {
+      // Check if this local session is still valid on the server
+      const heartbeatRes = await terminalService.heartbeat(localSession.id);
+      if (heartbeatRes.status === 'active') {
+        setSession(localSession);
+        setIsLoading(false);
+        return;
       }
-    }, 45000);
+    }
 
-    return () => {
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
+    // No valid local session, check server for other active sessions
+    const serverCheck = await terminalService.checkActiveSession();
+    if (serverCheck.has_active_session) {
+      // Conflict detected
+      if (serverCheck.terminal_id === terminalService.getDeviceId()) {
+        // It's this terminal! Try to recover it.
+        // If recover fails (e.g. status was not active in server_check return, but rpc says it is)
+        // For simplicity, if IDs match, we should just reactivate or use it.
+        const activateRes = await terminalService.activateSession(`${profile.full_name}'s Terminal`);
+        if (activateRes.success) {
+          const newLocal = await terminalService.getCurrentLocalSession();
+          setSession(newLocal);
+        }
+      } else {
+        setConflict({ active_session: serverCheck });
       }
-    };
-  }, [user, isOnline, runSessionCheck]);
+    } else {
+      // No active session anywhere, create one
+      const activateRes = await terminalService.activateSession(`${profile.full_name}'s Terminal`);
+      if (activateRes.success) {
+        const newLocal = await terminalService.getCurrentLocalSession();
+        setSession(newLocal);
+      }
+    }
+    
+    setIsLoading(false);
+  }, [user, profile]);
 
-  // Re-check on tab visibility
   useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && user && isOnline) {
-        sendTerminalHeartbeat(terminalId, sessionTokenRef.current).then(res => {
-          if (res.isInvalidated) {
-            setIsInvalidated(true);
-            setInvalidationReason(res.reason);
-          }
-        });
-      }
-    };
+    checkAndInitialize();
+  }, [checkAndInitialize]);
 
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [user, isOnline, terminalId]);
+  // Heartbeat loop
+  useEffect(() => {
+    if (!session || session.status !== 'active') return;
+
+    const interval = setInterval(async () => {
+      const res = await terminalService.heartbeat(session.id);
+      if (res.status !== 'active') {
+        const updated = await terminalService.getCurrentLocalSession();
+        setSession(updated);
+      }
+    }, 60000); // 1 minute
+
+    return () => clearInterval(interval);
+  }, [session]);
+
+  const switchTerminal = async () => {
+    if (!profile) return;
+    setIsLoading(true);
+    const res = await terminalService.activateSession(`${profile.full_name}'s Terminal`);
+    if (res.success) {
+      const newLocal = await terminalService.getCurrentLocalSession();
+      setSession(newLocal);
+      setConflict(null);
+    }
+    setIsLoading(false);
+  };
 
   return {
-    hasConflict,
-    existingTerminalName,
-    lastActiveTime,
-    isActivating,
-    isInvalidated,
-    invalidationReason,
-    handleSwitchTerminal,
-    handleStayOnCurrent,
-    handleReAuthenticate
+    session,
+    conflict,
+    isLoading,
+    switchTerminal,
+    refresh: checkAndInitialize
   };
 }

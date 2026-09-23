@@ -12,7 +12,8 @@ import {
   salesApi, 
   refundsApi,
   sapsApi, 
-  logsApi 
+  logsApi,
+  sellerReversalsApi 
 } from './supabaseApi';
 
 /**
@@ -67,8 +68,33 @@ export const SyncService = {
         }
 
         case 'sellerTransactions': {
-          const row = sellerTransactionsApi.mapTransactionToRow(log.payload, shopId);
-          await sellerTransactionsApi.upsertTransaction(row);
+          const payload = log.payload;
+          if (shopId && payload.transactionNumber) {
+            // Authoritative batch creation
+            const batchRes = await sellerTransactionsApi.createTransactionBatchRpc(payload);
+            if (!batchRes.success) {
+              throw new Error(batchRes.error || 'create_seller_transaction_batch rejected by database');
+            }
+          } else {
+            const row = sellerTransactionsApi.mapTransactionToRow(payload, shopId);
+            await sellerTransactionsApi.upsertTransaction(row);
+          }
+          break;
+        }
+
+        case 'sellerReversals': {
+          if (log.action === 'create') {
+            const revRes = await sellerReversalsApi.reverseAcquisitionRpc({
+              reversalId: log.payload.id || log.entityId,
+              transactionId: log.payload.sellerTransactionId,
+              itemId: log.payload.itemId,
+              reason: log.payload.reason,
+              approverId: log.payload.approvedBy
+            });
+            if (!revRes.success) {
+              throw new Error(revRes.error || 'reverse_seller_acquisition rejected by database');
+            }
+          }
           break;
         }
 
@@ -150,8 +176,7 @@ export const SyncService = {
         }
 
         default:
-          console.warn(`Unrecognized entityType in sync log: ${(log as any).entityType}`);
-          break;
+          throw new Error(`CRITICAL: Unrecognized entityType in sync log: ${(log as any).entityType}. Refusing to mark as completed to prevent data loss.`);
       }
 
       // Mark as completed in Dexie
