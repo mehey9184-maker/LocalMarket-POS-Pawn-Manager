@@ -1,12 +1,14 @@
 import { runMarketIntelligenceTests } from './marketIntelligence.test';
 import { runRsaIdScannerTests } from './rsaIdScanner.test';
+import { runExternalProviderManagerTests } from './externalProviderManager.test';
 
-export function runAllTests() {
+export async function runAllTests() {
   console.log('====================================================');
   console.log('   LOCALMARKET POS & PAWN - SUITE VERIFICATION     ');
   console.log('====================================================');
   runRsaIdScannerTests();
   runMarketIntelligenceTests();
+  await runExternalProviderManagerTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');

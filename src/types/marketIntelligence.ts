@@ -87,3 +87,32 @@ export interface MarketDataProvider {
   name: string;
   lookup(query: { barcode?: string; title?: string; category?: string; condition?: string; shopId: string }): Promise<MarketObservation | null>;
 }
+
+export interface ProviderQuota {
+  provider: string;
+  dailyLimit: number;
+  requestsToday: number;
+  resetAt: string;
+  consecutiveFailures?: number;
+  cooldownUntil?: string | null;
+}
+
+export interface ExternalMarketCacheEntry {
+  id?: string;
+  provider: string;
+  cacheKey: string;
+  barcode?: string | null;
+  normalizedProductName: string;
+  brand?: string | null;
+  model?: string | null;
+  category?: string | null;
+  referencePrice?: number | null;
+  askingLow?: number | null;
+  askingHigh?: number | null;
+  rawSummary?: Record<string, any> | null;
+  sourceUrl?: string | null;
+  observedAt: string;
+  expiresAt: string;
+  lastErrorAt?: string | null;
+  failureCount?: number;
+}

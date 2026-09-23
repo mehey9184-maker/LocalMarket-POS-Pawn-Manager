@@ -357,6 +357,41 @@ CREATE TABLE IF NOT EXISTS public.market_intelligence_snapshots (
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
+-- 19. GLOBAL EXTERNAL MARKET CACHE (Platform-level cache for public product/market reference data)
+CREATE TABLE IF NOT EXISTS public.external_market_cache (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider TEXT NOT NULL,
+    cache_key TEXT UNIQUE NOT NULL,
+    barcode TEXT,
+    normalized_product_name TEXT NOT NULL,
+    brand TEXT,
+    model TEXT,
+    category TEXT,
+    reference_price NUMERIC(12,2),
+    asking_low NUMERIC(12,2),
+    asking_high NUMERIC(12,2),
+    raw_summary JSONB DEFAULT '{}'::jsonb,
+    source_url TEXT,
+    observed_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    last_error_at TIMESTAMPTZ,
+    failure_count INTEGER DEFAULT 0 NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+-- 20. PROVIDER QUOTAS TABLE (Server-side budget tracking per provider)
+CREATE TABLE IF NOT EXISTS public.provider_quotas (
+    provider TEXT PRIMARY KEY,
+    daily_limit INTEGER NOT NULL DEFAULT 25,
+    requests_today INTEGER NOT NULL DEFAULT 0,
+    reset_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now() + INTERVAL '24 hours'),
+    last_failure_at TIMESTAMPTZ,
+    consecutive_failures INTEGER DEFAULT 0 NOT NULL,
+    cooldown_until TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- 13. INDEXES FOR HIGH-THROUGHPUT LOOKUPS & ISOLATION
 CREATE INDEX IF NOT EXISTS idx_shop_profiles_code ON public.shop_profiles(shop_code);
 CREATE INDEX IF NOT EXISTS idx_profiles_shop_id ON public.profiles(shop_id);
@@ -654,6 +689,18 @@ CREATE POLICY "Staff read branch system logs" ON public.system_logs
 CREATE POLICY "Staff insert system logs" ON public.system_logs
     FOR INSERT TO authenticated
     WITH CHECK (true);
+
+-- EXTERNAL MARKET CACHE POLICIES (Global platform cache: Read-only for app clients, write restricted to server)
+ALTER TABLE public.external_market_cache ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.provider_quotas ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated users read external market cache" ON public.external_market_cache
+    FOR SELECT TO authenticated
+    USING (true);
+
+CREATE POLICY "Authenticated users read provider quotas" ON public.provider_quotas
+    FOR SELECT TO authenticated
+    USING (true);
 
 -- 18. REALTIME REPLICATION (For multi-terminal sync)
 ALTER PUBLICATION supabase_realtime ADD TABLE public.shop_items;

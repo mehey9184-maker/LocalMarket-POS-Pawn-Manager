@@ -6,6 +6,7 @@ import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 import { MarketPricingEngine } from "./src/services/MarketPricingEngine";
+import { externalMarketProviderManager } from "./src/services/ExternalMarketProviderManager";
 import { LocalMarketSalesStats, MarketCheckResult, MarketObservation } from "./src/types/marketIntelligence";
 
 dotenv.config();
@@ -1013,56 +1014,15 @@ async function startServer() {
         sellThroughRate: (currentActiveStockCount + count90) > 0 ? count90 / (currentActiveStockCount + count90) : null
       };
 
-      // 4. External Product Identification Source (UPCitemdb)
-      let externalObs: MarketObservation | null = null;
-      if (cleanBarcode) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-          const upcUrl = `https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(cleanBarcode)}`;
-          const response = await fetch(upcUrl, {
-            headers: { "Accept": "application/json", "User-Agent": "LocalMarket-POS/1.0" },
-            signal: controller.signal
-          });
-
-          clearTimeout(timeoutId);
-
-          if (response.ok) {
-            const upcData = await response.json();
-            if (upcData && upcData.items && upcData.items.length > 0) {
-              const item = upcData.items[0];
-              const offers = item.offers || [];
-
-              const offerPrices = offers.map((o: any) => Number(o.price)).filter((p: number) => p > 0);
-              offerPrices.sort((a: number, b: number) => a - b);
-
-              const msrp = item.msrp ? Number(item.msrp) : null;
-              const onlineAskingLow = offerPrices.length > 0 ? offerPrices[0] : null;
-              const onlineAskingHigh = offerPrices.length > 0 ? offerPrices[offerPrices.length - 1] : null;
-              const medianPrice = offerPrices.length > 0 ? offerPrices[Math.floor(offerPrices.length / 2)] : msrp;
-
-              externalObs = {
-                sourceType: "upcitemdb",
-                sourceName: "UPCitemdb Online Reference",
-                sourceUrl: `https://www.upcitemdb.com/upc/${cleanBarcode}`,
-                productName: item.title || cleanTitle || "Reference Item",
-                brand: item.brand,
-                model: item.model,
-                category: item.category || category,
-                barcode: cleanBarcode,
-                referencePrice: msrp || medianPrice,
-                usedLow: onlineAskingLow,
-                usedHigh: onlineAskingHigh,
-                medianPrice,
-                observedAt: new Date().toISOString()
-              };
-            }
-          }
-        } catch (err) {
-          console.warn("UPCitemdb lookup timeout or network failure (graceful fallback):", err);
-        }
-      }
+      // 4. External Product Identification Source (Global Cache, Quota & Deduplicated Provider)
+      const providerRes = await externalMarketProviderManager.getExternalObservation(
+        cleanBarcode,
+        cleanTitle,
+        category,
+        adminSupabase,
+        forceRefresh
+      );
+      const externalObs: MarketObservation | null = providerRes.observation;
 
       // 5. Fetch Shop Business Rules Target Margin if present
       let userConfig = {};
