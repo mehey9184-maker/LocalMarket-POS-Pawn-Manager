@@ -339,49 +339,6 @@ export const profilesApi = {
       if (error) throw error;
       return (data || []) as ProfileRow[];
     });
-  },
-
-  async updateProfile(id: string, updates: Partial<Database['public']['Tables']['profiles']['Update']>): Promise<ProfileRow> {
-    const supabase = getSupabase();
-    if (!supabase) throw new Error('Supabase is not configured.');
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  },
-
-  async rotatePin(id: string, newPin: string): Promise<void> {
-    const supabase = getSupabase();
-    if (!supabase) throw new Error('Supabase is not configured.');
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ pin_code: newPin })
-      .eq('id', id);
-
-    if (error) throw error;
-
-    await logsApi.createLog('PIN_ROTATED', 'Cashier Profile', { targetUserId: id }, 'warning');
-  },
-
-  async updateDigitalSignature(id: string, signature: string): Promise<void> {
-    const supabase = getSupabase();
-    if (!supabase) throw new Error('Supabase is not configured.');
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ digital_signature: signature })
-      .eq('id', id);
-
-    if (error) throw error;
-
-    await logsApi.createLog('SIGNATURE_UPDATED', 'Cashier Profile', { targetUserId: id }, 'audit');
   }
 };
 
