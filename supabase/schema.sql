@@ -405,7 +405,7 @@ RETURNS UUID AS $$
     SELECT shop_id FROM public.profiles WHERE id = auth.uid();
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
 
-CREATE OR REPLACE FUNCTION public.is_current_user_manager_or_admin()
+CREATE OR REPLACE FUNCTION public.is_manager_or_owner()
 RETURNS BOOLEAN AS $$
     SELECT role IN ('manager', 'admin') FROM public.profiles WHERE id = auth.uid();
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
@@ -442,121 +442,121 @@ DROP POLICY IF EXISTS "Allow anon update shop profiles" ON public.shop_profiles;
 
 -- SHOP PROFILES POLICIES
 CREATE POLICY "Staff read active shop profiles" ON public.shop_profiles
-    FOR SELECT TO authenticated USING (is_active = true OR public.is_current_user_manager_or_admin());
+    FOR SELECT TO authenticated USING (is_active = true OR public.is_manager_or_owner());
 
 CREATE POLICY "Managers manage shop profiles" ON public.shop_profiles
     FOR ALL TO authenticated
-    USING (public.is_current_user_manager_or_admin())
-    WITH CHECK (public.is_current_user_manager_or_admin());
+    USING (public.is_manager_or_owner())
+    WITH CHECK (public.is_manager_or_owner());
 
 -- PROFILES POLICIES (No public anon read)
 CREATE POLICY "Staff read branch profiles" ON public.profiles
     FOR SELECT TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Users update own profile" ON public.profiles
     FOR UPDATE TO authenticated
-    USING (auth.uid() = id OR public.is_current_user_manager_or_admin());
+    USING (auth.uid() = id OR public.is_manager_or_owner());
 
 -- SHOP ITEMS POLICIES
 CREATE POLICY "Staff read branch shop items" ON public.shop_items
     FOR SELECT TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff insert branch shop items" ON public.shop_items
     FOR INSERT TO authenticated
-    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff update branch shop items" ON public.shop_items
     FOR UPDATE TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Managers delete shop items" ON public.shop_items
     FOR DELETE TO authenticated
-    USING (public.is_current_user_manager_or_admin());
+    USING (public.is_manager_or_owner());
 
 -- CUSTOMERS POLICIES
 CREATE POLICY "Staff read branch customers" ON public.customers
     FOR SELECT TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff insert branch customers" ON public.customers
     FOR INSERT TO authenticated
-    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff update branch customers" ON public.customers
     FOR UPDATE TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 -- SELLERS POLICIES
 CREATE POLICY "Staff read branch sellers" ON public.sellers
     FOR SELECT TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff insert branch sellers" ON public.sellers
     FOR INSERT TO authenticated
-    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff update branch sellers" ON public.sellers
     FOR UPDATE TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 -- SELLER TRANSACTIONS POLICIES (Append & audit friendly)
 CREATE POLICY "Staff read branch seller transactions" ON public.seller_transactions
     FOR SELECT TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff insert branch seller transactions" ON public.seller_transactions
     FOR INSERT TO authenticated
-    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Managers update branch seller transactions" ON public.seller_transactions
     FOR UPDATE TO authenticated
-    USING (public.is_current_user_manager_or_admin());
+    USING (public.is_manager_or_owner());
 
 -- PAWN LOANS POLICIES
 CREATE POLICY "Staff read branch pawn loans" ON public.pawn_loans
     FOR SELECT TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff insert branch pawn loans" ON public.pawn_loans
     FOR INSERT TO authenticated
-    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff update branch pawn loans" ON public.pawn_loans
     FOR UPDATE TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 -- SALES POLICIES (Append & audit friendly)
 CREATE POLICY "Staff read branch sales" ON public.sales
     FOR SELECT TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff insert branch sales" ON public.sales
     FOR INSERT TO authenticated
-    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Managers update branch sales" ON public.sales
     FOR UPDATE TO authenticated
-    USING (public.is_current_user_manager_or_admin());
+    USING (public.is_manager_or_owner());
 
 -- SAPS ENTRIES POLICIES (Statutory compliance: Strictly append-only, NO DELETE)
 CREATE POLICY "Staff read branch saps entries" ON public.saps_entries
     FOR SELECT TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff insert branch saps entries" ON public.saps_entries
     FOR INSERT TO authenticated
-    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    WITH CHECK (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff update branch saps entries" ON public.saps_entries
     FOR UPDATE TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 -- SYSTEM LOGS POLICIES (Immutable audit trail: NO UPDATE, NO DELETE)
 CREATE POLICY "Staff read branch system logs" ON public.system_logs
     FOR SELECT TO authenticated
-    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_current_user_manager_or_admin());
+    USING (shop_id IS NULL OR shop_id = public.get_current_user_shop_id() OR public.is_manager_or_owner());
 
 CREATE POLICY "Staff insert system logs" ON public.system_logs
     FOR INSERT TO authenticated

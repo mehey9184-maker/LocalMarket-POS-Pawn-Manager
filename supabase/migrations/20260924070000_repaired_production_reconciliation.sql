@@ -110,14 +110,14 @@ CREATE POLICY "Users can update own profile or managers update branch" ON public
         id = auth.uid() 
         OR (
             shop_id = public.get_current_user_shop_id() 
-            AND public.is_current_user_manager_or_admin()
+            AND public.is_manager_or_owner()
         )
     )
     WITH CHECK (
         id = auth.uid() 
         OR (
             shop_id = public.get_current_user_shop_id() 
-            AND public.is_current_user_manager_or_admin()
+            AND public.is_manager_or_owner()
         )
     );
 
@@ -154,7 +154,7 @@ DROP POLICY IF EXISTS "Shop owners/managers access business rule audit logs" ON 
 CREATE POLICY "Shop owners/managers access business rule audit logs" ON public.business_rule_audit_logs
     FOR ALL TO authenticated
     USING (
-        (shop_id = public.get_current_user_shop_id() AND public.is_current_user_manager_or_admin()) 
+        (shop_id = public.get_current_user_shop_id() AND public.is_manager_or_owner()) 
         OR public.is_admin()
     );
 
