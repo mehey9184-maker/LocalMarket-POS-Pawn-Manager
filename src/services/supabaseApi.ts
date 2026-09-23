@@ -290,16 +290,18 @@ export const shopProfilesApi = {
 // ==========================================
 // 3. PROFILES (Staff & Cashier Management)
 // ==========================================
+const SAFE_PROFILE_COLUMNS = 'id, shop_id, email, full_name, role, cashier_code, phone, avatar_url, is_active, schedule, permissions, created_at, updated_at';
+
 export const profilesApi = {
   async getProfiles(): Promise<ProfileRow[]> {
     return await withAuthRecovery(async (supabase) => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select(SAFE_PROFILE_COLUMNS)
         .order('created_at', { ascending: true });
 
       if (error) throw error;
-      return data || [];
+      return (data || []) as ProfileRow[];
     });
   },
 
@@ -308,12 +310,12 @@ export const profilesApi = {
       return await withAuthRecovery(async (supabase) => {
         const { data, error } = await supabase
           .from('profiles')
-          .select('*')
+          .select(SAFE_PROFILE_COLUMNS)
           .eq('id', id)
           .single();
 
         if (error) return null;
-        return data;
+        return data as ProfileRow;
       });
     } catch {
       return null;
@@ -330,12 +332,12 @@ export const profilesApi = {
     return await withAuthRecovery(async (supabase) => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select(SAFE_PROFILE_COLUMNS)
         .eq('shop_id', shopId)
         .order('full_name', { ascending: true });
 
       if (error) throw error;
-      return data || [];
+      return (data || []) as ProfileRow[];
     });
   },
 
@@ -1344,11 +1346,11 @@ export const staffApi = {
     if (!supabase) return [];
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
+      .select(SAFE_PROFILE_COLUMNS)
       .eq('shop_id', shopId)
       .order('created_at', { ascending: true });
     if (error) throw error;
-    return data || [];
+    return (data || []) as ProfileRow[];
   },
 
   async provisionStaff(params: {

@@ -756,9 +756,25 @@ async function startServer() {
         reason: 'New staff member registration'
       });
 
+      const safeProfile = {
+        id: profileRow.id,
+        shop_id: profileRow.shop_id,
+        email: profileRow.email,
+        full_name: profileRow.full_name,
+        role: profileRow.role,
+        cashier_code: profileRow.cashier_code,
+        phone: profileRow.phone,
+        avatar_url: profileRow.avatar_url,
+        is_active: profileRow.is_active,
+        schedule: profileRow.schedule,
+        permissions: profileRow.permissions,
+        created_at: profileRow.created_at,
+        updated_at: profileRow.updated_at
+      };
+
       return res.json({
         success: true,
-        profile: profileRow
+        profile: safeProfile
       });
     } catch (err: any) {
       console.error("Staff provisioning server error:", err);
