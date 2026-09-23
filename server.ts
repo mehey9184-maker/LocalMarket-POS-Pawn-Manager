@@ -1009,7 +1009,7 @@ async function startServer() {
         medianSalePrice,
         minSalePrice,
         maxSalePrice,
-        medianDaysToSell: count90 > 0 ? Math.round(90 / count90) : null,
+        medianDaysToSell: null,
         sellThroughRate: (currentActiveStockCount + count90) > 0 ? count90 / (currentActiveStockCount + count90) : null
       };
 
@@ -1038,13 +1038,13 @@ async function startServer() {
               offerPrices.sort((a: number, b: number) => a - b);
 
               const msrp = item.msrp ? Number(item.msrp) : null;
-              const usedLow = offerPrices.length > 0 ? offerPrices[0] : null;
-              const usedHigh = offerPrices.length > 0 ? offerPrices[offerPrices.length - 1] : null;
+              const onlineAskingLow = offerPrices.length > 0 ? offerPrices[0] : null;
+              const onlineAskingHigh = offerPrices.length > 0 ? offerPrices[offerPrices.length - 1] : null;
               const medianPrice = offerPrices.length > 0 ? offerPrices[Math.floor(offerPrices.length / 2)] : msrp;
 
               externalObs = {
                 sourceType: "upcitemdb",
-                sourceName: "UPCitemdb Reference",
+                sourceName: "UPCitemdb Online Reference",
                 sourceUrl: `https://www.upcitemdb.com/upc/${cleanBarcode}`,
                 productName: item.title || cleanTitle || "Reference Item",
                 brand: item.brand,
@@ -1052,8 +1052,8 @@ async function startServer() {
                 category: item.category || category,
                 barcode: cleanBarcode,
                 referencePrice: msrp || medianPrice,
-                usedLow,
-                usedHigh,
+                usedLow: onlineAskingLow,
+                usedHigh: onlineAskingHigh,
                 medianPrice,
                 observedAt: new Date().toISOString()
               };

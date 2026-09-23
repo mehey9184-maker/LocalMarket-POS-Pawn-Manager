@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Customer,
+  RsaIdScanResult,
   InventoryItem,
   PawnLoan,
   SapsEntry,
@@ -97,6 +98,8 @@ interface AppContextType {
   setIsPoliceInspectionMode: (val: boolean) => void;
   activeCustomer: Customer | null;
   setActiveCustomer: (customer: Customer | null) => void;
+  capturedRsaIdScan: RsaIdScanResult | null;
+  setCapturedRsaIdScan: (scan: RsaIdScanResult | null) => void;
   zenMode: boolean;
   setZenMode: React.Dispatch<React.SetStateAction<boolean>>;
   
@@ -201,6 +204,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [toastMessage, setToastMessage] = useState<ToastInfo | null>(null);
   const [isPoliceInspectionMode, setIsPoliceInspectionMode] = useState<boolean>(false);
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
+  const [capturedRsaIdScan, setCapturedRsaIdScan] = useState<RsaIdScanResult | null>(null);
   const [zenMode, setZenMode] = useState<boolean>(false);
 
   const showToast = useCallback((title: string, desc: string, type: 'success' | 'amber' | 'info' | 'error' = 'success') => {
@@ -681,6 +685,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsPoliceInspectionMode,
         activeCustomer,
         setActiveCustomer,
+        capturedRsaIdScan,
+        setCapturedRsaIdScan,
         zenMode,
         setZenMode,
         shopProfile,

@@ -154,7 +154,7 @@ export const MarketCheckCard: React.FC<MarketCheckCardProps> = ({
         </div>
 
         <div className="bg-[#121212] p-2.5 rounded-xl border border-[#252525]">
-          <span className="text-[10px] uppercase text-gray-400 font-semibold block mb-0.5">Used Market</span>
+          <span className="text-[10px] uppercase text-gray-400 font-semibold block mb-0.5">Online market references</span>
           <span className="font-bold text-white font-mono">{usedRangeStr}</span>
         </div>
 
@@ -191,7 +191,7 @@ export const MarketCheckCard: React.FC<MarketCheckCardProps> = ({
       {/* Suggested Buy Range Bar */}
       <div className="bg-[#141414] p-3 rounded-xl border border-[#2A2A2A] flex items-center justify-between text-xs">
         <div>
-          <span className="text-[10px] uppercase text-gray-400 font-semibold block">Suggested Buy / Acquisition Range</span>
+          <span className="text-[10px] uppercase text-gray-400 font-semibold block">Suggested buy</span>
           <span className="font-bold text-[#E87A5D] font-mono text-sm">{suggestedBuyStr}</span>
         </div>
 

@@ -7,6 +7,16 @@ export type LoanStatus = 'Active' | 'Extended' | 'Redeemed' | 'Forfeited' | 'Arc
 export type PaymentMethod = 'cash' | 'card' | 'eft' | 'snapscan';
 export type ReceiptDelivery = 'thermal' | 'whatsapp' | 'sms';
 
+export interface RsaIdScanResult {
+  idNumber: string;
+  dob?: string;
+  gender?: 'Male' | 'Female';
+  citizenship?: 'SA Citizen' | 'Permanent Resident';
+  rawText: string;
+  source: 'rsa_id_barcode';
+  capturedAt: string;
+}
+
 export interface Customer {
   id: string;
   fullName: string;

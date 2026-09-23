@@ -76,7 +76,7 @@ const SellerHistoryDisplay: React.FC<{ sellerId: string }> = ({ sellerId }) => {
 };
 
 export const BuyPawn: React.FC = () => {
-  const { showToast, businessRules, shopProfile, setActiveContractModal } = useApp();
+  const { showToast, businessRules, shopProfile, setActiveContractModal, capturedRsaIdScan } = useApp();
   const { user } = useAuth();
   const { addItem, inventory } = useInventory();
   const { createLoan } = useLoans();
@@ -100,6 +100,41 @@ export const BuyPawn: React.FC = () => {
     address: '',
     idType: 'RSA Smart ID' as 'RSA Smart ID' | 'Green ID Book' | 'Passport'
   });
+
+  // Synchronize captured RSA ID scan with customer selection/creation
+  useEffect(() => {
+    if (!capturedRsaIdScan || step !== 'customer') return;
+
+    const scannedIdClean = capturedRsaIdScan.idNumber.replace(/\s+/g, '');
+
+    if (txType === 'buy') {
+      const match = sellers.find(s => s.idNumber.replace(/\s+/g, '') === scannedIdClean);
+      if (match) {
+        setSelectedIdentity(match);
+        setIsCreatingIdentity(false);
+        showToast('Seller Identified', `Matched existing seller: ${match.fullName}`, 'success');
+        return;
+      }
+    } else if (txType === 'pawn') {
+      const match = customers.find(c => c.idNumber.replace(/\s+/g, '') === scannedIdClean);
+      if (match) {
+        setSelectedIdentity(match);
+        setIsCreatingIdentity(false);
+        showToast('Client Identified', `Matched existing client: ${match.fullName}`, 'success');
+        return;
+      }
+    }
+
+    // If no existing record matched, pre-fill captured ID number and open identity creation (NO fabricated name)
+    setIsCreatingIdentity(true);
+    setNewIdentity(prev => ({
+      ...prev,
+      idNumber: capturedRsaIdScan.idNumber,
+      idType: 'RSA Smart ID',
+      fullName: '', // NEVER FABRICATE A NAME
+    }));
+    showToast('ID Barcode Decoded', `Captured ID #${capturedRsaIdScan.idNumber}. Enter full name and contact details.`, 'info');
+  }, [capturedRsaIdScan, step, txType, customers, sellers, showToast]);
 
   // Item Details State (Common to all flows)
   const [itemData, setItemData] = useState({

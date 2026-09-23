@@ -38,6 +38,7 @@ export const IntakeDesk: React.FC = () => {
     pawnLoans,
     activeCustomer,
     setActiveCustomer,
+    capturedRsaIdScan,
     setActiveTab,
     businessRules,
     setIsRulesModalOpen
@@ -53,15 +54,33 @@ export const IntakeDesk: React.FC = () => {
   const [customerAddress, setCustomerAddress] = useState(activeCustomer ? activeCustomer.address : '1442 Orlando West, Soweto, Johannesburg, 1804');
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
 
-  // Automatically synchronize with globally active customer
+  // Automatically synchronize with globally active customer or captured RSA ID scan
   useEffect(() => {
     if (activeCustomer) {
       setCustomerName(activeCustomer.fullName);
       setCustomerIdNumber(activeCustomer.idNumber);
       setCustomerMobile(activeCustomer.mobile);
       setCustomerAddress(activeCustomer.address);
+      return;
     }
-  }, [activeCustomer]);
+
+    if (capturedRsaIdScan) {
+      const match = customers.find(c => c.idNumber.replace(/\s+/g, '') === capturedRsaIdScan.idNumber.replace(/\s+/g, ''));
+      if (match) {
+        setActiveCustomer(match);
+        setCustomerName(match.fullName);
+        setCustomerIdNumber(match.idNumber);
+        setCustomerMobile(match.mobile);
+        setCustomerAddress(match.address);
+      } else {
+        setCustomerIdNumber(capturedRsaIdScan.idNumber);
+        setCustomerName(''); // DO NOT FABRICATE A NAME
+        setCustomerMobile('');
+        setCustomerAddress('');
+        setIsEditingCustomer(true);
+      }
+    }
+  }, [activeCustomer, capturedRsaIdScan, customers, setActiveCustomer]);
 
   // Step 2: Item & Valuation Engine
   const [txType, setTxType] = useState<'pawn' | 'buy'>('pawn');

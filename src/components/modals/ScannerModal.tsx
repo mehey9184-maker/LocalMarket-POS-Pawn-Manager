@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useCustomers } from '../../context/CustomerContext';
+import { useSellers } from '../../context/SellerContext';
 import { Camera, X, Flashlight, Barcode, ShieldCheck, RefreshCw, AlertCircle } from 'lucide-react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { shopItemsApi } from '../../services/supabaseApi';
+import { parseAndValidateRsaId } from '../../utils/rsaIdValidator';
+import { RsaIdScanResult } from '../../types';
 
 export const ScannerModal: React.FC = () => {
   const {
@@ -13,8 +17,11 @@ export const ScannerModal: React.FC = () => {
     addToCart,
     showToast,
     setActiveCustomer,
-    activeCustomer
+    setCapturedRsaIdScan
   } = useApp();
+
+  const { customers } = useCustomers();
+  const { sellers } = useSellers();
 
   const [scanMode, setScanMode] = useState<'asset' | 'rsa_id'>('asset');
   const [flashlightOn, setFlashlightOn] = useState(false);
@@ -48,37 +55,6 @@ export const ScannerModal: React.FC = () => {
       videoRef.current.srcObject = null;
     }
   }, []);
-
-  // Parse RSA ID barcode raw payload
-  const parseRSAIDPayload = (rawText: string) => {
-    // Check for RSA 13-digit ID number pattern (YYMMDD SSSS C A Z)
-    const idMatch = rawText.match(/\b\d{13}\b/);
-    const idNumber = idMatch ? idMatch[0] : null;
-
-    if (idNumber) {
-      const yearPrefix = parseInt(idNumber.substring(0, 2), 10);
-      const fullYear = yearPrefix > 30 ? `19${idNumber.substring(0, 2)}` : `20${idNumber.substring(0, 2)}`;
-      const month = idNumber.substring(2, 4);
-      const day = idNumber.substring(4, 6);
-      const genderDigit = parseInt(idNumber.substring(6, 7), 10);
-      const gender = genderDigit >= 5 ? 'Male' : 'Female';
-      const dob = `${fullYear}-${month}-${day}`;
-
-      return {
-        idNumber,
-        dob,
-        gender,
-        rawText
-      };
-    }
-
-    return {
-      idNumber: rawText.trim(),
-      dob: undefined,
-      gender: undefined,
-      rawText
-    };
-  };
 
   // Handle scanned code
   const handleDecodedCode = useCallback(async (codeText: string) => {
@@ -140,27 +116,45 @@ export const ScannerModal: React.FC = () => {
       }, 1500);
 
     } else if (scanMode === 'rsa_id') {
-      const parsed = parseRSAIDPayload(cleanCode);
-      
-      const newCustomer = {
-        id: activeCustomer?.id || `cust-scan-${Date.now()}`,
-        fullName: activeCustomer?.fullName || 'Scanned ID Holder',
+      const parsed = parseAndValidateRsaId(cleanCode);
+
+      if (!parsed.isValid || !parsed.idNumber) {
+        showToast('Invalid RSA ID Barcode', parsed.error || 'Decoded barcode does not contain a valid 13-digit RSA ID structure.', 'error');
+        setTimeout(() => {
+          isScanningRef.current = false;
+        }, 1500);
+        return;
+      }
+
+      const scanResult: RsaIdScanResult = {
         idNumber: parsed.idNumber,
-        idType: 'RSA Smart ID' as const,
-        mobile: activeCustomer?.mobile || '',
-        address: activeCustomer?.address || '',
-        dob: parsed.dob || activeCustomer?.dob,
-        gender: parsed.gender || activeCustomer?.gender,
-        verified: true,
-        createdAt: new Date().toISOString().split('T')[0]
+        dob: parsed.dob,
+        gender: parsed.gender,
+        citizenship: parsed.citizenship,
+        rawText: cleanCode,
+        source: 'rsa_id_barcode',
+        capturedAt: new Date().toISOString()
       };
 
-      setActiveCustomer(newCustomer);
-      showToast('RSA ID Scanned', `ID Number #${parsed.idNumber} verified and captured.`, 'success');
+      setCapturedRsaIdScan(scanResult);
+
+      const existingCustomer = customers.find(c => c.idNumber.replace(/\s+/g, '') === parsed.idNumber!.replace(/\s+/g, ''));
+      const existingSeller = sellers.find(s => s.idNumber.replace(/\s+/g, '') === parsed.idNumber!.replace(/\s+/g, ''));
+
+      if (existingCustomer) {
+        setActiveCustomer(existingCustomer);
+        showToast('ID Barcode Decoded', `Matched client: ${existingCustomer.fullName}`, 'success');
+      } else if (existingSeller) {
+        showToast('ID Barcode Decoded', `Matched seller: ${existingSeller.fullName}`, 'success');
+      } else {
+        setActiveCustomer(null);
+        showToast('ID Captured', `Decoded ID #${parsed.idNumber}. Complete mandatory details to verify.`, 'info');
+      }
+
       stopCameraStream();
       setIsScannerModalOpen(false);
     }
-  }, [scanMode, inventory, addToCart, showToast, stopCameraStream, setIsScannerModalOpen, setActiveCustomer, activeCustomer]);
+  }, [scanMode, inventory, customers, sellers, addToCart, showToast, stopCameraStream, setIsScannerModalOpen, setActiveCustomer, setCapturedRsaIdScan]);
 
   // Start real camera stream & barcode reader
   const startCamera = useCallback(async () => {

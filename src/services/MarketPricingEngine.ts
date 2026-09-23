@@ -171,14 +171,13 @@ export class MarketPricingEngine {
   public static calculateDemand(localStats: LocalMarketSalesStats): DemandSignal {
     const count30 = localStats.salesLast30Days;
     const count90 = localStats.salesLast90Days;
-    const daysToSell = localStats.medianDaysToSell;
 
     if (count90 <= 2) {
       return {
         label: 'Insufficient data',
         score: 10,
         localStats,
-        explanation: 'Fewer than 3 local sales recorded in last 90 days'
+        explanation: `${count90} LocalMarket sales in the last 90 days`
       };
     }
 
@@ -187,17 +186,17 @@ export class MarketPricingEngine {
         label: 'Low',
         score: 35,
         localStats,
-        explanation: `${count90} local sales in 90 days (limited velocity)`
+        explanation: `${count90} LocalMarket sales in the last 90 days`
       };
     }
 
     // 6+ sales
-    if (count30 >= 4 || (daysToSell && daysToSell <= 7)) {
+    if (count30 >= 4) {
       return {
         label: 'High',
         score: 85,
         localStats,
-        explanation: `${count30} sales in last 30 days (avg sell time ${daysToSell ? `${daysToSell} days` : 'rapid'})`
+        explanation: `${count30} LocalMarket sales in the last 30 days`
       };
     }
 
@@ -205,7 +204,7 @@ export class MarketPricingEngine {
       label: 'Moderate',
       score: 60,
       localStats,
-      explanation: `${count90} local sales in 90 days`
+      explanation: `${count90} LocalMarket sales in the last 90 days`
     };
   }
 }
