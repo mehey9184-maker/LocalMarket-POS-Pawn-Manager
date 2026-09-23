@@ -12,6 +12,10 @@ export const DEFAULT_BUSINESS_RULES: BusinessRules = {
   storeWarrantyDays: 7,
   warrantyDescription: '7-Day Store Test Warranty',
 
+  targetMarginPercent: 35,
+  minMarginPercent: 25,
+  riskAllowancePercent: 5,
+
   defaultIntakeType: 'prompt',
   defaultVaultShelf: 'Shelf A-04',
   defaultCashierName: 'Officer Thabo Sithole',

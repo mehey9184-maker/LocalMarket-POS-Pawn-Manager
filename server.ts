@@ -5,6 +5,8 @@ import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
+import { MarketPricingEngine } from "./src/services/MarketPricingEngine";
+import { LocalMarketSalesStats, MarketCheckResult, MarketObservation } from "./src/types/marketIntelligence";
 
 dotenv.config();
 
@@ -870,6 +872,292 @@ async function startServer() {
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message || "Failed to delete image" });
+    }
+  });
+
+  // --- API ROUTE: MARKET INTELLIGENCE CHECK ---
+  app.post("/api/market-intelligence/check", async (req, res) => {
+    try {
+      // 1. Authenticate caller and extract shop isolation context
+      const auth = await authenticateCaller(req);
+      if (auth.status !== 200) {
+        return res.status(auth.status).json({ error: auth.error || "Authentication required." });
+      }
+
+      const shopId = auth.profile?.shop_id;
+      if (!shopId) {
+        return res.status(400).json({ error: "Active shop branch context is required." });
+      }
+
+      const adminSupabase = getSupabaseAdminClient();
+      if (!adminSupabase) {
+        return res.status(500).json({ error: "Server admin client uninitialized." });
+      }
+
+      const { barcode, title, category, condition = "Good", itemId, forceRefresh = false } = req.body;
+      const cleanBarcode = typeof barcode === "string" ? barcode.trim() : "";
+      const cleanTitle = typeof title === "string" ? title.trim() : "";
+
+      if (!cleanBarcode && !cleanTitle) {
+        return res.status(400).json({ error: "Barcode or product title is required for Market Check." });
+      }
+
+      const queryKey = cleanBarcode ? `barcode:${cleanBarcode}` : `title:${cleanTitle.toLowerCase()}`;
+
+      // 2. Check for active unexpired cached snapshot in market_intelligence_snapshots
+      if (!forceRefresh) {
+        const { data: cached } = await adminSupabase
+          .from("market_intelligence_snapshots")
+          .select("*")
+          .eq("shop_id", shopId)
+          .eq("query_key", queryKey)
+          .gt("expires_at", new Date().toISOString())
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (cached && cached.raw_summary) {
+          return res.json({
+            success: true,
+            data: {
+              ...cached.raw_summary,
+              cached: true
+            }
+          });
+        }
+      }
+
+      // 3. Aggregate LocalMarket Internal Sales History for caller's shop
+      const nowMs = Date.now();
+      const ms30 = 30 * 24 * 60 * 60 * 1000;
+      const ms60 = 60 * 24 * 60 * 60 * 1000;
+      const ms90 = 90 * 24 * 60 * 60 * 1000;
+
+      const { data: rawSales } = await adminSupabase
+        .from("sales")
+        .select("timestamp, items, status")
+        .eq("shop_id", shopId)
+        .eq("status", "Completed");
+
+      let count30 = 0;
+      let count60 = 0;
+      let count90 = 0;
+      const matchedPrices: number[] = [];
+
+      if (rawSales && rawSales.length > 0) {
+        for (const sale of rawSales) {
+          const saleTimeMs = new Date(sale.timestamp).getTime();
+          const ageMs = nowMs - saleTimeMs;
+
+          if (ageMs > ms90) continue;
+
+          let saleItems: any[] = [];
+          if (Array.isArray(sale.items)) saleItems = sale.items;
+          else if (typeof sale.items === "string") {
+            try { saleItems = JSON.parse(sale.items); } catch (e) {}
+          }
+
+          for (const itemElem of saleItems) {
+            const itemObj = itemElem.item || itemElem;
+            const itemTitle = String(itemObj.title || itemObj.name || "").toLowerCase();
+            const itemSku = String(itemObj.sku || itemObj.barcode || "").toLowerCase();
+
+            const isMatch = (cleanBarcode && itemSku === cleanBarcode.toLowerCase()) ||
+              (cleanTitle && itemTitle.includes(cleanTitle.toLowerCase()));
+
+            if (isMatch) {
+              const price = Number(itemElem.overridePrice || itemObj.retailPrice || itemObj.price || 0);
+              if (price > 0) {
+                matchedPrices.push(price);
+                if (ageMs <= ms30) count30++;
+                if (ageMs <= ms60) count60++;
+                count90++;
+              }
+            }
+          }
+        }
+      }
+
+      // Calculate stock count for similar items
+      let currentActiveStockCount = 0;
+      const { data: stockItems } = await adminSupabase
+        .from("shop_items")
+        .select("id, title, sku, status")
+        .eq("shop_id", shopId)
+        .in("status", ["Retail Floor", "Reserved"]);
+
+      if (stockItems) {
+        currentActiveStockCount = stockItems.filter(i => {
+          const t = (i.title || "").toLowerCase();
+          const s = (i.sku || "").toLowerCase();
+          return (cleanBarcode && s === cleanBarcode.toLowerCase()) || (cleanTitle && t.includes(cleanTitle.toLowerCase()));
+        }).length;
+      }
+
+      matchedPrices.sort((a, b) => a - b);
+      const avgSalePrice = matchedPrices.length > 0 ? matchedPrices.reduce((sum, p) => sum + p, 0) / matchedPrices.length : null;
+      const medianSalePrice = matchedPrices.length > 0 ? matchedPrices[Math.floor(matchedPrices.length / 2)] : null;
+      const minSalePrice = matchedPrices.length > 0 ? matchedPrices[0] : null;
+      const maxSalePrice = matchedPrices.length > 0 ? matchedPrices[matchedPrices.length - 1] : null;
+
+      const localStats: LocalMarketSalesStats = {
+        salesLast30Days: count30,
+        salesLast60Days: count60,
+        salesLast90Days: count90,
+        currentActiveStockCount,
+        avgSalePrice,
+        medianSalePrice,
+        minSalePrice,
+        maxSalePrice,
+        medianDaysToSell: count90 > 0 ? Math.round(90 / count90) : null,
+        sellThroughRate: (currentActiveStockCount + count90) > 0 ? count90 / (currentActiveStockCount + count90) : null
+      };
+
+      // 4. External Product Identification Source (UPCitemdb)
+      let externalObs: MarketObservation | null = null;
+      if (cleanBarcode) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+          const upcUrl = `https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(cleanBarcode)}`;
+          const response = await fetch(upcUrl, {
+            headers: { "Accept": "application/json", "User-Agent": "LocalMarket-POS/1.0" },
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            const upcData = await response.json();
+            if (upcData && upcData.items && upcData.items.length > 0) {
+              const item = upcData.items[0];
+              const offers = item.offers || [];
+
+              const offerPrices = offers.map((o: any) => Number(o.price)).filter((p: number) => p > 0);
+              offerPrices.sort((a: number, b: number) => a - b);
+
+              const msrp = item.msrp ? Number(item.msrp) : null;
+              const usedLow = offerPrices.length > 0 ? offerPrices[0] : null;
+              const usedHigh = offerPrices.length > 0 ? offerPrices[offerPrices.length - 1] : null;
+              const medianPrice = offerPrices.length > 0 ? offerPrices[Math.floor(offerPrices.length / 2)] : msrp;
+
+              externalObs = {
+                sourceType: "upcitemdb",
+                sourceName: "UPCitemdb Reference",
+                sourceUrl: `https://www.upcitemdb.com/upc/${cleanBarcode}`,
+                productName: item.title || cleanTitle || "Reference Item",
+                brand: item.brand,
+                model: item.model,
+                category: item.category || category,
+                barcode: cleanBarcode,
+                referencePrice: msrp || medianPrice,
+                usedLow,
+                usedHigh,
+                medianPrice,
+                observedAt: new Date().toISOString()
+              };
+            }
+          }
+        } catch (err) {
+          console.warn("UPCitemdb lookup timeout or network failure (graceful fallback):", err);
+        }
+      }
+
+      // 5. Fetch Shop Business Rules Target Margin if present
+      let userConfig = {};
+      const { data: shopProfile } = await adminSupabase
+        .from("shop_profiles")
+        .select("business_rules")
+        .eq("id", shopId)
+        .maybeSingle();
+
+      if (shopProfile?.business_rules) {
+        const rules = shopProfile.business_rules;
+        userConfig = {
+          targetMarginPercent: rules.targetMarginPercent ? Number(rules.targetMarginPercent) : 35,
+          minMarginPercent: rules.minMarginPercent ? Number(rules.minMarginPercent) : 25,
+          riskAllowancePercent: rules.riskAllowancePercent ? Number(rules.riskAllowancePercent) : 5
+        };
+      }
+
+      // 6. Calculate Demand Signal & Fair Buy Pricing Engine Estimate
+      const demandSignal = MarketPricingEngine.calculateDemand(localStats);
+      const { pricing, confidence, explanation } = MarketPricingEngine.calculateEstimate({
+        observation: externalObs,
+        localStats,
+        condition,
+        config: userConfig
+      });
+
+      const onlineRefCount = externalObs ? 1 : 0;
+      const localCount = localStats.salesLast90Days;
+
+      let summaryExplanation = explanation;
+      if (onlineRefCount > 0 && localCount > 0) {
+        summaryExplanation = `Based on ${onlineRefCount} online reference + ${localCount} LocalMarket sales`;
+      } else if (onlineRefCount > 0) {
+        summaryExplanation = `Based on ${onlineRefCount} online reference (0 local sales recorded)`;
+      } else if (localCount > 0) {
+        summaryExplanation = `Based on ${localCount} LocalMarket sales history`;
+      } else {
+        summaryExplanation = "Insufficient market or sales observations found";
+      }
+
+      const resultPayload: MarketCheckResult = {
+        queryKey,
+        barcode: cleanBarcode || undefined,
+        normalizedProductName: externalObs?.productName || cleanTitle || "Item",
+        brand: externalObs?.brand,
+        model: externalObs?.model,
+        category: externalObs?.category || category,
+        condition,
+        referencePrice: externalObs?.referencePrice ?? null,
+        usedMarketLow: externalObs?.usedLow ?? null,
+        usedMarketHigh: externalObs?.usedHigh ?? null,
+        demand: demandSignal,
+        pricing,
+        confidence,
+        onlineReferencesCount: onlineRefCount,
+        localSalesCount: localCount,
+        summaryExplanation,
+        cached: false,
+        observedAt: new Date().toISOString()
+      };
+
+      // 7. Store snapshot record in market_intelligence_snapshots
+      await adminSupabase.from("market_intelligence_snapshots").insert({
+        shop_id: shopId,
+        item_id: itemId || null,
+        query_key: queryKey,
+        barcode: cleanBarcode || null,
+        normalized_product_name: resultPayload.normalizedProductName,
+        brand: resultPayload.brand || null,
+        model: resultPayload.model || null,
+        category: resultPayload.category || null,
+        condition,
+        source_type: externalObs ? "upcitemdb" : "internal_sales",
+        source_name: externalObs ? "UPCitemdb Reference" : "LocalMarket Internal Sales",
+        reference_price: resultPayload.referencePrice,
+        used_low: resultPayload.usedMarketLow,
+        used_high: resultPayload.usedMarketHigh,
+        median_price: resultPayload.pricing.suggestedRetailTarget,
+        demand_score: demandSignal.score,
+        demand_label: demandSignal.label,
+        confidence,
+        raw_summary: resultPayload,
+        observed_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      });
+
+      return res.json({
+        success: true,
+        data: resultPayload
+      });
+
+    } catch (err: any) {
+      console.error("Market Intelligence check server error:", err);
+      return res.status(500).json({ error: err.message || "Failed to complete Market Check." });
     }
   });
 

@@ -329,6 +329,34 @@ CREATE TABLE IF NOT EXISTS public.business_rule_audit_logs (
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 18. MARKET INTELLIGENCE SNAPSHOTS TABLE
+CREATE TABLE IF NOT EXISTS public.market_intelligence_snapshots (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE CASCADE NOT NULL,
+    item_id UUID REFERENCES public.shop_items(id) ON DELETE SET NULL,
+    query_key TEXT NOT NULL,
+    barcode TEXT,
+    normalized_product_name TEXT NOT NULL,
+    brand TEXT,
+    model TEXT,
+    category TEXT,
+    condition TEXT,
+    source_type TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    source_url TEXT,
+    reference_price NUMERIC(12,2),
+    used_low NUMERIC(12,2),
+    used_high NUMERIC(12,2),
+    median_price NUMERIC(12,2),
+    demand_score NUMERIC(6,2),
+    demand_label TEXT,
+    confidence TEXT NOT NULL,
+    raw_summary JSONB DEFAULT '{}'::jsonb,
+    observed_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    expires_at TIMESTAMPTZ DEFAULT (now() + INTERVAL '24 hours') NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
 -- 13. INDEXES FOR HIGH-THROUGHPUT LOOKUPS & ISOLATION
 CREATE INDEX IF NOT EXISTS idx_shop_profiles_code ON public.shop_profiles(shop_code);
 CREATE INDEX IF NOT EXISTS idx_profiles_shop_id ON public.profiles(shop_id);

@@ -191,6 +191,11 @@ export interface BusinessRules {
   storeWarrantyDays: number; // e.g. 7
   warrantyDescription: string; // e.g. "7-Day Store Test Warranty"
 
+  // Market Intelligence & Valuation Rules
+  targetMarginPercent?: number; // e.g. 35% target margin
+  minMarginPercent?: number; // e.g. 25% minimum margin
+  riskAllowancePercent?: number; // e.g. 5% risk allowance
+
   // Workflow & Hardware preferences
   defaultIntakeType: 'prompt' | 'pawn' | 'buy';
   defaultVaultShelf: string;

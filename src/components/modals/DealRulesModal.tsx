@@ -582,6 +582,39 @@ export const DealRulesModal: React.FC = () => {
                     Appears directly on Zebra Direct Thermal barcodes.
                   </p>
                 </div>
+
+                {/* Setting 5: Market Intelligence Acquisition Target Margin */}
+                <div className="p-4 rounded-2xl bg-[#1E1E1E] border border-[#2E2E2E] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-white block">
+                      Market Intelligence Acquisition Target Margin
+                    </label>
+                    <span className="text-xs font-mono font-bold text-[#E87A5D]">
+                      {formRules.targetMarginPercent || 35}% Target Margin
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-gray-400">
+                    Owner pricing rule for calculating suggested buy acquisition range.
+                  </p>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {[25, 35, 45].map(pct => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => setFormRules(prev => ({ ...prev, targetMarginPercent: pct }))}
+                        className={`py-2 rounded-xl text-xs font-mono font-bold border transition ${
+                          (formRules.targetMarginPercent || 35) === pct
+                            ? 'bg-[#C85A32]/25 border-[#C85A32] text-white'
+                            : 'bg-[#141414] border-[#2A2A2A] text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {pct}% Target
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {/* LIVE INTERACTIVE BUY SANDBOX */}

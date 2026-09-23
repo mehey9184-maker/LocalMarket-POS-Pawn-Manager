@@ -8,6 +8,9 @@ import { useSellers } from '../../context/SellerContext';
 import { useSaps } from '../../context/SapsContext';
 import { ItemCondition, InventoryItem, PawnLoan, Customer, Seller, ItemStatus } from '../../types';
 import { roundRetailPrice, calculatePawnFees } from '../../utils/pricingRules';
+import { marketIntelligenceApi } from '../../services/marketIntelligenceApi';
+import { MarketCheckCard } from '../common/MarketCheckCard';
+import { MarketCheckResult } from '../../types/marketIntelligence';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ShieldCheck,
@@ -118,6 +121,29 @@ export const BuyPawn: React.FC = () => {
   const [retailPriceInput, setRetailPriceInput] = useState<string>('0');
   const [suggestedRetail, setSuggestedRetail] = useState<number>(0);
   const [existingStockStatus, setExistingStockStatus] = useState<ItemStatus>('Retail Floor');
+
+  // Market Intelligence State
+  const [marketCheckData, setMarketCheckData] = useState<MarketCheckResult | null>(null);
+  const [isMarketLoading, setIsMarketLoading] = useState<boolean>(false);
+  const [marketError, setMarketError] = useState<string | null>(null);
+
+  const handleRunMarketCheck = async () => {
+    if (!itemData.title) return;
+    setIsMarketLoading(true);
+    setMarketError(null);
+    const res = await marketIntelligenceApi.fetchMarketCheck({
+      barcode: itemData.serialOrImei,
+      title: itemData.title,
+      category: itemData.category,
+      condition: itemData.condition
+    });
+    setIsMarketLoading(false);
+    if (res.success && res.data) {
+      setMarketCheckData(res.data);
+    } else {
+      setMarketError(res.error || 'Insufficient market data');
+    }
+  };
 
   // Completion Result State
   const [result, setResult] = useState<{
@@ -1329,6 +1355,37 @@ export const BuyPawn: React.FC = () => {
                         : `Determining ${txType === 'buy' ? 'cash payout' : 'pawn loan principal'}`}
                     </p>
                   </div>
+                </div>
+
+                {/* Market Intelligence Guidance Card */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-700">LocalMarket Valuation Intelligence</span>
+                    <button
+                      type="button"
+                      onClick={handleRunMarketCheck}
+                      className="px-3 py-1 bg-[#C85A32] text-white hover:bg-[#A94725] rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-xs"
+                    >
+                      <TrendingUp className="w-3.5 h-3.5" />
+                      <span>{marketCheckData ? 'Refresh Market Check' : 'Run Market Check'}</span>
+                    </button>
+                  </div>
+
+                  {(marketCheckData || isMarketLoading || marketError) && (
+                    <MarketCheckCard
+                      data={marketCheckData}
+                      loading={isMarketLoading}
+                      error={marketError}
+                      onRefresh={handleRunMarketCheck}
+                      onApplySuggestedRetail={(retailVal) => {
+                        setRetailPriceInput(String(retailVal));
+                      }}
+                      onApplySuggestedBuy={(buyLow, buyHigh) => {
+                        const midBuy = Math.round((buyLow + buyHigh) / 2);
+                        setAgreedOffer(midBuy);
+                      }}
+                    />
+                  )}
                 </div>
 
                 {/* 3A. VALUATION FOR EXISTING STOCK */}

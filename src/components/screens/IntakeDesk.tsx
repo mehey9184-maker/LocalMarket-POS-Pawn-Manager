@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ItemCondition } from '../../types';
 import { roundRetailPrice } from '../../utils/pricingRules';
+import { marketIntelligenceApi } from '../../services/marketIntelligenceApi';
+import { MarketCheckCard } from '../common/MarketCheckCard';
+import { MarketCheckResult } from '../../types/marketIntelligence';
 import {
   ShieldCheck,
   IdCard,
@@ -92,6 +95,28 @@ export const IntakeDesk: React.FC = () => {
   // Dynamic Retail Margin calculations for Outright Buy
   const grossMargin = targetRetailPrice - agreedOffer;
   const grossMarginPct = targetRetailPrice > 0 ? Math.round((grossMargin / targetRetailPrice) * 100) : 0;
+
+  // Market Intelligence State
+  const [marketCheckData, setMarketCheckData] = useState<MarketCheckResult | null>(null);
+  const [isMarketLoading, setIsMarketLoading] = useState<boolean>(false);
+  const [marketError, setMarketError] = useState<string | null>(null);
+
+  const handleFetchMarketCheck = async () => {
+    if (!title) return;
+    setIsMarketLoading(true);
+    setMarketError(null);
+    const res = await marketIntelligenceApi.fetchMarketCheck({
+      title,
+      category,
+      condition
+    });
+    setIsMarketLoading(false);
+    if (res.success && res.data) {
+      setMarketCheckData(res.data);
+    } else {
+      setMarketError(res.error || 'Insufficient market data');
+    }
+  };
 
   // Configured expiry calculation based on loan term days
   const getFormattedExpiryDate = () => {
@@ -864,6 +889,39 @@ export const IntakeDesk: React.FC = () => {
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    {/* Market Intelligence Trigger & Guidance Card */}
+                    <div className="pt-2">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-gray-400 font-medium">Market Valuation Intelligence</span>
+                        <button
+                          type="button"
+                          onClick={handleFetchMarketCheck}
+                          className="px-3 py-1 bg-[#C85A32]/20 hover:bg-[#C85A32]/30 text-[#E87A5D] border border-[#C85A32]/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
+                        >
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          <span>{marketCheckData ? 'Refresh Market Check' : 'Run Market Check'}</span>
+                        </button>
+                      </div>
+
+                      {(marketCheckData || isMarketLoading || marketError) && (
+                        <MarketCheckCard
+                          data={marketCheckData}
+                          loading={isMarketLoading}
+                          error={marketError}
+                          onRefresh={handleFetchMarketCheck}
+                          onApplySuggestedRetail={(retailVal) => {
+                            setTargetRetailPrice(retailVal);
+                            showToast('Retail Price Updated', `Set retail target to R ${retailVal.toFixed(2)}`, 'success');
+                          }}
+                          onApplySuggestedBuy={(buyLow, buyHigh) => {
+                            const midBuy = Math.round((buyLow + buyHigh) / 2);
+                            setAgreedOffer(midBuy);
+                            showToast('Acquisition Offer Set', `Applied suggested buy valuation of R ${midBuy.toFixed(2)}`, 'info');
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
 
