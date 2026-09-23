@@ -39,25 +39,36 @@ const CartItemRow: React.FC<{
     setIsEditingPrice(false);
   };
 
+  const getBadgeStyle = () => {
+    switch (ci.item.acquisitionType) {
+      case 'Existing Stock':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'Buy':
+        return 'bg-orange-50 text-[#C85A32] border-[#C85A32]/20';
+      default:
+        return 'bg-gray-100 text-gray-700 border-gray-200';
+    }
+  };
+
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: 20 }}
-      className="p-3 bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl flex items-center gap-3"
+      className="p-3 bg-[#F8F9FA] border border-gray-200 rounded-xl flex items-center gap-3"
     >
-      <div className="w-10 h-10 rounded-lg bg-black shrink-0 border border-gray-800 overflow-hidden">
+      <div className="w-11 h-11 rounded-lg bg-gray-100 shrink-0 border border-gray-200 overflow-hidden">
         <img src={ci.item.imageUrl} className="w-full h-full object-cover" alt="" />
       </div>
       
       <div className="flex-1 min-w-0">
-        <h4 className="text-xs font-bold text-white truncate">{ci.item.title}</h4>
+        <h4 className="text-xs font-semibold text-gray-900 truncate">{ci.item.title}</h4>
         <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-[9px] font-mono text-gray-500 uppercase">{ci.item.sku}</span>
+          <span className="text-[10px] font-mono text-gray-500 font-semibold">{ci.item.sku}</span>
           {ci.item.acquisitionType && (
-            <span className="text-[8px] px-1 bg-gray-800 text-gray-400 rounded-sm font-black uppercase tracking-tighter">
-              {ci.item.acquisitionType === 'Buy' ? 'Direct Purchase' : 'Forfeited Pawn'}
+            <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold border ${getBadgeStyle()}`}>
+              {ci.item.acquisitionType}
             </span>
           )}
         </div>
@@ -70,49 +81,62 @@ const CartItemRow: React.FC<{
               autoFocus
               type="number"
               value={tempPrice}
-              onChange={(e) => setTempPrice(e.target.value)}
+              onChange={e => setTempPrice(e.target.value)}
               onBlur={handlePriceSubmit}
-              className="w-16 bg-black border border-[#C85A32] rounded px-1 py-0.5 text-[10px] font-mono text-white text-right outline-none"
+              className="w-18 bg-white border border-[#C85A32] text-xs font-bold text-gray-900 px-1 py-0.5 rounded text-right outline-none font-mono"
             />
           </form>
         ) : (
-          <button
+          <div 
             onClick={() => setIsEditingPrice(true)}
-            className={`text-xs font-black font-mono tracking-tight tabular-nums ${
-              ci.overridePrice ? 'text-emerald-400' : 'text-white'
-            }`}
+            className="text-xs font-bold text-gray-900 font-mono cursor-pointer hover:text-[#C85A32] transition"
+            title="Click to override price"
           >
-            R {(ci.overridePrice ?? ci.item.retailPrice).toFixed(2)}
-          </button>
+            R {((ci.overridePrice ?? ci.item.retailPrice) * ci.quantity).toLocaleString()}
+          </div>
         )}
-        <div className="flex items-center gap-2">
-           <button 
-            onClick={() => onRemove(ci.item.id)}
-            className="text-gray-600 hover:text-red-500 transition"
-           >
-            <Trash2 className="w-3 h-3" />
-           </button>
+
+        <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-1 py-0.5">
+          <button 
+            onClick={() => onUpdateQuantity(ci.item.id, ci.quantity - 1)}
+            className="text-gray-400 hover:text-gray-700 p-0.5"
+          >
+            <Minus className="w-2.5 h-2.5" />
+          </button>
+          <span className="text-[11px] font-bold text-gray-800 font-mono px-1">{ci.quantity}</span>
+          <button 
+            onClick={() => onUpdateQuantity(ci.item.id, ci.quantity + 1)}
+            className="text-gray-400 hover:text-gray-700 p-0.5"
+          >
+            <Plus className="w-2.5 h-2.5" />
+          </button>
         </div>
       </div>
+
+      <button 
+        onClick={() => onRemove(ci.item.id)}
+        className="p-1.5 text-gray-400 hover:text-red-500 transition"
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
     </motion.div>
   );
 };
 
 export const Sell: React.FC = () => {
-  const {
-    inventory,
-    cart,
-    addToCart,
-    removeFromCart,
+  const { 
+    inventory, 
+    cart, 
+    addToCart, 
+    removeFromCart, 
+    updateCartItemPrice, 
+    updateCartQuantity, 
     clearCart,
     completeCheckout,
-    updateCartItemPrice,
-    updateCartQuantity,
-    setIsScannerModalOpen,
-    showToast
+    showToast,
+    setIsScannerModalOpen
   } = useApp();
 
-  // State
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTender, setSelectedTender] = useState<PaymentMethod>('cash');
   const [cashTendered, setCashTendered] = useState<string>('');
@@ -121,7 +145,6 @@ export const Sell: React.FC = () => {
   
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Focus search on mount and after actions
   useEffect(() => {
     searchInputRef.current?.focus();
   }, []);
@@ -135,13 +158,13 @@ export const Sell: React.FC = () => {
 
   const filteredItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return floorItems.slice(0, 12); // Show recent/popular if no search
+    if (!q) return floorItems.slice(0, 16);
 
     return floorItems.filter(item => 
       item.title.toLowerCase().includes(q) ||
       item.sku.toLowerCase().includes(q) ||
-      item.serialOrImei.toLowerCase().includes(q)
-    ).slice(0, 20);
+      (item.serialOrImei && item.serialOrImei.toLowerCase().includes(q))
+    ).slice(0, 24);
   }, [floorItems, searchQuery]);
 
   const total = useMemo(() => {
@@ -158,7 +181,7 @@ export const Sell: React.FC = () => {
     const exactMatch = floorItems.find(
       item =>
         item.sku.toLowerCase() === searchQuery.trim().toLowerCase() ||
-        item.serialOrImei.toLowerCase() === searchQuery.trim().toLowerCase()
+        (item.serialOrImei && item.serialOrImei.toLowerCase() === searchQuery.trim().toLowerCase())
     );
 
     if (exactMatch) {
@@ -168,7 +191,7 @@ export const Sell: React.FC = () => {
       addToCart(filteredItems[0]);
       setSearchQuery('');
     } else if (filteredItems.length === 0) {
-      showToast('Item Not Found', `No stock matching "${searchQuery}"`, 'error');
+      showToast('Item Not Found', `No available stock matching "${searchQuery}"`, 'error');
     }
     
     searchInputRef.current?.focus();
@@ -178,12 +201,11 @@ export const Sell: React.FC = () => {
     if (cart.length === 0) return;
     
     if (selectedTender === 'cash' && numTendered < total) {
-      showToast('Payment Incomplete', `Cash tendered (R${numTendered}) is less than total`, 'amber');
+      showToast('Payment Incomplete', `Cash tendered (R${numTendered}) is less than total R${total}`, 'amber');
       return;
     }
 
     setIsProcessing(true);
-    // Simulate slight delay for professional feel
     setTimeout(() => {
       completeCheckout(
         selectedTender, 
@@ -197,7 +219,6 @@ export const Sell: React.FC = () => {
     }, 400);
   };
 
-  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F1') { e.preventDefault(); setSelectedTender('cash'); }
@@ -211,99 +232,105 @@ export const Sell: React.FC = () => {
   }, [cart, selectedTender, numTendered, total, receiptType]);
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row bg-[#121212] overflow-hidden">
+    <div className="flex-1 flex flex-col lg:flex-row bg-[#F5F6F8] overflow-hidden">
       {/* LEFT AREA: SEARCH & PRODUCT SELECTION */}
-      <div className="flex-1 flex flex-col min-w-0 border-r border-[#2A2A2A]">
+      <div className="flex-1 flex flex-col min-w-0 border-r border-gray-200">
         {/* Search Header */}
-        <div className="p-6 bg-[#1A1A1A] border-b border-[#2A2A2A] space-y-4">
+        <div className="p-5 bg-white border-b border-gray-200 space-y-4 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#C85A32]/10 flex items-center justify-center text-[#E87A5D]">
-                <Zap className="w-6 h-6" />
+              <div className="w-9 h-9 rounded-xl bg-[#FDF0EA] flex items-center justify-center text-[#C85A32]">
+                <Zap className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-lg font-black text-white uppercase tracking-tight">Retail POS</h2>
-                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Active Shift: Terminal 01</p>
+                <h2 className="text-base font-bold text-gray-900 leading-tight">Front Checkout Counter</h2>
+                <p className="text-[11px] text-gray-500">Scan barcode, type SKU, or click items to add</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <button 
                 onClick={() => setIsScannerModalOpen(true)}
-                className="p-3 rounded-xl bg-[#252525] border border-gray-800 text-gray-400 hover:text-white transition"
+                className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
                 title="Open Camera Scanner"
               >
-                <Camera className="w-5 h-5" />
+                <Camera className="w-4 h-4" />
               </button>
             </div>
           </div>
 
           <form onSubmit={handleBarcodeSearchSubmit} className="relative">
-            <Barcode className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6 text-[#C85A32]" />
+            <Barcode className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-[#C85A32]" />
             <input
               ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="SCAN BARCODE OR TYPE SEARCH..."
-              className="w-full bg-[#0A0A0A] border-2 border-[#2A2A2A] focus:border-[#C85A32] rounded-2xl pl-14 pr-4 py-5 text-xl text-white font-mono placeholder-gray-800 transition-all outline-none"
+              placeholder="Scan barcode or type SKU / Title..."
+              className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#C85A32] focus:bg-white rounded-xl pl-11 pr-4 py-3 text-sm text-gray-900 font-mono placeholder:text-gray-400 transition-all outline-none"
             />
           </form>
         </div>
 
         {/* Results Grid */}
-        <div className="flex-1 overflow-y-auto p-6 no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-5 no-scrollbar">
           {filteredItems.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredItems.map(item => (
                 <button
                   key={item.id}
                   onClick={() => { addToCart(item); setSearchQuery(''); searchInputRef.current?.focus(); }}
-                  className="bg-[#1A1A1A] border border-[#2A2A2A] hover:border-[#C85A32] rounded-2xl p-4 flex flex-col text-left transition group active:scale-95"
+                  className="bg-white border border-gray-200 hover:border-[#C85A32] rounded-xl p-3.5 flex flex-col text-left transition group shadow-xs hover:shadow-sm active:scale-98 cursor-pointer"
                 >
-                  <div className="aspect-square rounded-xl bg-black mb-3 overflow-hidden border border-gray-800">
-                    <img src={item.imageUrl} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition" alt="" />
+                  <div className="aspect-square rounded-lg bg-gray-100 mb-2.5 overflow-hidden border border-gray-100">
+                    <img src={item.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[10px] font-mono text-gray-500 uppercase mb-1">{item.sku}</p>
-                    <h3 className="text-xs font-bold text-white truncate mb-1">{item.title}</h3>
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-[8px] px-1.5 py-0.5 rounded-sm bg-emerald-500/10 text-emerald-400 font-black uppercase tracking-tighter border border-emerald-500/20">
+                    <p className="text-[10px] font-mono text-gray-400 font-semibold">{item.sku}</p>
+                    <h3 className="text-xs font-semibold text-gray-900 truncate mt-0.5">{item.title}</h3>
+                    <div className="flex items-center gap-1.5 my-2">
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
                         {item.status}
                       </span>
                       {item.acquisitionType && (
-                        <span className="text-[8px] font-bold text-gray-600 uppercase tracking-widest">{item.acquisitionType}</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-gray-100 text-gray-600 font-medium">
+                          {item.acquisitionType}
+                        </span>
                       )}
                     </div>
                   </div>
-                  <div className="pt-3 border-t border-[#2A2A2A] flex items-center justify-between">
-                    <span className="text-sm font-black text-[#E87A5D] font-mono">R {item.retailPrice.toLocaleString()}</span>
-                    <Plus className="w-4 h-4 text-gray-700 group-hover:text-[#E87A5D]" />
+                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-900 font-mono">
+                      R {item.retailPrice.toLocaleString()}
+                    </span>
+                    <Plus className="w-3.5 h-3.5 text-[#C85A32]" />
                   </div>
                 </button>
               ))}
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-4">
-              <Search className="w-12 h-12 opacity-20" />
-              <p className="text-xs font-black uppercase tracking-[0.2em]">No Items Matching Search</p>
+            <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-2 py-12">
+              <Search className="w-8 h-8 opacity-40" />
+              <p className="text-xs font-medium">No items match your search</p>
             </div>
           )}
         </div>
       </div>
 
       {/* RIGHT AREA: CART & CHECKOUT */}
-      <div className="w-full lg:w-[450px] flex flex-col bg-[#0A0A0A]">
+      <div className="w-full lg:w-[420px] flex flex-col bg-white border-l border-gray-200 shadow-sm">
         {/* Cart Header */}
-        <div className="p-6 border-b border-[#2A2A2A] flex items-center justify-between">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-[#F8F9FA]">
           <div className="flex items-center gap-2">
-            <ShoppingCart className="w-5 h-5 text-gray-500" />
-            <h2 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Current Basket</h2>
+            <ShoppingCart className="w-4 h-4 text-gray-500" />
+            <h2 className="text-xs font-bold text-gray-800 uppercase tracking-wider">Sale Basket</h2>
           </div>
-          <span className="px-2 py-1 rounded bg-[#1A1A1A] text-[10px] font-mono text-gray-500">{cart.length} ITEMS</span>
+          <span className="px-2 py-0.5 rounded bg-gray-200/70 text-[11px] font-mono font-semibold text-gray-700">
+            {cart.length} {cart.length === 1 ? 'item' : 'items'}
+          </span>
         </div>
 
         {/* Cart Items */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-3 no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 space-y-2.5 no-scrollbar min-h-[220px]">
           <AnimatePresence mode="popLayout">
             {cart.map(ci => (
               <CartItemRow 
@@ -316,34 +343,43 @@ export const Sell: React.FC = () => {
             ))}
           </AnimatePresence>
           {cart.length === 0 && (
-            <div className="h-full flex flex-col items-center justify-center text-gray-700 space-y-3 py-10 opacity-30">
-              <div className="w-16 h-16 rounded-full border-2 border-dashed border-gray-700 flex items-center justify-center">
-                <Barcode className="w-8 h-8" />
+            <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-2 py-12">
+              <div className="w-12 h-12 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center">
+                <Barcode className="w-6 h-6 text-gray-400" />
               </div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-center">Scan items to<br/>populate basket</p>
+              <p className="text-xs text-gray-500 text-center font-medium">
+                Scan or click stock items to begin checkout
+              </p>
             </div>
           )}
         </div>
 
         {/* Checkout Controls */}
-        <div className="p-6 bg-[#121212] border-t border-[#2A2A2A] space-y-6 shadow-[0_-10px_40px_rgba(0,0,0,0.4)]">
-          <div className="space-y-4">
-            <div className="flex justify-between items-end border-b border-gray-800 pb-4">
-              <span className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">Subtotal</span>
-              <span className="text-xl font-bold text-gray-300 font-mono">R {(total / 1.15).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        <div className="p-5 bg-[#F8F9FA] border-t border-gray-200 space-y-4">
+          <div className="space-y-2 text-xs">
+            <div className="flex justify-between items-baseline text-gray-500">
+              <span>Subtotal (excl. VAT)</span>
+              <span className="font-mono font-semibold text-gray-800">
+                R {(total / 1.15).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             </div>
-            <div className="flex justify-between items-end border-b border-gray-800 pb-4">
-              <span className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">VAT (15%)</span>
-              <span className="text-xl font-bold text-gray-300 font-mono">R {(total - (total / 1.15)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <div className="flex justify-between items-baseline text-gray-500">
+              <span>VAT (15%)</span>
+              <span className="font-mono font-semibold text-gray-800">
+                R {(total - (total / 1.15)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             </div>
-            <div className="flex justify-between items-end">
-              <span className="text-xs font-black text-white uppercase tracking-[0.3em]">Total Amount</span>
-              <span className="text-4xl font-black text-[#E87A5D] font-mono">R {total.toLocaleString()}</span>
+            <div className="flex justify-between items-baseline pt-2 border-t border-gray-200">
+              <span className="text-sm font-bold text-gray-900">Total Due</span>
+              <span className="text-2xl font-bold text-[#C85A32] font-mono">
+                R {total.toLocaleString()}
+              </span>
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+          <div className="space-y-3">
+            {/* Tender selector */}
+            <div className="grid grid-cols-3 gap-2">
               {[
                 { id: 'cash', icon: Banknote, label: 'Cash [F1]' },
                 { id: 'card', icon: CreditCard, label: 'Card [F2]' },
@@ -352,14 +388,14 @@ export const Sell: React.FC = () => {
                 <button
                   key={method.id}
                   onClick={() => setSelectedTender(method.id as any)}
-                  className={`py-4 rounded-2xl border flex flex-col items-center gap-2 transition ${
+                  className={`py-2.5 rounded-xl border flex flex-col items-center gap-1 transition ${
                     selectedTender === method.id 
-                      ? 'border-[#C85A32] bg-[#C85A32]/10 text-[#E87A5D]' 
-                      : 'border-gray-800 text-gray-600 hover:border-gray-700'
+                      ? 'border-[#C85A32] bg-[#FDF0EA] text-[#C85A32] font-bold shadow-xs' 
+                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
                   }`}
                 >
-                  <method.icon className="w-5 h-5" />
-                  <span className="text-[8px] font-black uppercase tracking-widest">{method.label}</span>
+                  <method.icon className="w-4 h-4" />
+                  <span className="text-[10px] uppercase font-semibold">{method.label}</span>
                 </button>
               ))}
             </div>
@@ -368,43 +404,45 @@ export const Sell: React.FC = () => {
               <motion.div 
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
-                className="space-y-4 overflow-hidden"
+                className="space-y-2 overflow-hidden"
               >
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Tendered</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-500 uppercase">Tendered</label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-mono text-sm">R</span>
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-mono text-xs">R</span>
                       <input 
                         type="number" 
                         value={cashTendered}
                         onChange={e => setCashTendered(e.target.value)}
                         placeholder="0.00"
-                        className="w-full bg-black border border-gray-800 rounded-xl pl-8 pr-4 py-3 text-lg font-black text-white font-mono focus:border-[#C85A32] outline-none"
+                        className="w-full bg-white border border-gray-300 rounded-lg pl-6 pr-2.5 py-1.5 text-sm font-bold text-gray-900 font-mono focus:border-[#C85A32] outline-none"
                       />
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Change Due</label>
-                    <div className="w-full bg-[#1A1A1A] border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center justify-end">
-                      <span className="text-xl font-black text-emerald-400 font-mono">R {changeDue.toFixed(2)}</span>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-500 uppercase">Change Due</label>
+                    <div className="w-full bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 flex items-center justify-end">
+                      <span className="text-sm font-bold text-emerald-700 font-mono">
+                        R {changeDue.toFixed(2)}
+                      </span>
                     </div>
                   </div>
                 </div>
               </motion.div>
             )}
 
-            <div className="flex items-center gap-2 p-2 bg-[#1A1A1A] rounded-xl border border-gray-800">
+            <div className="flex items-center gap-1.5 p-1 bg-white rounded-xl border border-gray-200">
                {[
                 { id: 'thermal', label: 'Thermal Print', icon: Printer },
-                { id: 'whatsapp', label: 'Digital WA', icon: Smartphone },
+                { id: 'whatsapp', label: 'WhatsApp', icon: Smartphone },
                 { id: 'none', label: 'No Receipt', icon: X }
                ].map(rt => (
                  <button
                   key={rt.id}
                   onClick={() => setReceiptType(rt.id as any)}
-                  className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-tighter flex items-center justify-center gap-2 transition ${
-                    receiptType === rt.id ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'
+                  className={`flex-1 py-1.5 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1.5 transition ${
+                    receiptType === rt.id ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-800'
                   }`}
                  >
                    <rt.icon className="w-3 h-3" />
@@ -414,24 +452,24 @@ export const Sell: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-2 pt-1">
             <button 
               onClick={clearCart}
-              className="p-5 rounded-2xl border border-gray-800 text-gray-500 hover:text-red-500 hover:border-red-500/30 transition active:scale-95"
+              className="p-3 rounded-xl border border-gray-200 text-gray-500 hover:text-red-500 hover:border-red-300 transition"
               title="Clear Basket [Esc]"
             >
-              <Trash2 className="w-6 h-6" />
+              <Trash2 className="w-4 h-4" />
             </button>
             <button 
               onClick={handleCompleteSale}
               disabled={isProcessing || cart.length === 0}
-              className="flex-1 py-5 rounded-2xl bg-[#C85A32] disabled:bg-gray-800 disabled:text-gray-500 text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-[#C85A32]/20 hover:bg-[#b04d29] transition active:scale-[0.98] flex items-center justify-center gap-3"
+              className="flex-1 py-3 rounded-xl bg-[#C85A32] disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold text-xs shadow-xs hover:bg-[#A94725] transition flex items-center justify-center gap-2"
             >
               {isProcessing ? (
-                <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <CheckCircle2 className="w-5 h-5" />
+                  <CheckCircle2 className="w-4 h-4" />
                   <span>Finalise Sale</span>
                 </>
               )}

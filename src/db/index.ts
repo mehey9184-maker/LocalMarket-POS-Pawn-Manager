@@ -61,6 +61,19 @@ export class LocalDatabase extends Dexie {
       syncLogs: '++id, entityType, entityId, status, createdAt',
       counters: 'id'
     });
+
+    // Version 4: Added acquisitionType index for inventory
+    this.version(4).stores({
+      inventory: 'id, sku, status, category, acquisitionType, pawnTicketId, addedAt',
+      customers: 'id, fullName, idNumber, mobile',
+      sellers: 'id, fullName, idNumber, mobile',
+      sellerTransactions: 'id, sellerId, itemId, timestamp',
+      loans: 'id, ticketNumber, customerId, status, expiryDate',
+      saps: 'id, entryNumber, timestamp, customerId',
+      sales: 'id, receiptNumber, timestamp',
+      syncLogs: '++id, entityType, entityId, status, createdAt',
+      counters: 'id'
+    });
   }
 }
 

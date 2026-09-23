@@ -44,10 +44,10 @@ const MainLayout: React.FC = () => {
 
   if (authLoading) {
     return (
-      <div className="h-screen w-screen bg-[#121212] flex items-center justify-center">
+      <div className="h-screen w-screen bg-[#F5F6F8] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-[#c85a32] border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-[#a58b83] font-mono text-xs uppercase tracking-widest animate-pulse">Initializing Secure Terminal...</p>
+          <div className="w-10 h-10 border-3 border-[#C85A32] border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-gray-500 font-mono text-xs uppercase tracking-wider animate-pulse">Starting LocalMarket...</p>
         </div>
       </div>
     );
@@ -58,10 +58,10 @@ const MainLayout: React.FC = () => {
   if (activeTab === 'auth') return <AuthPage />;
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#121212] text-gray-100 font-sans selection:bg-[#C85A32] selection:text-white">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#F5F6F8] text-[#1F2937] font-sans selection:bg-[#FDF0EA] selection:text-[#C85A32]">
       <Header />
 
-      <main id="app-viewport" className="flex-1 flex overflow-hidden bg-[#121212]">
+      <main id="app-viewport" className="flex-1 flex overflow-hidden bg-[#F5F6F8]">
         {activeTab === 'home' && <Home />}
         {activeTab === 'sell' && <Sell />}
         {activeTab === 'buy-pawn' && <BuyPawn />}

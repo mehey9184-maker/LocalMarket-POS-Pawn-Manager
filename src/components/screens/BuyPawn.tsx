@@ -6,7 +6,7 @@ import { useLoans } from '../../context/LoanContext';
 import { useCustomers } from '../../context/CustomerContext';
 import { useSellers } from '../../context/SellerContext';
 import { useSaps } from '../../context/SapsContext';
-import { ItemCondition, InventoryItem, PawnLoan, Customer, Seller } from '../../types';
+import { ItemCondition, InventoryItem, PawnLoan, Customer, Seller, ItemStatus } from '../../types';
 import { roundRetailPrice } from '../../utils/pricingRules';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -31,10 +31,14 @@ import {
   X,
   FileText,
   TrendingUp,
-  History
+  History,
+  Package,
+  MapPin,
+  Tag
 } from 'lucide-react';
 
-type WorkflowStep = 'mode' | 'customer' | 'item' | 'valuation' | 'deal' | 'completion';
+export type WorkflowStep = 'mode' | 'customer' | 'item' | 'valuation' | 'location' | 'deal' | 'completion';
+export type TxType = 'existing' | 'buy' | 'pawn' | null;
 
 const SellerHistoryDisplay: React.FC<{ sellerId: string }> = ({ sellerId }) => {
   const { getSellerTransactions } = useSellers();
@@ -47,19 +51,19 @@ const SellerHistoryDisplay: React.FC<{ sellerId: string }> = ({ sellerId }) => {
   if (history.length === 0) return null;
 
   return (
-    <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-2xl p-6">
+    <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs">
       <div className="flex items-center gap-2 mb-4">
-        <History className="w-4 h-4 text-emerald-400" />
-        <h5 className="text-[10px] font-black text-white uppercase tracking-widest">Previous Seller History</h5>
+        <History className="w-4 h-4 text-[#C85A32]" />
+        <h5 className="text-xs font-semibold text-gray-800">Previous Seller Transactions</h5>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-3 divide-y divide-gray-100">
         {history.map(tx => (
-          <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+          <div key={tx.id} className="flex items-center justify-between pt-2.5 first:pt-0">
             <div>
-              <p className="text-xs font-bold text-gray-200">{tx.itemTitle}</p>
-              <p className="text-[9px] text-gray-500 font-mono">{new Date(tx.timestamp).toLocaleDateString()}</p>
+              <p className="text-xs font-medium text-gray-800">{tx.itemTitle}</p>
+              <p className="text-[11px] text-gray-400 font-mono">{new Date(tx.timestamp).toLocaleDateString()}</p>
             </div>
-            <span className="text-xs font-black text-white font-mono">R {tx.amountPaid.toLocaleString()}</span>
+            <span className="text-xs font-bold text-gray-900 font-mono">R {tx.amountPaid.toLocaleString()}</span>
           </div>
         ))}
       </div>
@@ -76,11 +80,11 @@ export const BuyPawn: React.FC = () => {
   const { sellers, addSeller, addSellerTransaction } = useSellers();
   const { addSapsEntry } = useSaps();
 
-  // State
+  // Primary Workflow State
   const [step, setStep] = useState<WorkflowStep>('mode');
-  const [txType, setTxType] = useState<'buy' | 'pawn' | null>(null);
-  
-  // Step 1: Identity State
+  const [txType, setTxType] = useState<TxType>(null);
+
+  // Identity State (Buy / Pawn only)
   const [identitySearch, setIdentitySearch] = useState('');
   const [selectedIdentity, setSelectedIdentity] = useState<Customer | Seller | null>(null);
   const [isCreatingIdentity, setIsCreatingIdentity] = useState(false);
@@ -89,25 +93,31 @@ export const BuyPawn: React.FC = () => {
     idNumber: '',
     mobile: '',
     address: '',
-    idType: 'RSA Smart ID' as any
+    idType: 'RSA Smart ID' as 'RSA Smart ID' | 'Green ID Book' | 'Passport'
   });
 
-  // Step 2: Item State
+  // Item Details State (Common to all flows)
   const [itemData, setItemData] = useState({
     title: '',
-    category: 'Phones & Tech' as any,
+    category: 'Phones & Tech' as InventoryItem['category'],
     brand: '',
     model: '',
     serialOrImei: '',
     condition: 'Good' as ItemCondition,
-    imageUrl: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&q=80&w=300&h=300'
+    imageUrl: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&q=80&w=300&h=300',
+    stockLocation: 'Main Floor Display',
+    internalNote: '',
+    sourceNote: 'Item was already owned by the shop before LocalMarket onboarding'
   });
 
-  // Step 3: Valuation State
-  const [agreedOffer, setAgreedOffer] = useState<number>(0);
+  // Valuation & Pricing State
+  const [agreedOffer, setAgreedOffer] = useState<number>(0); // Payout / Principal
+  const [costBasisInput, setCostBasisInput] = useState<string>('0');
+  const [retailPriceInput, setRetailPriceInput] = useState<string>('0');
   const [suggestedRetail, setSuggestedRetail] = useState<number>(0);
+  const [existingStockStatus, setExistingStockStatus] = useState<ItemStatus>('Retail Floor');
 
-  // Step 4: Completion State
+  // Completion Result State
   const [result, setResult] = useState<{
     assetTag: string;
     ticketNumber?: string;
@@ -123,7 +133,7 @@ export const BuyPawn: React.FC = () => {
     const totalRedemption = agreedOffer + interest + adminFee;
     const expiry = new Date();
     expiry.setDate(expiry.getDate() + businessRules.defaultLoanTermDays);
-    
+
     return {
       interest,
       adminFee,
@@ -132,109 +142,370 @@ export const BuyPawn: React.FC = () => {
     };
   }, [txType, agreedOffer, businessRules]);
 
+  // Dynamic Stepper Configuration
+  const workflowSteps = useMemo(() => {
+    if (txType === 'existing') {
+      return [
+        { id: 'mode', label: 'Intake Type' },
+        { id: 'item', label: 'Item Details' },
+        { id: 'valuation', label: 'Retail Price' },
+        { id: 'location', label: 'Stock Location' }
+      ];
+    }
+    if (txType === 'buy') {
+      return [
+        { id: 'mode', label: 'Intake Type' },
+        { id: 'customer', label: 'Seller Info' },
+        { id: 'item', label: 'Item Details' },
+        { id: 'valuation', label: 'Valuation' },
+        { id: 'deal', label: 'Deal Review' }
+      ];
+    }
+    if (txType === 'pawn') {
+      return [
+        { id: 'mode', label: 'Intake Type' },
+        { id: 'customer', label: 'Customer Info' },
+        { id: 'item', label: 'Item Details' },
+        { id: 'valuation', label: 'Loan Terms' },
+        { id: 'deal', label: 'Pledge Terms' }
+      ];
+    }
+    return [
+      { id: 'mode', label: 'Intake Type' },
+      { id: 'item', label: 'Details' },
+      { id: 'valuation', label: 'Pricing' }
+    ];
+  }, [txType]);
+
+  const currentStepIndex = useMemo(() => {
+    const idx = workflowSteps.findIndex(s => s.id === step);
+    return idx >= 0 ? idx : 0;
+  }, [workflowSteps, step]);
+
   // Handlers
+  const handleSelectTxType = (type: 'existing' | 'buy' | 'pawn') => {
+    setTxType(type);
+    setSelectedIdentity(null);
+    setIsCreatingIdentity(false);
+
+    if (type === 'existing') {
+      // Existing stock skips identity verification completely
+      setStep('item');
+    } else {
+      setStep('customer');
+    }
+  };
+
   const handleNext = () => {
-    if (step === 'mode') setStep('customer');
-    else if (step === 'customer') {
+    if (step === 'mode') {
+      // should select via card
+      return;
+    }
+
+    if (step === 'customer') {
       if (!selectedIdentity) {
-        showToast(`${txType === 'buy' ? 'Seller' : 'Customer'} Required`, `Please select or create a ${txType === 'buy' ? 'seller' : 'customer'} first`, 'amber');
+        showToast(
+          `${txType === 'buy' ? 'Seller' : 'Customer'} Required`,
+          `Please select or create a ${txType === 'buy' ? 'seller' : 'customer'} record before proceeding`,
+          'amber'
+        );
         return;
       }
       setStep('item');
+      return;
     }
-    else if (step === 'item') {
-      if (!itemData.title) {
-        showToast('Details Missing', 'Item title is required', 'amber');
+
+    if (step === 'item') {
+      if (!itemData.title.trim()) {
+        showToast('Title Required', 'Please enter an item description or title', 'amber');
         return;
       }
-      // Calculate suggested valuation
-      const base = itemData.category === 'Fine Jewelry & Gold' ? 2000 : 1000;
-      setAgreedOffer(base);
-      setSuggestedRetail(roundRetailPrice(base * businessRules.defaultRetailMarkupMultiplier, businessRules.retailRoundingMode));
-      setStep('valuation');
+
+      if (txType === 'existing') {
+        // Suggested retail placeholder if not set
+        if (Number(retailPriceInput) === 0) {
+          const defaultPrice = itemData.category === 'Fine Jewelry & Gold' ? 3500 : 1500;
+          setRetailPriceInput(String(defaultPrice));
+          setCostBasisInput(String(Math.round(defaultPrice * 0.5)));
+        }
+        setStep('valuation');
+      } else {
+        // Buy or Pawn valuation suggestion
+        const base = itemData.category === 'Fine Jewelry & Gold' ? 2000 : 1000;
+        setAgreedOffer(base);
+        setSuggestedRetail(roundRetailPrice(base * businessRules.defaultRetailMarkupMultiplier, businessRules.retailRoundingMode));
+        setStep('valuation');
+      }
+      return;
     }
-    else if (step === 'valuation') setStep('deal');
+
+    if (step === 'valuation') {
+      if (txType === 'existing') {
+        const retailVal = parseFloat(retailPriceInput);
+        if (isNaN(retailVal) || retailVal <= 0) {
+          showToast('Invalid Price', 'Please enter a valid retail selling price', 'amber');
+          return;
+        }
+        setStep('location');
+      } else {
+        if (agreedOffer <= 0) {
+          showToast('Invalid Offer', 'Please specify a negotiated offer amount', 'amber');
+          return;
+        }
+        setStep('deal');
+      }
+      return;
+    }
+
+    if (step === 'location') {
+      // Finalize Existing Stock
+      handleFinalizeExistingStock();
+      return;
+    }
   };
 
   const handleBack = () => {
-    if (step === 'customer') setStep('mode');
-    else if (step === 'item') setStep('customer');
-    else if (step === 'valuation') setStep('item');
-    else if (step === 'deal') setStep('valuation');
+    if (step === 'customer') {
+      setStep('mode');
+      setTxType(null);
+    } else if (step === 'item') {
+      if (txType === 'existing') {
+        setStep('mode');
+        setTxType(null);
+      } else {
+        setStep('customer');
+      }
+    } else if (step === 'valuation') {
+      setStep('item');
+    } else if (step === 'location') {
+      setStep('valuation');
+    } else if (step === 'deal') {
+      setStep('valuation');
+    }
   };
 
   const selectIdentity = (identity: Customer | Seller) => {
     setSelectedIdentity(identity);
     setIsCreatingIdentity(false);
-    showToast(`${txType === 'buy' ? 'Seller' : 'Customer'} Verified`, `${identity.fullName} selected`, 'success');
+    showToast(`${txType === 'buy' ? 'Seller' : 'Customer'} Selected`, identity.fullName, 'success');
   };
 
   const handleCreateIdentity = async () => {
-    if (!newIdentity.fullName || !newIdentity.idNumber) {
-      showToast('Error', 'Full name and ID number are required', 'error');
+    if (!newIdentity.fullName.trim() || !newIdentity.idNumber.trim()) {
+      showToast('Validation Error', 'Full name and ID number are required', 'error');
       return;
     }
 
     if (txType === 'buy') {
       const id = await addSeller({
-        ...newIdentity,
+        fullName: newIdentity.fullName.trim(),
+        idNumber: newIdentity.idNumber.trim(),
+        idType: newIdentity.idType,
+        mobile: newIdentity.mobile.trim(),
+        address: newIdentity.address.trim(),
         verified: true
       });
-      const created = { ...newIdentity, id, createdAt: new Date().toISOString(), verified: true } as Seller;
+      const created: Seller = {
+        id,
+        fullName: newIdentity.fullName.trim(),
+        idNumber: newIdentity.idNumber.trim(),
+        idType: newIdentity.idType,
+        mobile: newIdentity.mobile.trim(),
+        address: newIdentity.address.trim(),
+        createdAt: new Date().toISOString(),
+        verified: true
+      };
       setSelectedIdentity(created);
     } else {
+      // Pawn customer: honest values without fake DOB or fake gender
       const id = await addCustomer({
-        ...newIdentity,
-        dob: '1990-01-01', // Placeholder
-        gender: 'Other', // Placeholder
+        fullName: newIdentity.fullName.trim(),
+        idNumber: newIdentity.idNumber.trim(),
+        idType: newIdentity.idType,
+        mobile: newIdentity.mobile.trim(),
+        address: newIdentity.address.trim(),
         verified: true
       });
-      const created = { ...newIdentity, id, createdAt: new Date().toISOString(), verified: true, dob: '1990-01-01', gender: 'Other' } as Customer;
+      const created: Customer = {
+        id,
+        fullName: newIdentity.fullName.trim(),
+        idNumber: newIdentity.idNumber.trim(),
+        idType: newIdentity.idType,
+        mobile: newIdentity.mobile.trim(),
+        address: newIdentity.address.trim(),
+        createdAt: new Date().toISOString(),
+        verified: true
+      };
       setSelectedIdentity(created);
     }
-    
+
     setIsCreatingIdentity(false);
     showToast(`${txType === 'buy' ? 'Seller' : 'Customer'} Created`, newIdentity.fullName, 'success');
   };
 
+  // 1. FINALISE EXISTING STOCK (No Seller, No Customer, No SAPS Form 21, No Pawn Loan)
+  const handleFinalizeExistingStock = async () => {
+    const sku = `LM-${Math.floor(Math.random() * 90000 + 10000)}`;
+    const costBasisNum = parseFloat(costBasisInput) || 0;
+    const retailPriceNum = parseFloat(retailPriceInput) || 0;
+
+    const newItemPayload: Omit<InventoryItem, 'id' | 'addedAt'> = {
+      sku,
+      title: itemData.title.trim(),
+      category: itemData.category,
+      brand: itemData.brand.trim() || undefined,
+      model: itemData.model.trim() || undefined,
+      serialOrImei: itemData.serialOrImei.trim() || 'N/A',
+      condition: itemData.condition,
+      acquisitionType: 'Existing Stock',
+      costBasis: costBasisNum,
+      retailPrice: retailPriceNum,
+      status: existingStockStatus,
+      stockLocation: itemData.stockLocation.trim() || 'Main Floor Display',
+      imageUrl: itemData.imageUrl,
+      specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
+      sourceType: 'existing_stock',
+      sourceStatus: 'unknown',
+      sourceNote: itemData.sourceNote || 'Item was already owned by the shop before LocalMarket onboarding',
+      internalNote: itemData.internalNote.trim() || undefined
+    };
+
+    const itemId = await addItem(newItemPayload);
+
+    const createdItem: InventoryItem = {
+      id: itemId,
+      addedAt: new Date().toISOString(),
+      ...newItemPayload
+    };
+
+    setResult({
+      assetTag: sku,
+      item: createdItem
+    });
+
+    setStep('completion');
+    showToast('Stock Added', `${createdItem.title} added to ${existingStockStatus}`, 'success');
+  };
+
+  // 2. FINALISE BUY FROM PERSON OR PAWN (Real Identities, Compliance & Transactions)
   const handleFinalize = async () => {
     if (!selectedIdentity || !txType) return;
 
-    const sku = `SKU-${Math.floor(Math.random() * 90000 + 10000)}`;
-    
-    // 1. Create Inventory Item
-    const itemId = await addItem({
-      sku,
-      title: itemData.title,
-      category: itemData.category,
-      serialOrImei: itemData.serialOrImei,
-      condition: itemData.condition,
-      acquisitionType: txType === 'buy' ? 'Buy' : 'Pawn',
-      costBasis: agreedOffer,
-      retailPrice: txType === 'buy' ? suggestedRetail : Math.round(agreedOffer * 1.85),
-      status: txType === 'buy' ? 'Retail Floor' : 'Vault Hold',
-      imageUrl: itemData.imageUrl,
-      specs: `${itemData.brand} ${itemData.model}`,
-      vaultLocation: txType === 'pawn' ? businessRules.defaultVaultShelf : undefined
-    });
+    const sku = `LM-${Math.floor(Math.random() * 90000 + 10000)}`;
 
-    const item = { 
-      id: itemId, 
-      sku, 
-      ...itemData, 
-      acquisitionType: txType === 'buy' ? 'Buy' : 'Pawn',
-      costBasis: agreedOffer,
-      retailPrice: txType === 'buy' ? suggestedRetail : Math.round(agreedOffer * 1.85),
-      status: txType === 'buy' ? 'Retail Floor' : 'Vault Hold',
-      addedAt: new Date().toISOString()
-    } as InventoryItem;
+    if (txType === 'buy') {
+      const seller = selectedIdentity as Seller;
 
-    let loan: PawnLoan | undefined;
+      const itemId = await addItem({
+        sku,
+        title: itemData.title,
+        category: itemData.category,
+        brand: itemData.brand || undefined,
+        model: itemData.model || undefined,
+        serialOrImei: itemData.serialOrImei || 'N/A',
+        condition: itemData.condition,
+        acquisitionType: 'Buy',
+        costBasis: agreedOffer,
+        retailPrice: suggestedRetail,
+        status: 'Retail Floor',
+        stockLocation: 'Retail Floor',
+        imageUrl: itemData.imageUrl,
+        specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
+        sourceType: 'seller',
+        sourceStatus: 'verified',
+        sourceNote: `Purchased from ${seller.fullName} (${seller.idNumber})`,
+        internalNote: itemData.internalNote || undefined
+      });
 
-    // 2. If Pawn, create Loan
+      const item: InventoryItem = {
+        id: itemId,
+        sku,
+        title: itemData.title,
+        category: itemData.category,
+        brand: itemData.brand || undefined,
+        model: itemData.model || undefined,
+        serialOrImei: itemData.serialOrImei || 'N/A',
+        condition: itemData.condition,
+        acquisitionType: 'Buy',
+        costBasis: agreedOffer,
+        retailPrice: suggestedRetail,
+        status: 'Retail Floor',
+        stockLocation: 'Retail Floor',
+        imageUrl: itemData.imageUrl,
+        specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
+        sourceType: 'seller',
+        sourceStatus: 'verified',
+        addedAt: new Date().toISOString()
+      };
+
+      // Record Statutory Seller Transaction
+      await addSellerTransaction({
+        sellerId: seller.id,
+        itemId,
+        itemSku: sku,
+        itemTitle: itemData.title,
+        amountPaid: agreedOffer,
+        timestamp: new Date().toISOString(),
+        sapsRef: sku
+      });
+
+      // Record SAPS Form 21 Entry
+      await addSapsEntry({
+        timestamp: new Date().toISOString(),
+        customerId: seller.id,
+        customerName: seller.fullName,
+        customerIdNumber: seller.idNumber,
+        customerAddress: seller.address,
+        customerPhone: seller.mobile,
+        itemDescription: itemData.title,
+        category: itemData.category,
+        serialOrImei: itemData.serialOrImei || 'N/A',
+        condition: itemData.condition,
+        acquisitionType: 'Buy',
+        considerationPaid: agreedOffer,
+        officerName: user?.user_metadata?.full_name || 'System Operator',
+        policeStationRef: shopProfile.saps_dealer_license,
+        verificationStatus: 'VERIFIED',
+        barcodeRef: sku
+      });
+
+      setResult({
+        assetTag: sku,
+        item
+      });
+
+      setStep('completion');
+      showToast('Purchase Complete', 'Item added to retail floor and logged to SAPS', 'success');
+      return;
+    }
+
     if (txType === 'pawn' && pawnCalculations) {
       const pCustomer = selectedIdentity as Customer;
       const ticketNumber = `PWN-${Math.floor(Math.random() * 9000 + 1000)}`;
+
+      const itemId = await addItem({
+        sku,
+        title: itemData.title,
+        category: itemData.category,
+        brand: itemData.brand || undefined,
+        model: itemData.model || undefined,
+        serialOrImei: itemData.serialOrImei || 'N/A',
+        condition: itemData.condition,
+        acquisitionType: 'Pawn',
+        costBasis: agreedOffer,
+        retailPrice: Math.round(agreedOffer * 1.85),
+        status: 'Vault Hold',
+        vaultLocation: businessRules.defaultVaultShelf,
+        stockLocation: businessRules.defaultVaultShelf,
+        pawnTicketId: ticketNumber,
+        imageUrl: itemData.imageUrl,
+        specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
+        sourceType: 'pawn',
+        sourceStatus: 'verified',
+        sourceNote: `Pawned by ${pCustomer.fullName} under Ticket ${ticketNumber}`,
+        internalNote: itemData.internalNote || undefined
+      });
+
       const loanId = await createLoan({
         ticketNumber,
         customerId: pCustomer.id,
@@ -245,7 +516,7 @@ export const BuyPawn: React.FC = () => {
         itemId: itemId,
         itemTitle: itemData.title,
         itemCategory: itemData.category,
-        serialOrImei: itemData.serialOrImei,
+        serialOrImei: itemData.serialOrImei || 'N/A',
         condition: itemData.condition,
         itemImageUrl: itemData.imageUrl,
         principal: agreedOffer,
@@ -265,62 +536,98 @@ export const BuyPawn: React.FC = () => {
           date: new Date().toISOString(),
           action: 'Created',
           amount: agreedOffer,
-          note: 'Loan initiated'
+          note: 'Pawn loan initiated'
         }]
       });
-      loan = { ...pawnCalculations, ...pCustomer, ...itemData, id: loanId, ticketNumber, status: 'Active' } as any;
-    }
 
-    // 3. Record SAPS Entry
-    await addSapsEntry({
-      timestamp: new Date().toISOString(),
-      customerId: selectedIdentity.id,
-      customerName: selectedIdentity.fullName,
-      customerIdNumber: selectedIdentity.idNumber,
-      customerAddress: selectedIdentity.address,
-      customerPhone: selectedIdentity.mobile,
-      itemDescription: itemData.title,
-      category: itemData.category,
-      serialOrImei: itemData.serialOrImei,
-      condition: itemData.condition,
-      acquisitionType: txType === 'buy' ? 'Buy' : 'Pawn',
-      considerationPaid: agreedOffer,
-      officerName: user?.user_metadata?.full_name || 'System Operator',
-      policeStationRef: shopProfile.saps_dealer_license,
-      verificationStatus: 'VERIFIED',
-      barcodeRef: sku
-    });
+      const item: InventoryItem = {
+        id: itemId,
+        sku,
+        title: itemData.title,
+        category: itemData.category,
+        serialOrImei: itemData.serialOrImei || 'N/A',
+        condition: itemData.condition,
+        acquisitionType: 'Pawn',
+        costBasis: agreedOffer,
+        retailPrice: Math.round(agreedOffer * 1.85),
+        status: 'Vault Hold',
+        vaultLocation: businessRules.defaultVaultShelf,
+        stockLocation: businessRules.defaultVaultShelf,
+        pawnTicketId: ticketNumber,
+        imageUrl: itemData.imageUrl,
+        addedAt: new Date().toISOString()
+      };
 
-    // 4. Record Seller Transaction if Buy
-    if (txType === 'buy') {
-      await addSellerTransaction({
-        sellerId: selectedIdentity.id,
+      const loan: PawnLoan = {
+        ...pawnCalculations,
+        id: loanId,
+        ticketNumber,
+        customerId: pCustomer.id,
+        customerName: pCustomer.fullName,
+        customerIdNumber: pCustomer.idNumber,
+        customerMobile: pCustomer.mobile,
+        customerAddress: pCustomer.address,
         itemId,
-        itemSku: sku,
         itemTitle: itemData.title,
-        amountPaid: agreedOffer,
-        timestamp: new Date().toISOString(),
-        sapsRef: sku // Using SKU as internal SAPS reference link
-      });
-    }
+        itemCategory: itemData.category,
+        serialOrImei: itemData.serialOrImei || 'N/A',
+        condition: itemData.condition,
+        itemImageUrl: itemData.imageUrl,
+        principal: agreedOffer,
+        ncrMonthlyRate: businessRules.pawnMonthlyInterestRate,
+        monthlyInterest: pawnCalculations.interest,
+        monthlyStorageAdminFee: pawnCalculations.adminFee,
+        totalRedemptionAmount: pawnCalculations.totalRedemption,
+        extensionFee: pawnCalculations.adminFee + pawnCalculations.interest,
+        startDate: new Date().toISOString().split('T')[0],
+        expiryDate: pawnCalculations.expiryDate,
+        daysRemaining: businessRules.defaultLoanTermDays,
+        daysElapsed: 0,
+        vaultShelf: businessRules.defaultVaultShelf,
+        status: 'Active',
+        qrToken: Math.random().toString(36).substring(7),
+        history: []
+      };
 
-    setResult({
-      assetTag: sku,
-      ticketNumber: loan?.ticketNumber,
-      item,
-      loan
-    });
-    setStep('completion');
-    showToast('Intake Complete', txType === 'buy' ? 'Item added to floor' : 'Loan created and item vaulted', 'success');
+      // Statutory SAPS Form 21 Entry
+      await addSapsEntry({
+        timestamp: new Date().toISOString(),
+        customerId: pCustomer.id,
+        customerName: pCustomer.fullName,
+        customerIdNumber: pCustomer.idNumber,
+        customerAddress: pCustomer.address,
+        customerPhone: pCustomer.mobile,
+        itemDescription: itemData.title,
+        category: itemData.category,
+        serialOrImei: itemData.serialOrImei || 'N/A',
+        condition: itemData.condition,
+        acquisitionType: 'Pawn',
+        considerationPaid: agreedOffer,
+        officerName: user?.user_metadata?.full_name || 'System Operator',
+        policeStationRef: shopProfile.saps_dealer_license,
+        verificationStatus: 'VERIFIED',
+        barcodeRef: sku
+      });
+
+      setResult({
+        assetTag: sku,
+        ticketNumber,
+        item,
+        loan
+      });
+
+      setStep('completion');
+      showToast('Pawn Finalized', `Ticket ${ticketNumber} created and asset vaulted`, 'success');
+    }
   };
 
   const filteredIdentities = useMemo(() => {
     if (!identitySearch) return [];
     const q = identitySearch.toLowerCase();
     const source = txType === 'buy' ? sellers : customers;
-    return source.filter(c => 
-      c.fullName.toLowerCase().includes(q) || 
-      c.idNumber.includes(q) || 
+    return source.filter(c =>
+      c.fullName.toLowerCase().includes(q) ||
+      c.idNumber.includes(q) ||
       c.mobile.includes(q)
     ).slice(0, 5);
   }, [txType, customers, sellers, identitySearch]);
@@ -331,6 +638,9 @@ export const BuyPawn: React.FC = () => {
     setSelectedIdentity(null);
     setIsCreatingIdentity(false);
     setAgreedOffer(0);
+    setCostBasisInput('0');
+    setRetailPriceInput('0');
+    setExistingStockStatus('Retail Floor');
     setResult(null);
     setItemData({
       title: '',
@@ -339,266 +649,390 @@ export const BuyPawn: React.FC = () => {
       model: '',
       serialOrImei: '',
       condition: 'Good',
-      imageUrl: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&q=80&w=300&h=300'
+      imageUrl: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&q=80&w=300&h=300',
+      stockLocation: 'Main Floor Display',
+      internalNote: '',
+      sourceNote: 'Item was already owned by the shop before LocalMarket onboarding'
     });
   };
 
-  // UI Components
-  const ProgressBar = () => (
-    <div className="flex items-center gap-2 mb-8 px-2">
-      {['Mode', txType === 'buy' ? 'Seller' : 'Customer', 'Item', 'Valuation', 'Deal'].map((s, i) => {
-        const stepMap: Record<WorkflowStep, number> = { mode: 0, customer: 1, item: 2, valuation: 3, deal: 4, completion: 5 };
-        const isActive = stepMap[step] === i;
-        const isPast = stepMap[step] > i;
-        return (
-          <React.Fragment key={s}>
-            <div className={`flex items-center gap-2 ${isActive ? 'text-[#E87A5D]' : isPast ? 'text-emerald-500' : 'text-gray-600'}`}>
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black border ${
-                isActive ? 'border-[#C85A32] bg-[#C85A32]/10' : isPast ? 'border-emerald-500 bg-emerald-500/10' : 'border-gray-700 bg-transparent'
-              }`}>
-                {isPast ? <Check className="w-3 h-3" /> : i + 1}
-              </div>
-              <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">{s}</span>
-            </div>
-            {i < 4 && <div className={`flex-1 h-px ${isPast ? 'bg-emerald-500/30' : 'bg-gray-800'}`} />}
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
-
   return (
-    <div className="flex-1 flex flex-col bg-[#121212] overflow-hidden">
-      {/* Header */}
-      <div className="px-8 py-6 bg-[#1A1A1A] border-b border-[#2A2A2A] shrink-0">
+    <div className="flex-1 flex flex-col bg-[#F5F6F8] overflow-hidden">
+      {/* Header bar */}
+      <div className="px-8 py-5 bg-white border-b border-gray-200 shrink-0 shadow-xs">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#C85A32]/10 flex items-center justify-center text-[#E87A5D]">
-              <ShieldCheck className="w-6 h-6" />
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center font-bold">
+              <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-black text-white uppercase tracking-tight">Counter Intake</h2>
-              <p className="text-xs text-gray-500 uppercase font-bold tracking-widest">Statutory Buy & Pawn Workflow</p>
+              <h2 className="text-base font-bold text-gray-900 leading-tight">Add Stock & Intake Hub</h2>
+              <p className="text-xs text-gray-500">
+                {txType === 'existing'
+                  ? 'Adding existing store inventory (No seller record required)'
+                  : txType === 'buy'
+                  ? 'Purchasing second-hand goods from outright seller'
+                  : txType === 'pawn'
+                  ? 'Issuing secured pledge loan under NCR Act 34'
+                  : 'Select the intake source to begin'}
+              </p>
             </div>
           </div>
           {step !== 'mode' && step !== 'completion' && (
-            <button onClick={resetWorkflow} className="p-2 text-gray-500 hover:text-white transition">
-              <X className="w-5 h-5" />
+            <button
+              onClick={resetWorkflow}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Cancel Intake</span>
             </button>
           )}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8 no-scrollbar">
+      <div className="flex-1 overflow-y-auto p-6 md:p-8 no-scrollbar">
         <div className="max-w-4xl mx-auto">
-          {step !== 'completion' && <ProgressBar />}
+          {/* Progress Indicator */}
+          {step !== 'completion' && step !== 'mode' && (
+            <div className="flex items-center gap-2 mb-8 px-2">
+              {workflowSteps.map((s, i) => {
+                const isActive = i === currentStepIndex;
+                const isPast = i < currentStepIndex;
+                return (
+                  <React.Fragment key={s.id}>
+                    <div className={`flex items-center gap-2 ${isActive ? 'text-[#C85A32]' : isPast ? 'text-emerald-600' : 'text-gray-400'}`}>
+                      <div
+                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border transition ${
+                          isActive
+                            ? 'border-[#C85A32] bg-[#FDF0EA] text-[#C85A32]'
+                            : isPast
+                            ? 'border-emerald-600 bg-emerald-50 text-emerald-600'
+                            : 'border-gray-300 bg-white text-gray-400'
+                        }`}
+                      >
+                        {isPast ? <Check className="w-3 h-3 stroke-[3]" /> : i + 1}
+                      </div>
+                      <span className="text-xs font-semibold hidden sm:inline">{s.label}</span>
+                    </div>
+                    {i < workflowSteps.length - 1 && (
+                      <div className={`flex-1 h-0.5 ${i < currentStepIndex ? 'bg-emerald-500' : 'bg-gray-200'}`} />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          )}
 
           <AnimatePresence mode="wait">
-            {/* START: MODE SELECTION */}
+            {/* ============================================================
+                STEP 0: INTAKE SELECTION (3 Distinct Options)
+               ============================================================ */}
             {step === 'mode' && (
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="grid grid-cols-1 md:grid-cols-2 gap-8 py-10"
+                exit={{ opacity: 0, scale: 0.98 }}
+                className="space-y-6 py-4"
               >
-                <button 
-                  onClick={() => { setTxType('buy'); handleNext(); }}
-                  className="group p-10 rounded-[2.5rem] bg-[#1A1A1A] border border-[#2A2A2A] hover:border-[#E87A5D]/50 transition-all text-left space-y-6 shadow-2xl"
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-[#E87A5D]/10 flex items-center justify-center text-[#E87A5D] group-hover:scale-110 transition-transform">
-                    <ShoppingBag className="w-8 h-8" />
-                  </div>
-                  <div>
-                    <h3 className="text-3xl font-black text-white uppercase tracking-tight">Buy Item</h3>
-                    <p className="text-gray-500 text-sm mt-2 leading-relaxed">Direct purchase for retail stock. Ownership transfers immediately. Best for high-demand consumer electronics and tools.</p>
-                  </div>
-                  <div className="flex items-center gap-2 text-[10px] font-black text-[#E87A5D] uppercase tracking-[0.2em] pt-4">
-                    <span>Start Purchase Flow</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </div>
-                </button>
+                <div className="text-center max-w-xl mx-auto mb-6">
+                  <h3 className="text-2xl font-bold text-gray-900 tracking-tight">How is this item being acquired?</h3>
+                  <p className="text-sm text-gray-500 mt-1.5">
+                    Select the intake pathway below. Existing store stock does not require seller identification.
+                  </p>
+                </div>
 
-                <button 
-                  onClick={() => { setTxType('pawn'); handleNext(); }}
-                  className="group p-10 rounded-[2.5rem] bg-[#1A1A1A] border border-[#2A2A2A] hover:border-blue-500/50 transition-all text-left space-y-6 shadow-2xl"
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
-                    <Lock className="w-8 h-8" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* OPTION 1: EXISTING STOCK */}
+                  <div
+                    onClick={() => handleSelectTxType('existing')}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectTxType('existing'); }}
+                    className="p-7 rounded-2xl bg-white border-2 border-gray-200 hover:border-[#C85A32] transition-all text-left space-y-5 shadow-xs hover:shadow-md cursor-pointer group flex flex-col justify-between"
+                  >
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="w-12 h-12 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
+                          <Package className="w-6 h-6" />
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Shop Owned
+                        </span>
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
+                          Existing Stock
+                        </h4>
+                        <p className="text-xs font-medium text-gray-500 mt-0.5">
+                          Already owned by the shop
+                        </p>
+                        <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
+                          Items already in your store prior to onboarding, retail restock, or supplier merchandise. No seller or customer ID needed.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#C85A32] pt-4 border-t border-gray-100">
+                      <span>Add Existing Stock</span>
+                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-3xl font-black text-white uppercase tracking-tight">Pawn Item</h3>
-                    <p className="text-gray-500 text-sm mt-2 leading-relaxed">30-day collateralized loan. Item is vaulted. Subject to NCR Act 34. Customer retains right of redemption.</p>
+
+                  {/* OPTION 2: BUY FROM PERSON */}
+                  <div
+                    onClick={() => handleSelectTxType('buy')}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectTxType('buy'); }}
+                    className="p-7 rounded-2xl bg-white border-2 border-gray-200 hover:border-[#C85A32] transition-all text-left space-y-5 shadow-xs hover:shadow-md cursor-pointer group flex flex-col justify-between"
+                  >
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="w-12 h-12 rounded-xl bg-orange-50 text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
+                          <ShoppingBag className="w-6 h-6" />
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-blue-50 text-blue-700 border border-blue-200">
+                          SHG Act 06
+                        </span>
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
+                          Buy From Person
+                        </h4>
+                        <p className="text-xs font-medium text-gray-500 mt-0.5">
+                          Purchase an item from a seller
+                        </p>
+                        <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
+                          Outright purchase from an individual. Verifies RSA ID or Passport, logs Form 21 register, and creates seller ledger.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#C85A32] pt-4 border-t border-gray-100">
+                      <span>Start Seller Purchase</span>
+                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] pt-4">
-                    <span>Start Pawn Flow</span>
-                    <ArrowRight className="w-4 h-4" />
+
+                  {/* OPTION 3: PAWN */}
+                  <div
+                    onClick={() => handleSelectTxType('pawn')}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectTxType('pawn'); }}
+                    className="p-7 rounded-2xl bg-white border-2 border-gray-200 hover:border-[#C85A32] transition-all text-left space-y-5 shadow-xs hover:shadow-md cursor-pointer group flex flex-col justify-between"
+                  >
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                          <Lock className="w-6 h-6" />
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-purple-50 text-purple-700 border border-purple-200">
+                          NCR Act 34
+                        </span>
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
+                          Pawn
+                        </h4>
+                        <p className="text-xs font-medium text-gray-500 mt-0.5">
+                          Collateral for a loan
+                        </p>
+                        <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
+                          30-day secured credit agreement. Item vaulted securely. Customer retains statutory redemption rights.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 pt-4 border-t border-gray-100">
+                      <span>Start Pawn Loan</span>
+                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                    </div>
                   </div>
-                </button>
+                </div>
               </motion.div>
             )}
 
-            {/* STEP 1: IDENTITY */}
+            {/* ============================================================
+                STEP 1: IDENTITY (BUY OR PAWN ONLY)
+               ============================================================ */}
             {step === 'customer' && (
               <motion.div
-                initial={{ opacity: 0, x: 20 }}
+                initial={{ opacity: 0, x: 15 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-8"
+                exit={{ opacity: 0, x: -15 }}
+                className="space-y-6"
               >
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-12 h-12 rounded-2xl bg-[#C85A32]/10 flex items-center justify-center text-[#E87A5D]">
-                    <IdCard className="w-6 h-6" />
+                <div className="flex items-center gap-3.5 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center font-bold">
+                    <IdCard className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-white uppercase tracking-tight">
+                    <h3 className="text-lg font-bold text-gray-900">
                       {txType === 'buy' ? 'Seller' : 'Customer'} Identification
                     </h3>
-                    <p className="text-xs text-gray-500 uppercase font-bold tracking-widest">
-                      Compliance Requirement: Second Hand Goods Act
+                    <p className="text-xs text-gray-500">
+                      {txType === 'buy' ? 'Second-Hand Goods Act Form 21 Compliance' : 'NCR Act 34 Regulated Borrower Record'}
                     </p>
                   </div>
                 </div>
 
                 {!selectedIdentity && !isCreatingIdentity && (
-                  <div className="space-y-6">
+                  <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs space-y-6">
                     <div className="relative">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                      <input 
-                        type="text" 
-                        placeholder={`SEARCH PREVIOUS ${txType === 'buy' ? 'SELLERS' : 'CUSTOMERS'}...`}
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder={`Search previous ${txType === 'buy' ? 'sellers' : 'customers'} by name, ID number, or phone...`}
                         value={identitySearch}
                         onChange={e => setIdentitySearch(e.target.value)}
-                        className="w-full bg-[#1A1A1A] border-2 border-[#2A2A2A] rounded-2xl pl-12 pr-4 py-4 text-white font-mono focus:border-[#C85A32] outline-none"
+                        className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl pl-10 pr-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-[#C85A32] focus:bg-white focus:ring-2 focus:ring-[#C85A32]/10 transition-all"
                         autoFocus
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-1 gap-2.5">
                       {filteredIdentities.length > 0 && (
-                        <div className="mb-2">
-                          <p className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em] mb-2 px-1">
-                            Previous {txType === 'buy' ? 'seller' : 'customer'} found
-                          </p>
-                        </div>
+                        <p className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider px-1">
+                          Previous {txType === 'buy' ? 'seller' : 'customer'} found:
+                        </p>
                       )}
                       {filteredIdentities.map(c => (
-                        <button 
-                          key={c.id} 
+                        <button
+                          key={c.id}
                           onClick={() => selectIdentity(c)}
-                          className="p-4 rounded-2xl bg-[#1A1A1A] border border-[#2A2A2A] hover:border-[#C85A32] transition flex items-center justify-between group"
+                          className="p-3.5 rounded-xl bg-gray-50 border border-gray-200 hover:border-[#C85A32] hover:bg-[#FDF0EA]/20 transition flex items-center justify-between group"
                         >
-                          <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-xl bg-gray-800 flex items-center justify-center text-gray-400 font-bold uppercase">
+                          <div className="flex items-center gap-3.5">
+                            <div className="w-9 h-9 rounded-xl bg-gray-200 text-gray-700 flex items-center justify-center font-bold text-xs uppercase">
                               {c.fullName.charAt(0)}
                             </div>
                             <div className="text-left">
-                              <p className="text-sm font-bold text-white">{c.fullName}</p>
-                              <p className="text-[10px] text-gray-500 font-mono">{c.idNumber}</p>
+                              <p className="text-sm font-semibold text-gray-900">{c.fullName}</p>
+                              <p className="text-xs text-gray-500 font-mono">{c.idNumber} · {c.mobile}</p>
                             </div>
                           </div>
-                          <ChevronRight className="w-4 h-4 text-gray-700 group-hover:text-[#E87A5D]" />
+                          <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-[#C85A32]" />
                         </button>
                       ))}
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-gray-800">
-                      <button 
+                    <div className="pt-2 border-t border-gray-100 flex flex-col sm:flex-row gap-3">
+                      <button
                         onClick={() => setIsCreatingIdentity(true)}
-                        className="flex-1 p-6 rounded-[2rem] bg-[#1A1A1A] border-2 border-dashed border-[#333] hover:border-[#C85A32]/50 transition flex flex-col items-center gap-3 text-gray-400 hover:text-white"
+                        className="flex-1 py-3 px-4 rounded-xl border border-dashed border-gray-300 hover:border-[#C85A32] hover:bg-[#FDF0EA]/20 text-gray-600 hover:text-[#C85A32] transition flex items-center justify-center gap-2 text-xs font-semibold"
                       >
-                        <UserPlus className="w-8 h-8" />
-                        <span className="text-[10px] font-black uppercase tracking-widest">Manual New Entry</span>
+                        <UserPlus className="w-4 h-4" />
+                        <span>Create New {txType === 'buy' ? 'Seller' : 'Customer'} Record</span>
                       </button>
                     </div>
                   </div>
                 )}
 
+                {/* CREATE NEW IDENTITY FORM */}
                 {isCreatingIdentity && (
-                  <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-3xl p-8 space-y-6">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-black text-white uppercase tracking-widest">
+                  <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs space-y-5">
+                    <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                      <h4 className="text-sm font-bold text-gray-900">
                         New {txType === 'buy' ? 'Seller' : 'Customer'} Record
                       </h4>
-                      <button onClick={() => setIsCreatingIdentity(false)} className="text-xs text-gray-500 hover:text-white">Cancel</button>
+                      <button onClick={() => setIsCreatingIdentity(false)} className="text-xs text-gray-500 hover:text-gray-900 font-medium">
+                        Cancel
+                      </button>
                     </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">ID Type</label>
-                        <select 
+                        <label className="text-xs font-medium text-gray-600">ID Document Type</label>
+                        <select
                           value={newIdentity.idType}
-                          onChange={e => setNewIdentity({...newIdentity, idType: e.target.value as any})}
-                          className="w-full bg-[#121212] border border-[#2A2A2A] rounded-xl px-4 py-3 text-white focus:border-[#C85A32] outline-none"
+                          onChange={e => setNewIdentity({ ...newIdentity, idType: e.target.value as any })}
+                          className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs text-gray-800 focus:outline-none focus:border-[#C85A32]"
                         >
                           <option>RSA Smart ID</option>
                           <option>Green ID Book</option>
                           <option>Passport</option>
                         </select>
                       </div>
+
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">RSA ID / Passport Number</label>
-                        <input 
-                          type="text" 
+                        <label className="text-xs font-medium text-gray-600">ID / Passport Number</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 890412 5240 08 8"
                           value={newIdentity.idNumber}
-                          onChange={e => setNewIdentity({...newIdentity, idNumber: e.target.value})}
-                          className="w-full bg-[#121212] border border-[#2A2A2A] rounded-xl px-4 py-3 text-white font-mono focus:border-[#C85A32] outline-none"
+                          onChange={e => setNewIdentity({ ...newIdentity, idNumber: e.target.value })}
+                          className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 font-mono focus:outline-none focus:border-[#C85A32]"
                         />
                       </div>
+
                       <div className="sm:col-span-2 space-y-1">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Legal Full Name</label>
-                        <input 
-                          type="text" 
+                        <label className="text-xs font-medium text-gray-600">Full Legal Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Siyabonga Mthembu"
                           value={newIdentity.fullName}
-                          onChange={e => setNewIdentity({...newIdentity, fullName: e.target.value})}
-                          className="w-full bg-[#121212] border border-[#2A2A2A] rounded-xl px-4 py-3 text-white focus:border-[#C85A32] outline-none"
+                          onChange={e => setNewIdentity({ ...newIdentity, fullName: e.target.value })}
+                          className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 focus:outline-none focus:border-[#C85A32]"
                         />
                       </div>
+
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Mobile Number</label>
-                        <input 
-                          type="text" 
+                        <label className="text-xs font-medium text-gray-600">Mobile Phone</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. +27 72 419 8023"
                           value={newIdentity.mobile}
-                          onChange={e => setNewIdentity({...newIdentity, mobile: e.target.value})}
-                          className="w-full bg-[#121212] border border-[#2A2A2A] rounded-xl px-4 py-3 text-white focus:border-[#C85A32] outline-none"
+                          onChange={e => setNewIdentity({ ...newIdentity, mobile: e.target.value })}
+                          className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 focus:outline-none focus:border-[#C85A32]"
                         />
                       </div>
+
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Address</label>
-                        <input 
-                          type="text" 
+                        <label className="text-xs font-medium text-gray-600">Physical Residential Address</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 1428 Zone 4, Soweto"
                           value={newIdentity.address}
-                          onChange={e => setNewIdentity({...newIdentity, address: e.target.value})}
-                          className="w-full bg-[#121212] border border-[#2A2A2A] rounded-xl px-4 py-3 text-white focus:border-[#C85A32] outline-none"
+                          onChange={e => setNewIdentity({ ...newIdentity, address: e.target.value })}
+                          className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 focus:outline-none focus:border-[#C85A32]"
                         />
                       </div>
                     </div>
 
-                    <button 
+                    <button
                       onClick={handleCreateIdentity}
-                      className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 hover:bg-emerald-500 transition"
+                      className="w-full py-3 bg-[#C85A32] text-white rounded-xl font-semibold text-xs hover:bg-[#A94725] transition shadow-xs"
                     >
-                      Verify & Create Record
+                      Save & Verify Identity
                     </button>
                   </div>
                 )}
 
+                {/* SELECTED IDENTITY DISPLAY */}
                 {selectedIdentity && (
                   <div className="space-y-4">
-                    <div className="p-8 rounded-[2rem] bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                          <CheckCircle2 className="w-8 h-8" />
+                    <div className="p-5 rounded-2xl bg-white border-2 border-emerald-500/40 shadow-xs flex items-center justify-between">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                          <CheckCircle2 className="w-6 h-6" />
                         </div>
                         <div>
-                          <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">
-                            Verified {txType === 'buy' ? 'Seller' : 'Customer'}
-                          </p>
-                          <h4 className="text-xl font-bold text-white">{selectedIdentity.fullName}</h4>
-                          <p className="text-xs text-gray-500 font-mono mt-0.5">{selectedIdentity.idNumber}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded">
+                              Verified {txType === 'buy' ? 'Seller' : 'Customer'}
+                            </span>
+                          </div>
+                          <h4 className="text-base font-bold text-gray-900 mt-0.5">{selectedIdentity.fullName}</h4>
+                          <p className="text-xs text-gray-500 font-mono">{selectedIdentity.idNumber} · {selectedIdentity.mobile}</p>
                         </div>
                       </div>
-                      <button onClick={() => setSelectedIdentity(null)} className="text-xs text-gray-500 hover:text-white uppercase font-black tracking-widest">Change</button>
+                      <button
+                        onClick={() => setSelectedIdentity(null)}
+                        className="text-xs text-gray-500 hover:text-gray-900 font-semibold"
+                      >
+                        Change
+                      </button>
                     </div>
 
                     {txType === 'buy' && (
@@ -607,96 +1041,143 @@ export const BuyPawn: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex gap-4 pt-6">
-                  <button onClick={handleBack} className="flex items-center gap-2 px-6 py-4 text-gray-500 hover:text-white transition">
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={handleBack}
+                    className="flex items-center gap-1.5 px-5 py-3 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-100 transition text-xs font-semibold"
+                  >
                     <ChevronLeft className="w-4 h-4" />
-                    <span className="text-xs font-black uppercase tracking-widest">Back</span>
+                    <span>Back</span>
                   </button>
-                  <button 
+                  <button
                     onClick={handleNext}
                     disabled={!selectedIdentity}
-                    className="flex-1 py-4 bg-[#C85A32] disabled:bg-gray-800 disabled:text-gray-500 text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl shadow-[#C85A32]/20"
+                    className="flex-1 py-3 px-6 bg-[#C85A32] disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-xs hover:bg-[#A94725] transition"
                   >
-                    <span>Item Assessment</span>
+                    <span>Item Details</span>
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
               </motion.div>
             )}
 
-            {/* STEP 2: ITEM */}
+            {/* ============================================================
+                STEP 2: ITEM DETAILS (ALL FLOWS)
+               ============================================================ */}
             {step === 'item' && (
               <motion.div
-                initial={{ opacity: 0, x: 20 }}
+                initial={{ opacity: 0, x: 15 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-8"
+                exit={{ opacity: 0, x: -15 }}
+                className="space-y-6"
               >
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-12 h-12 rounded-2xl bg-[#C85A32]/10 flex items-center justify-center text-[#E87A5D]">
-                    <Barcode className="w-6 h-6" />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center font-bold">
+                      <Barcode className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900">Item Specifications</h3>
+                      <p className="text-xs text-gray-500">
+                        {txType === 'existing'
+                          ? 'Capture details for existing store merchandise'
+                          : txType === 'buy'
+                          ? 'Catalog item for direct purchase'
+                          : 'Register pawn loan collateral'}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-xl font-black text-white uppercase tracking-tight">Asset Capture</h3>
-                    <p className="text-xs text-gray-500 uppercase font-bold tracking-widest">Registering item to {txType === 'buy' ? 'Floor' : 'Vault'}</p>
-                  </div>
+                  {txType === 'existing' && (
+                    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Existing Stock Mode
+                    </span>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="lg:col-span-2 space-y-6">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Item Description (Primary Title)</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. iPhone 15 Pro 256GB - Blue Titanium" 
-                        value={itemData.title}
-                        onChange={e => setItemData({...itemData, title: e.target.value})}
-                        className="w-full bg-[#1A1A1A] border border-[#2A2A2A] rounded-2xl px-6 py-4 text-lg text-white focus:border-[#C85A32] outline-none"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-6">
+                <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2 space-y-4">
+                      {/* TITLE */}
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Category</label>
-                        <select 
-                          value={itemData.category}
-                          onChange={e => setItemData({...itemData, category: e.target.value as any})}
-                          className="w-full bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl px-4 py-3 text-white focus:border-[#C85A32] outline-none"
-                        >
-                          <option>Phones & Tech</option>
-                          <option>Power Tools</option>
-                          <option>Audio & Visual</option>
-                          <option>Fine Jewelry & Gold</option>
-                          <option>Gaming Consoles</option>
-                          <option>Appliances</option>
-                        </select>
+                        <label className="text-xs font-semibold text-gray-700">Item Description / Title *</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Samsung Galaxy S23 256GB - Phantom Black"
+                          value={itemData.title}
+                          onChange={e => setItemData({ ...itemData, title: e.target.value })}
+                          className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:border-[#C85A32] focus:bg-white"
+                          autoFocus
+                        />
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Serial / IMEI</label>
-                        <div className="relative">
-                          <input 
-                            type="text" 
+
+                      {/* CATEGORY & CONDITION */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-gray-700">Category *</label>
+                          <select
+                            value={itemData.category}
+                            onChange={e => setItemData({ ...itemData, category: e.target.value as any })}
+                            className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:border-[#C85A32]"
+                          >
+                            <option>Phones & Tech</option>
+                            <option>Power Tools</option>
+                            <option>Audio & Visual</option>
+                            <option>Fine Jewelry & Gold</option>
+                            <option>Gaming Consoles</option>
+                            <option>Appliances</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-gray-700">Serial Number / IMEI</label>
+                          <input
+                            type="text"
+                            placeholder="Optional or N/A"
                             value={itemData.serialOrImei}
-                            onChange={e => setItemData({...itemData, serialOrImei: e.target.value})}
-                            className="w-full bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl pl-4 pr-10 py-3 text-white font-mono focus:border-[#C85A32] outline-none"
+                            onChange={e => setItemData({ ...itemData, serialOrImei: e.target.value })}
+                            className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 font-mono focus:outline-none focus:border-[#C85A32]"
                           />
-                          <button className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
-                            <Camera className="w-4 h-4" />
-                          </button>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-6">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Condition</label>
+                      {/* BRAND & MODEL */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-gray-700">Brand</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Samsung, Bosch, Apple"
+                            value={itemData.brand}
+                            onChange={e => setItemData({ ...itemData, brand: e.target.value })}
+                            className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:border-[#C85A32]"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-gray-700">Model</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. S23 5G, GSB 18V-50"
+                            value={itemData.model}
+                            onChange={e => setItemData({ ...itemData, model: e.target.value })}
+                            className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:border-[#C85A32]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* CONDITION SELECTOR */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-gray-700">Condition</label>
                         <div className="flex flex-wrap gap-2">
-                          {(['Mint', 'Excellent', 'Good', 'Fair'] as ItemCondition[]).map(c => (
+                          {(['Mint', 'Excellent', 'Good', 'Fair', 'Damaged'] as ItemCondition[]).map(c => (
                             <button
                               key={c}
-                              onClick={() => setItemData({...itemData, condition: c})}
-                              className={`px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest border transition ${
-                                itemData.condition === c ? 'border-[#C85A32] bg-[#C85A32]/10 text-[#E87A5D]' : 'border-[#2A2A2A] text-gray-500'
+                              type="button"
+                              onClick={() => setItemData({ ...itemData, condition: c })}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+                                itemData.condition === c
+                                  ? 'border-[#C85A32] bg-[#FDF0EA] text-[#C85A32] font-semibold'
+                                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
                               }`}
                             >
                               {c}
@@ -704,310 +1185,541 @@ export const BuyPawn: React.FC = () => {
                           ))}
                         </div>
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Brand / Model (Optional)</label>
-                        <div className="flex gap-2">
-                          <input 
-                            type="text" 
-                            placeholder="Brand" 
-                            value={itemData.brand}
-                            onChange={e => setItemData({...itemData, brand: e.target.value})}
-                            className="w-full bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl px-4 py-2 text-xs text-white outline-none" 
-                          />
-                          <input 
-                            type="text" 
-                            placeholder="Model" 
-                            value={itemData.model}
-                            onChange={e => setItemData({...itemData, model: e.target.value})}
-                            className="w-full bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl px-4 py-2 text-xs text-white outline-none" 
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="space-y-4">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Asset Documentation</label>
-                    <div className="aspect-square rounded-3xl bg-[#1A1A1A] border-2 border-dashed border-[#2A2A2A] flex flex-col items-center justify-center gap-4 text-gray-500 group cursor-pointer overflow-hidden">
-                      {itemData.imageUrl ? (
-                        <img src={itemData.imageUrl} className="w-full h-full object-cover" />
-                      ) : (
-                        <>
-                          <Camera className="w-10 h-10 group-hover:text-white transition" />
-                          <span className="text-[9px] font-black uppercase tracking-widest">Capture Proof</span>
-                        </>
+                      {/* EXISTING STOCK NOTE */}
+                      {txType === 'existing' && (
+                        <div className="space-y-1 pt-2">
+                          <label className="text-xs font-semibold text-gray-700">Provenance / Source Note</label>
+                          <input
+                            type="text"
+                            value={itemData.sourceNote}
+                            onChange={e => setItemData({ ...itemData, sourceNote: e.target.value })}
+                            className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 focus:outline-none focus:border-[#C85A32]"
+                          />
+                          <p className="text-[11px] text-gray-400">
+                            Clear note explaining that this item was already shop-owned prior to system setup.
+                          </p>
+                        </div>
                       )}
+                    </div>
+
+                    {/* PHOTO PREVIEW */}
+                    <div className="space-y-2 flex flex-col">
+                      <label className="text-xs font-semibold text-gray-700">Photo / Image</label>
+                      <div className="flex-1 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center p-4 overflow-hidden relative min-h-[180px]">
+                        {itemData.imageUrl ? (
+                          <img
+                            src={itemData.imageUrl}
+                            alt="Preview"
+                            className="w-full h-full object-cover rounded-xl"
+                          />
+                        ) : (
+                          <div className="text-center text-gray-400 space-y-1">
+                            <Camera className="w-8 h-8 mx-auto" />
+                            <p className="text-xs">No image attached</p>
+                          </div>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Image URL..."
+                        value={itemData.imageUrl}
+                        onChange={e => setItemData({ ...itemData, imageUrl: e.target.value })}
+                        className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-1.5 text-[11px] text-gray-600 focus:outline-none"
+                      />
                     </div>
                   </div>
                 </div>
 
-                <div className="flex gap-4 pt-6">
-                  <button onClick={handleBack} className="flex items-center gap-2 px-6 py-4 text-gray-500 hover:text-white transition">
-                    <ChevronLeft className="w-4 h-4" />
-                    <span className="text-xs font-black uppercase tracking-widest">Back</span>
-                  </button>
-                  <button 
-                    onClick={handleNext}
-                    className="flex-1 py-4 bg-[#C85A32] text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl shadow-[#C85A32]/20"
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={handleBack}
+                    className="flex items-center gap-1.5 px-5 py-3 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-100 transition text-xs font-semibold"
                   >
-                    <span>Valuation Review</span>
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Back</span>
+                  </button>
+                  <button
+                    onClick={handleNext}
+                    className="flex-1 py-3 px-6 bg-[#C85A32] text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-xs hover:bg-[#A94725] transition"
+                  >
+                    <span>{txType === 'existing' ? 'Set Retail Pricing' : 'Valuation Review'}</span>
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
               </motion.div>
             )}
 
-            {/* STEP 3: VALUATION */}
+            {/* ============================================================
+                STEP 3: VALUATION & PRICING
+               ============================================================ */}
             {step === 'valuation' && (
               <motion.div
-                initial={{ opacity: 0, x: 20 }}
+                initial={{ opacity: 0, x: 15 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-10"
+                exit={{ opacity: 0, x: -15 }}
+                className="space-y-6"
               >
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-12 h-12 rounded-2xl bg-[#C85A32]/10 flex items-center justify-center text-[#E87A5D]">
-                    <Scale className="w-6 h-6" />
+                <div className="flex items-center gap-3.5 mb-2">
+                  <div className="w-10 h-10 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center font-bold">
+                    <Scale className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-white uppercase tracking-tight">Fair Market Valuation</h3>
-                    <p className="text-xs text-gray-500 uppercase font-bold tracking-widest">Determining {txType === 'buy' ? 'Payout' : 'Principal'}</p>
+                    <h3 className="text-lg font-bold text-gray-900">
+                      {txType === 'existing' ? 'Retail Price & Cost Basis' : 'Fair Market Valuation'}
+                    </h3>
+                    <p className="text-xs text-gray-500">
+                      {txType === 'existing'
+                        ? 'Define shelf retail selling price and optional historical cost'
+                        : `Determining ${txType === 'buy' ? 'cash payout' : 'pawn loan principal'}`}
+                    </p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                  <div className="space-y-8">
-                    <div className="p-8 rounded-[2rem] bg-[#1A1A1A] border border-[#2A2A2A] space-y-6">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Suggested Payout</span>
-                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/20">
-                          <TrendingUp className="w-3 h-3 text-emerald-400" />
-                          <span className="text-[9px] font-black text-emerald-400">Target Range</span>
+                {/* 3A. VALUATION FOR EXISTING STOCK */}
+                {txType === 'existing' ? (
+                  <div className="bg-white border border-gray-200 rounded-2xl p-7 shadow-xs space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* RETAIL PRICE */}
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                          Retail Floor Price (ZAR) *
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-[#C85A32]">R</span>
+                          <input
+                            type="number"
+                            value={retailPriceInput}
+                            onChange={e => setRetailPriceInput(e.target.value)}
+                            className="w-full bg-[#F8F9FA] border-2 border-gray-200 focus:border-[#C85A32] focus:bg-white rounded-xl pl-9 pr-4 py-3 text-2xl font-bold text-gray-900 font-mono outline-none transition"
+                            placeholder="0.00"
+                            autoFocus
+                          />
                         </div>
+                        <p className="text-xs text-gray-500">The customer price that will appear in Front POS.</p>
                       </div>
-                      <p className="text-5xl font-black text-white font-mono tracking-tighter">R {agreedOffer.toLocaleString()}</p>
-                      <div className="flex items-center gap-2 text-xs text-gray-500 border-t border-gray-800 pt-4">
-                        <Info className="w-4 h-4" />
-                        <span>Based on {itemData.condition} condition for {itemData.category}</span>
+
+                      {/* OPTIONAL COST BASIS */}
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                          Cost Basis (ZAR, Optional)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-gray-400">R</span>
+                          <input
+                            type="number"
+                            value={costBasisInput}
+                            onChange={e => setCostBasisInput(e.target.value)}
+                            className="w-full bg-[#F8F9FA] border-2 border-gray-200 focus:border-gray-400 focus:bg-white rounded-xl pl-9 pr-4 py-3 text-2xl font-bold text-gray-800 font-mono outline-none transition"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500">Historical acquisition cost if known, or leave 0.</p>
                       </div>
                     </div>
 
-                    {txType === 'buy' && (
-                      <div className="p-8 rounded-[2rem] bg-emerald-950/20 border border-emerald-500/20 space-y-4">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Target Retail</span>
-                          <span className="text-lg font-black text-white font-mono">R {suggestedRetail.toLocaleString()}</span>
+                    {/* MARGIN CALCULATION BANNER */}
+                    {parseFloat(retailPriceInput) > 0 && parseFloat(costBasisInput) > 0 && (
+                      <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <TrendingUp className="w-5 h-5 text-emerald-600" />
+                          <div>
+                            <p className="text-xs font-bold text-emerald-800">Estimated Gross Margin</p>
+                            <p className="text-xs text-emerald-600">
+                              Spread: R {(parseFloat(retailPriceInput) - parseFloat(costBasisInput)).toLocaleString()}
+                            </p>
+                          </div>
                         </div>
-                        <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-500" style={{ width: '45%' }} />
-                        </div>
-                        <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Projected Margin: 55% after tax</p>
+                        <span className="text-base font-bold text-emerald-700 font-mono">
+                          {(
+                            ((parseFloat(retailPriceInput) - parseFloat(costBasisInput)) /
+                              parseFloat(retailPriceInput)) *
+                            100
+                          ).toFixed(1)}
+                          %
+                        </span>
                       </div>
                     )}
                   </div>
+                ) : (
+                  /* 3B. VALUATION FOR BUY OR PAWN */
+                  <div className="bg-white border border-gray-200 rounded-2xl p-7 shadow-xs space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-4">
+                        <div className="p-5 rounded-xl bg-gray-50 border border-gray-200 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-gray-500">Recommended Payout</span>
+                            <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-200">
+                              <TrendingUp className="w-3 h-3" />
+                              <span>Fair Estimate</span>
+                            </div>
+                          </div>
+                          <p className="text-3xl font-bold text-gray-900 font-mono">
+                            R {agreedOffer.toLocaleString()}
+                          </p>
+                          <p className="text-xs text-gray-500 border-t border-gray-200 pt-2">
+                            Based on {itemData.condition} condition for {itemData.category}
+                          </p>
+                        </div>
 
-                  <div className="space-y-8">
-                    <div className="space-y-4">
-                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Negotiated Final Offer (ZAR)</label>
-                      <div className="relative group">
-                        <span className="absolute left-6 top-1/2 -translate-y-1/2 text-3xl font-black text-[#E87A5D]">R</span>
-                        <input 
-                          type="number" 
-                          value={agreedOffer}
-                          onChange={e => {
-                            const val = Number(e.target.value);
-                            setAgreedOffer(val);
-                            if (txType === 'buy') {
-                              setSuggestedRetail(roundRetailPrice(val * businessRules.defaultRetailMarkupMultiplier, businessRules.retailRoundingMode));
-                            }
-                          }}
-                          className="w-full bg-[#1A1A1A] border-2 border-[#C85A32] rounded-[2rem] pl-14 pr-8 py-10 text-5xl font-black text-white font-mono outline-none shadow-2xl shadow-[#C85A32]/10"
-                        />
+                        {txType === 'buy' && (
+                          <div className="p-4 rounded-xl bg-[#FDF0EA] border border-[#C85A32]/20 flex items-center justify-between">
+                            <div>
+                              <span className="text-xs font-semibold text-gray-700">Projected Retail Selling Price</span>
+                              <p className="text-xs text-gray-500">Calculated with standard markup</p>
+                            </div>
+                            <span className="text-lg font-bold text-[#C85A32] font-mono">
+                              R {suggestedRetail.toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-4">
+                        <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                          Negotiated Final Amount (ZAR)
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-[#C85A32]">R</span>
+                          <input
+                            type="number"
+                            value={agreedOffer}
+                            onChange={e => {
+                              const val = Number(e.target.value);
+                              setAgreedOffer(val);
+                              if (txType === 'buy') {
+                                setSuggestedRetail(
+                                  roundRetailPrice(
+                                    val * businessRules.defaultRetailMarkupMultiplier,
+                                    businessRules.retailRoundingMode
+                                  )
+                                );
+                              }
+                            }}
+                            className="w-full bg-white border-2 border-[#C85A32] rounded-xl pl-10 pr-4 py-3.5 text-3xl font-bold text-gray-900 font-mono outline-none shadow-xs"
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500 italic">
+                          Confirm serial and asset state before proceeding to deal terms.
+                        </p>
                       </div>
                     </div>
-
-                    <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-2xl p-6">
-                      <p className="text-xs text-gray-400 leading-relaxed italic">"Operator must visually confirm serial number and item state matches capture documentation before moving to final deal sign-off."</p>
-                    </div>
                   </div>
-                </div>
+                )}
 
-                <div className="flex gap-4 pt-6">
-                  <button onClick={handleBack} className="flex items-center gap-2 px-6 py-4 text-gray-500 hover:text-white transition">
-                    <ChevronLeft className="w-4 h-4" />
-                    <span className="text-xs font-black uppercase tracking-widest">Back</span>
-                  </button>
-                  <button 
-                    onClick={handleNext}
-                    className="flex-1 py-4 bg-[#C85A32] text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl shadow-[#C85A32]/20"
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={handleBack}
+                    className="flex items-center gap-1.5 px-5 py-3 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-100 transition text-xs font-semibold"
                   >
-                    <span>Final Deal Summary</span>
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Back</span>
+                  </button>
+                  <button
+                    onClick={handleNext}
+                    className="flex-1 py-3 px-6 bg-[#C85A32] text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-xs hover:bg-[#A94725] transition"
+                  >
+                    <span>{txType === 'existing' ? 'Choose Stock Location' : 'Review Deal Terms'}</span>
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
               </motion.div>
             )}
 
-            {/* STEP 4: DEAL */}
-            {step === 'deal' && (
+            {/* ============================================================
+                STEP 4A: STOCK LOCATION (EXISTING STOCK ONLY)
+               ============================================================ */}
+            {step === 'location' && txType === 'existing' && (
+              <motion.div
+                initial={{ opacity: 0, x: 15 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -15 }}
+                className="space-y-6"
+              >
+                <div className="flex items-center gap-3.5 mb-2">
+                  <div className="w-10 h-10 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center font-bold">
+                    <MapPin className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">Stock Location & Placement</h3>
+                    <p className="text-xs text-gray-500">
+                      Specify where the item is stored or placed in the shop
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-2xl p-7 shadow-xs space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-gray-700">Display Location / Shelf</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Main Floor Display Rack 2, Glass Showcase A"
+                        value={itemData.stockLocation}
+                        onChange={e => setItemData({ ...itemData, stockLocation: e.target.value })}
+                        className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-4 py-2.5 text-xs text-gray-800 focus:outline-none focus:border-[#C85A32]"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-gray-700">Initial Stock Status</label>
+                      <select
+                        value={existingStockStatus}
+                        onChange={e => setExistingStockStatus(e.target.value as ItemStatus)}
+                        className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2.5 text-xs text-gray-800 focus:outline-none focus:border-[#C85A32]"
+                      >
+                        <option value="Retail Floor">Retail Floor (Immediate Sale)</option>
+                        <option value="Vault Hold">Vault Hold (Storage / High Value)</option>
+                        <option value="InStock">InStock (Backroom Inventory)</option>
+                      </select>
+                    </div>
+
+                    <div className="md:col-span-2 space-y-2">
+                      <label className="text-xs font-semibold text-gray-700">Internal Shop Note (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Received during store takeover, verified working"
+                        value={itemData.internalNote}
+                        onChange={e => setItemData({ ...itemData, internalNote: e.target.value })}
+                        className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-4 py-2 text-xs text-gray-800 focus:outline-none focus:border-[#C85A32]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* SUMMARY BOX */}
+                  <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 text-xs space-y-2">
+                    <div className="flex justify-between font-semibold text-gray-800">
+                      <span>Item: {itemData.title}</span>
+                      <span>Retail: R {parseFloat(retailPriceInput || '0').toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-500">
+                      <span>Category: {itemData.category}</span>
+                      <span>Condition: {itemData.condition}</span>
+                    </div>
+                    <p className="text-[11px] text-gray-400 italic pt-1 border-t border-gray-200">
+                      Provenance: {itemData.sourceNote}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={handleBack}
+                    className="flex items-center gap-1.5 px-5 py-3 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-100 transition text-xs font-semibold"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Back</span>
+                  </button>
+                  <button
+                    onClick={handleNext}
+                    className="flex-1 py-3 px-6 bg-emerald-600 text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-xs hover:bg-emerald-700 transition"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Complete Intake & Add Stock</span>
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* ============================================================
+                STEP 4B: DEAL REVIEW (BUY OR PAWN ONLY)
+               ============================================================ */}
+            {step === 'deal' && (txType === 'buy' || txType === 'pawn') && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 1.02 }}
-                className="space-y-10"
+                className="space-y-6"
               >
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                    <CheckCircle2 className="w-6 h-6" />
+                <div className="flex items-center gap-3.5 mb-2">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                    <CheckCircle2 className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-white uppercase tracking-tight">Final Confirmation</h3>
-                    <p className="text-xs text-gray-500 uppercase font-bold tracking-widest">Verify all terms before committing to SAPS Register</p>
+                    <h3 className="text-lg font-bold text-gray-900">Final Deal Review</h3>
+                    <p className="text-xs text-gray-500">
+                      Verify transaction terms before recording to SAPS Form 21 register
+                    </p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                  <div className="space-y-6">
-                    <div className="p-8 rounded-[2.5rem] bg-[#1A1A1A] border border-[#2A2A2A] space-y-8">
-                      <div className="space-y-4">
-                        <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">
-                          <span>Transaction Model</span>
-                          <span className="text-white">{txType === 'buy' ? 'DIRECT PURCHASE' : '30-DAY PAWN LOAN'}</span>
-                        </div>
-                        <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">
-                          <span>Verified {txType === 'buy' ? 'Seller' : 'Customer'}</span>
-                          <span className="text-white">{selectedIdentity?.fullName}</span>
-                        </div>
-                        <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">
-                          <span>Collateral Asset</span>
-                          <span className="text-white">{itemData.title}</span>
-                        </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="p-6 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
+                    <div className="space-y-2 text-xs divide-y divide-gray-100">
+                      <div className="flex justify-between py-1.5">
+                        <span className="text-gray-500">Transaction Type</span>
+                        <span className="font-semibold text-gray-900">
+                          {txType === 'buy' ? 'Direct Purchase (Outright)' : '30-Day Pawn Loan'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between py-1.5">
+                        <span className="text-gray-500">{txType === 'buy' ? 'Seller' : 'Customer'}</span>
+                        <span className="font-semibold text-gray-900">{selectedIdentity?.fullName}</span>
+                      </div>
+                      <div className="flex justify-between py-1.5">
+                        <span className="text-gray-500">ID Number</span>
+                        <span className="font-mono font-medium text-gray-800">{selectedIdentity?.idNumber}</span>
+                      </div>
+                      <div className="flex justify-between py-1.5">
+                        <span className="text-gray-500">Asset</span>
+                        <span className="font-semibold text-gray-900">{itemData.title}</span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-200 space-y-3">
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-xs font-bold text-gray-700">Immediate Cash Payout</span>
+                        <span className="text-2xl font-bold text-gray-900 font-mono">
+                          R {agreedOffer.toLocaleString()}
+                        </span>
                       </div>
 
-                      <div className="h-px bg-gray-800" />
-
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-end">
-                          <span className="text-sm font-bold text-gray-400">{txType === 'buy' ? 'Immediate Cash Payout' : 'Principal Payout'}</span>
-                          <span className="text-2xl font-black text-white font-mono">R {agreedOffer.toLocaleString()}</span>
+                      {txType === 'pawn' && pawnCalculations && (
+                        <div className="space-y-1.5 pt-2 border-t border-gray-100 text-xs">
+                          <div className="flex justify-between text-gray-500">
+                            <span>Monthly Interest (5%)</span>
+                            <span className="font-mono">R {pawnCalculations.interest.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-gray-500">
+                            <span>Admin & Storage Fee</span>
+                            <span className="font-mono">R {pawnCalculations.adminFee.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-bold text-blue-700 pt-1 border-t border-gray-100">
+                            <span>Total Redemption Due</span>
+                            <span className="font-mono text-sm">
+                              R {pawnCalculations.totalRedemption.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-gray-400 text-[11px]">
+                            <span>Pawn Term Expiry</span>
+                            <span>{pawnCalculations.expiryDate}</span>
+                          </div>
                         </div>
-                        {txType === 'pawn' && pawnCalculations && (
-                          <>
-                            <div className="flex justify-between items-end">
-                              <span className="text-xs text-gray-500">Monthly Interest (5%)</span>
-                              <span className="text-sm font-bold text-gray-300 font-mono">R {pawnCalculations.interest.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between items-end">
-                              <span className="text-xs text-gray-500">Admin & Storage Fee</span>
-                              <span className="text-sm font-bold text-gray-300 font-mono">R {pawnCalculations.adminFee.toFixed(2)}</span>
-                            </div>
-                            <div className="pt-4 flex justify-between items-end border-t border-gray-800">
-                              <span className="text-xs font-black text-blue-400 uppercase tracking-widest">Total Redemption Due</span>
-                              <span className="text-xl font-black text-blue-400 font-mono">R {pawnCalculations.totalRedemption.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between items-end text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                              <span>Term Expiry</span>
-                              <span>{pawnCalculations.expiryDate}</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
+                      )}
                     </div>
                   </div>
 
-                  <div className="space-y-8 flex flex-col justify-center">
-                    <div className="p-8 rounded-[2rem] bg-[#1A1A1A] border border-[#2A2A2A] flex items-center gap-6">
-                      <div className="w-16 h-16 rounded-2xl bg-gray-900 border border-gray-800 flex items-center justify-center shrink-0">
-                        <FileText className="w-8 h-8 text-gray-600" />
+                  <div className="flex flex-col justify-between space-y-4">
+                    <div className="p-6 rounded-2xl bg-white border border-gray-200 shadow-xs flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-gray-100 text-gray-600 flex items-center justify-center shrink-0">
+                        <FileText className="w-6 h-6" />
                       </div>
                       <div>
-                        <h4 className="text-sm font-black text-white uppercase tracking-widest">Compliance Ready</h4>
-                        <p className="text-xs text-gray-500 mt-1 leading-relaxed">Proceeding will auto-log this transaction to the SAPS Form 21 register and generate a unique asset tracking tag.</p>
+                        <h4 className="text-xs font-bold text-gray-900">SAPS Form 21 Ready</h4>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Finalizing will assign an asset tag, record the transaction in the statutory register, and print receipt.
+                        </p>
                       </div>
                     </div>
 
-                    <button 
+                    <button
                       onClick={handleFinalize}
-                      className={`w-full py-6 rounded-[2rem] text-white font-black uppercase tracking-[0.2em] text-sm shadow-2xl transition-all ${
-                        txType === 'buy' 
-                          ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20' 
-                          : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/20'
+                      className={`w-full py-4 rounded-xl text-white font-bold text-sm shadow-xs transition ${
+                        txType === 'buy'
+                          ? 'bg-emerald-600 hover:bg-emerald-700'
+                          : 'bg-blue-600 hover:bg-blue-700'
                       }`}
                     >
-                      {txType === 'buy' ? 'COMPLETE PURCHASE' : 'FINALISE PAWN LOAN'}
+                      {txType === 'buy' ? 'Complete Purchase & Payout' : 'Finalise Pawn Loan Agreement'}
                     </button>
 
-                    <button onClick={handleBack} className="text-xs text-gray-500 hover:text-white uppercase font-black tracking-widest text-center">Modify Deal Terms</button>
+                    <button
+                      onClick={handleBack}
+                      className="text-xs text-gray-500 hover:text-gray-900 font-semibold text-center py-1"
+                    >
+                      Modify Terms
+                    </button>
                   </div>
                 </div>
               </motion.div>
             )}
 
-            {/* STEP 5: COMPLETION */}
+            {/* ============================================================
+                STEP 5: COMPLETION
+               ============================================================ */}
             {step === 'completion' && result && (
               <motion.div
-                initial={{ opacity: 0, zoom: 0.9 }}
-                animate={{ opacity: 1, zoom: 1 }}
-                className="max-w-2xl mx-auto py-10 space-y-10"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="max-w-xl mx-auto py-6 space-y-6"
               >
-                <div className="text-center space-y-4">
-                  <div className="w-20 h-20 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mx-auto mb-6">
-                    <CheckCircle2 className="w-12 h-12" />
+                <div className="text-center space-y-2">
+                  <div className="w-14 h-14 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-2 border border-emerald-200">
+                    <CheckCircle2 className="w-8 h-8" />
                   </div>
-                  <h3 className="text-3xl font-black text-white uppercase tracking-tight">Transaction Successful</h3>
-                  <p className="text-gray-500 uppercase font-bold tracking-widest text-sm">Asset {result.assetTag} Logged & Verified</p>
+                  <h3 className="text-2xl font-bold text-gray-900">Intake Complete</h3>
+                  <p className="text-xs text-gray-500">
+                    Asset <span className="font-mono font-bold text-gray-800">{result.assetTag}</span> has been logged to inventory.
+                  </p>
                 </div>
 
-                <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-[2.5rem] p-8 space-y-8">
-                  <div className="grid grid-cols-2 gap-8">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Asset Tracking Tag</p>
-                      <p className="text-xl font-black text-white font-mono">{result.assetTag}</p>
+                <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs space-y-5">
+                  <div className="grid grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <p className="text-gray-400 font-medium">SKU / Asset Tag</p>
+                      <p className="text-base font-bold text-gray-900 font-mono mt-0.5">{result.assetTag}</p>
                     </div>
+
                     {result.ticketNumber && (
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Pawn Ticket</p>
-                        <p className="text-xl font-black text-blue-400 font-mono">{result.ticketNumber}</p>
+                      <div>
+                        <p className="text-gray-400 font-medium">Pawn Ticket</p>
+                        <p className="text-base font-bold text-blue-600 font-mono mt-0.5">{result.ticketNumber}</p>
                       </div>
                     )}
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Payout Amount</p>
-                      <p className="text-xl font-black text-emerald-400 font-mono">R {agreedOffer.toLocaleString()}</p>
+
+                    <div>
+                      <p className="text-gray-400 font-medium">
+                        {txType === 'existing' ? 'Retail Price' : 'Payout Amount'}
+                      </p>
+                      <p className="text-base font-bold text-emerald-600 font-mono mt-0.5">
+                        R {txType === 'existing' ? result.item.retailPrice.toLocaleString() : agreedOffer.toLocaleString()}
+                      </p>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Storage Loc</p>
-                      <p className="text-xl font-black text-white uppercase">{txType === 'buy' ? 'RETAIL FLOOR' : businessRules.defaultVaultShelf}</p>
+
+                    <div>
+                      <p className="text-gray-400 font-medium">Location</p>
+                      <p className="text-base font-bold text-gray-900 mt-0.5">
+                        {result.item.stockLocation || (txType === 'buy' ? 'Retail Floor' : businessRules.defaultVaultShelf)}
+                      </p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
-                    <button className="p-5 rounded-2xl bg-white text-black font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-3 hover:bg-gray-200 transition">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-gray-100">
+                    <button
+                      onClick={() => showToast('Label Sent', `Asset label ${result.assetTag} printed`, 'success')}
+                      className="py-3 px-4 rounded-xl bg-gray-900 text-white font-semibold text-xs flex items-center justify-center gap-2 hover:bg-gray-800 transition shadow-xs"
+                    >
                       <Printer className="w-4 h-4" />
-                      Print Asset Label
+                      <span>Print Asset Label</span>
                     </button>
+
                     {txType === 'pawn' && (
-                      <button 
+                      <button
                         onClick={() => setActiveContractModal(result.loan!)}
-                        className="p-5 rounded-2xl bg-[#1A1A1A] border border-[#2A2A2A] text-white font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-3 hover:bg-[#222] transition"
+                        className="py-3 px-4 rounded-xl border border-gray-200 text-gray-800 font-semibold text-xs flex items-center justify-center gap-2 hover:bg-gray-50 transition shadow-xs"
                       >
                         <FileText className="w-4 h-4" />
-                        Print Pawn Contract
+                        <span>Print Pawn Contract</span>
                       </button>
                     )}
-                    <button className="p-5 rounded-2xl bg-[#1A1A1A] border border-[#2A2A2A] text-white font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-3 hover:bg-[#222] transition sm:col-span-2">
+
+                    <button
+                      onClick={() => showToast('Digital Receipt Sent', 'Receipt sent via WhatsApp', 'info')}
+                      className="py-3 px-4 rounded-xl border border-gray-200 text-gray-800 font-semibold text-xs flex items-center justify-center gap-2 hover:bg-gray-50 transition shadow-xs sm:col-span-2"
+                    >
                       <Smartphone className="w-4 h-4" />
-                      Send Digital Receipt (WhatsApp)
+                      <span>Send WhatsApp Notification</span>
                     </button>
                   </div>
                 </div>
 
-                <div className="flex justify-center">
-                  <button 
+                <div className="flex justify-center pt-2">
+                  <button
                     onClick={resetWorkflow}
-                    className="flex items-center gap-3 px-8 py-4 bg-[#C85A32] text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl shadow-[#C85A32]/20 hover:bg-[#b04d29] transition"
+                    className="flex items-center gap-2 px-6 py-3 bg-[#C85A32] text-white rounded-xl font-semibold text-xs shadow-xs hover:bg-[#A94725] transition"
                   >
-                    <Plus className="w-5 h-5" />
-                    New Counter Session
+                    <Plus className="w-4 h-4" />
+                    <span>Start New Intake</span>
                   </button>
                 </div>
               </motion.div>

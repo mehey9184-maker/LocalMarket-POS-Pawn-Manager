@@ -1,4 +1,6 @@
-export type AcquisitionType = 'Buy' | 'Pawn' | 'Forfeited' | 'Forfeit';
+export type AcquisitionType = 'Existing Stock' | 'Buy' | 'Pawn' | 'Forfeited' | 'Forfeit';
+export type SourceType = 'existing_stock' | 'seller' | 'pawn' | 'forfeiture' | 'supplier' | 'unknown';
+export type SourceStatus = 'verified' | 'unknown' | 'pending';
 export type ItemCondition = 'Mint' | 'Excellent' | 'Good' | 'Fair' | 'Damaged';
 export type ItemStatus = 'Vault Hold' | 'Retail Floor' | 'Sold' | 'Redeemed' | 'Reserved' | 'Flagged' | 'InStock' | 'Forfeited' | 'Pending Forfeit';
 export type LoanStatus = 'Active' | 'Extended' | 'Redeemed' | 'Forfeited' | 'Archived' | 'Pending Forfeit';
@@ -12,8 +14,8 @@ export interface Customer {
   idType: 'RSA Smart ID' | 'Green ID Book' | 'Passport';
   mobile: string;
   address: string;
-  dob: string;
-  gender: string;
+  dob?: string;
+  gender?: string;
   verified: boolean;
   createdAt: string;
   lastCommunicationAt?: string;
@@ -47,18 +49,26 @@ export interface InventoryItem {
   sku: string;
   title: string;
   category: 'Phones & Tech' | 'Power Tools' | 'Audio & Visual' | 'Fine Jewelry & Gold' | 'Gaming Consoles' | 'Appliances';
+  brand?: string;
+  model?: string;
   serialOrImei: string;
   condition: ItemCondition;
   acquisitionType: AcquisitionType;
   costBasis: number;
   retailPrice: number;
   vaultLocation?: string;
+  stockLocation?: string;
   status: ItemStatus;
   daysInVault?: number;
   imageUrl: string;
   specs?: string;
   pawnTicketId?: string;
   addedAt: string;
+  // Provenance / source metadata for existing stock & compliance
+  sourceType?: SourceType;
+  sourceStatus?: SourceStatus;
+  sourceNote?: string;
+  internalNote?: string;
 }
 
 export interface LoanHistoryEntry {

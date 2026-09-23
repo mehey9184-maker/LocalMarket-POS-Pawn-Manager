@@ -4,7 +4,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useInventory } from '../../context/InventoryContext';
 import { useLoans } from '../../context/LoanContext';
 import { useSales } from '../../context/SalesContext';
-import { motion } from 'motion/react';
 import { 
   ShoppingBag, 
   ArrowRightLeft, 
@@ -18,7 +17,8 @@ import {
   User,
   Zap,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Plus
 } from 'lucide-react';
 
 export const Home: React.FC = () => {
@@ -35,7 +35,7 @@ export const Home: React.FC = () => {
   const expiryThreshold = threeDaysFromNow.toISOString().split('T')[0];
 
   const dailySales = useMemo(() => salesHistory.filter(s => s.timestamp.startsWith(today)), [salesHistory, today]);
-  const dailyBuys = useMemo(() => inventory.filter(i => i.acquisitionType === 'Buy' && i.addedAt.startsWith(today)), [inventory, today]);
+  const dailyBuys = useMemo(() => inventory.filter(i => (i.acquisitionType === 'Buy' || i.acquisitionType === 'Existing Stock') && i.addedAt.startsWith(today)), [inventory, today]);
   const dailyPawns = useMemo(() => loans.filter(l => l.startDate.startsWith(today)), [loans, today]);
 
   const activeLoans = loans.filter(l => l.status === 'Active');
@@ -43,7 +43,6 @@ export const Home: React.FC = () => {
   const overdueLoans = activeLoans.filter(l => l.expiryDate < today);
   const pendingApproval = loans.filter(l => l.status === 'Pending Forfeit');
   
-  // Items that are technically "expired" but haven't been processed to floor yet
   const readyForRetail = inventory.filter(i => i.status === 'Vault Hold' && i.acquisitionType === 'Forfeited');
 
   const todayTotals = {
@@ -51,169 +50,182 @@ export const Home: React.FC = () => {
     salesValue: dailySales.reduce((sum, s) => sum + s.total, 0),
     buys: dailyBuys.length,
     pawns: dailyPawns.length,
-    payouts: dailyBuys.reduce((sum, i) => sum + i.costBasis, 0) + dailyPawns.reduce((sum, l) => sum + l.principal, 0)
+    payouts: dailyBuys.reduce((sum, i) => sum + (i.costBasis || 0), 0) + dailyPawns.reduce((sum, l) => sum + l.principal, 0)
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#0F0F0F] no-scrollbar">
+    <div className="flex-1 overflow-y-auto bg-[#F5F6F8] no-scrollbar">
       {/* 1. TOP BAR: IDENTITY & STATUS */}
-      <header className="px-8 py-4 bg-[#141414] border-b border-[#222] flex items-center justify-between sticky top-0 z-20 backdrop-blur-md bg-opacity-90">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-[#C85A32] flex items-center justify-center text-white shadow-lg shadow-[#C85A32]/10">
-            <ShieldCheck className="w-6 h-6" />
+      <header className="px-6 lg:px-8 py-3.5 bg-white border-b border-gray-200 flex items-center justify-between sticky top-0 z-20 shadow-xs">
+        <div className="flex items-center gap-3.5">
+          <div className="w-9 h-9 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center font-bold">
+            <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-sm font-black uppercase tracking-[0.2em] text-white">LocalMarket</h1>
-            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{shopProfile.shop_name}</p>
+            <h1 className="text-sm font-bold text-gray-900 leading-tight">LocalMarket Operations Hub</h1>
+            <p className="text-[11px] text-gray-500">{shopProfile.shop_name}</p>
           </div>
         </div>
-        <div className="flex items-center gap-6">
-          <div className="text-right">
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">Current Cashier</p>
-            <p className="text-xs font-bold text-white">{user?.user_metadata?.full_name || 'Operator 01'}</p>
+        <div className="flex items-center gap-5">
+          <div className="text-right hidden sm:block">
+            <p className="text-[11px] font-medium text-gray-500">Active Cashier</p>
+            <p className="text-xs font-semibold text-gray-800">{user?.user_metadata?.full_name || 'Staff Member'}</p>
           </div>
-          <div className="px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Shift Active</span>
+          <div className="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+            <span className="text-[11px] font-semibold text-emerald-700">Terminal Ready</span>
           </div>
         </div>
       </header>
 
-      <div className="p-8 lg:p-12 max-w-[1600px] mx-auto space-y-12">
+      <div className="p-6 lg:p-8 max-w-[1500px] mx-auto space-y-8">
         
-        {/* 2. MAIN QUICK ACTIONS: LARGE TILES */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* 2. MAIN QUICK ACTIONS: REFINED CARDS */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {/* ACTION 1: SELL ITEM */}
           <button 
             onClick={() => setActiveTab('sell')}
-            className="group p-8 rounded-[32px] bg-[#C85A32] hover:bg-[#b04d29] transition-all flex flex-col items-center justify-center text-center gap-4 shadow-2xl shadow-[#C85A32]/20 active:scale-[0.98]"
+            className="group p-6 rounded-2xl bg-white border border-gray-200 hover:border-[#C85A32] hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3.5 cursor-pointer"
           >
-            <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <ShoppingBag className="w-8 h-8 text-white" />
+            <div className="w-14 h-14 rounded-2xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
+              <ShoppingBag className="w-7 h-7" />
             </div>
             <div>
-              <h2 className="text-2xl font-black text-white uppercase tracking-tight">SELL ITEM</h2>
-              <p className="text-white/60 text-xs font-bold mt-1 uppercase tracking-widest">Retail Checkout Terminal</p>
+              <h2 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
+                Point of Sale
+              </h2>
+              <p className="text-gray-500 text-xs mt-0.5">Retail checkout and instant barcode scan</p>
             </div>
           </button>
 
+          {/* ACTION 2: ADD STOCK / BUY */}
           <button 
             onClick={() => setActiveTab('buy-pawn')}
-            className="group p-8 rounded-[32px] bg-[#1A1A1A] border border-[#333] hover:border-[#E87A5D]/50 transition-all flex flex-col items-center justify-center text-center gap-4 shadow-xl active:scale-[0.98]"
+            className="group p-6 rounded-2xl bg-white border border-gray-200 hover:border-[#C85A32] hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3.5 cursor-pointer"
           >
-            <div className="w-16 h-16 rounded-2xl bg-[#E87A5D]/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <ArrowRightLeft className="w-8 h-8 text-[#E87A5D]" />
+            <div className="w-14 h-14 rounded-2xl bg-orange-50 text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
+              <Package className="w-7 h-7" />
             </div>
             <div>
-              <h2 className="text-2xl font-black text-white uppercase tracking-tight">BUY ITEM</h2>
-              <p className="text-gray-500 text-xs font-bold mt-1 uppercase tracking-widest">Direct Cash Purchase</p>
+              <h2 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
+                Add Stock & Intake
+              </h2>
+              <p className="text-gray-500 text-xs mt-0.5">Existing stock onboarding or seller purchase</p>
             </div>
           </button>
 
+          {/* ACTION 3: PAWN COLLATERAL */}
           <button 
             onClick={() => setActiveTab('buy-pawn')}
-            className="group p-8 rounded-[32px] bg-[#1A1A1A] border border-[#333] hover:border-blue-500/50 transition-all flex flex-col items-center justify-center text-center gap-4 shadow-xl active:scale-[0.98]"
+            className="group p-6 rounded-2xl bg-white border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3.5 cursor-pointer"
           >
-            <div className="w-16 h-16 rounded-2xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Lock className="w-8 h-8 text-blue-400" />
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <Lock className="w-7 h-7" />
             </div>
             <div>
-              <h2 className="text-2xl font-black text-white uppercase tracking-tight">PAWN ITEM</h2>
-              <p className="text-gray-500 text-xs font-bold mt-1 uppercase tracking-widest">30-Day Cash Advance</p>
+              <h2 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
+                Pawn Pledge Loan
+              </h2>
+              <p className="text-gray-500 text-xs mt-0.5">30-day secured credit advance</p>
             </div>
           </button>
         </section>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* 3. OPERATIONAL ATTENTION CENTER (LEFT) */}
-          <div className="xl:col-span-2 space-y-10">
+          <div className="xl:col-span-2 space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-black text-gray-500 uppercase tracking-[0.3em] flex items-center gap-2">
-                <Zap className="w-4 h-4 text-[#C85A32]" />
-                Operational Priority
+              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                <Zap className="w-3.5 h-3.5 text-[#C85A32]" />
+                Operational Priorities
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               {/* Critical: Overdue & Expiring */}
-              <div className="p-8 rounded-[2rem] bg-[#1A1412] border border-[#C85A32]/20 space-y-6">
+              <div className="p-6 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
                 <div className="flex items-center justify-between">
-                  <div className="p-3 bg-[#C85A32]/10 rounded-xl">
-                    <Clock className="w-6 h-6 text-[#E87A5D]" />
+                  <div className="w-10 h-10 rounded-xl bg-orange-50 text-[#C85A32] flex items-center justify-center">
+                    <Clock className="w-5 h-5" />
                   </div>
-                  <span className="text-xs font-black text-[#E87A5D] uppercase tracking-widest">Urgent</span>
+                  <span className="text-[11px] font-bold text-[#C85A32] bg-[#FDF0EA] px-2.5 py-0.5 rounded-full">
+                    Pledge Expirations
+                  </span>
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-white tracking-tight">Pledge Expirations</h3>
-                  <p className="text-xs text-gray-500 mt-1 uppercase tracking-wider">NCR 30-Day Contracts</p>
+                  <h3 className="text-base font-bold text-gray-900">Pawn Term Pipeline</h3>
+                  <p className="text-xs text-gray-500">NCR Act 34 Statutory 30-Day Contracts</p>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-black/20 p-4 rounded-2xl border border-white/5">
-                    <p className="text-2xl font-black text-white">{overdueLoans.length}</p>
-                    <p className="text-[10px] text-red-400 font-bold uppercase mt-1">Overdue</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-red-50 p-3.5 rounded-xl border border-red-100">
+                    <p className="text-2xl font-bold text-red-700 font-mono">{overdueLoans.length}</p>
+                    <p className="text-[11px] text-red-600 font-medium mt-0.5">Overdue</p>
                   </div>
-                  <div className="bg-black/20 p-4 rounded-2xl border border-white/5">
-                    <p className="text-2xl font-black text-white">{expiringSoon.length}</p>
-                    <p className="text-[10px] text-amber-500 font-bold uppercase mt-1">Due Soon</p>
+                  <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-100">
+                    <p className="text-2xl font-bold text-amber-700 font-mono">{expiringSoon.length}</p>
+                    <p className="text-[11px] text-amber-600 font-medium mt-0.5">Due in 3 Days</p>
                   </div>
                 </div>
                 <button 
                   onClick={() => setActiveTab('customers')}
-                  className="w-full py-3 bg-[#C85A32] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#b04d29] transition"
+                  className="w-full py-2.5 bg-gray-900 text-white rounded-xl text-xs font-semibold hover:bg-gray-800 transition"
                 >
-                  Manage Ledger
+                  Manage Pawn Ledger
                 </button>
               </div>
 
               {/* Approval & Pipeline */}
-              <div className="p-8 rounded-[2rem] bg-[#14161A] border border-blue-500/20 space-y-6">
+              <div className="p-6 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
                 <div className="flex items-center justify-between">
-                  <div className="p-3 bg-blue-500/10 rounded-xl">
-                    <User className="w-6 h-6 text-blue-400" />
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <User className="w-5 h-5" />
                   </div>
-                  <span className="text-xs font-black text-blue-400 uppercase tracking-widest">Approvals</span>
+                  <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full">
+                    Stock Flow
+                  </span>
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-white tracking-tight">Manager Pipeline</h3>
-                  <p className="text-xs text-gray-500 mt-1 uppercase tracking-wider">Stock Transitions</p>
+                  <h3 className="text-base font-bold text-gray-900">Manager Pipeline</h3>
+                  <p className="text-xs text-gray-500">Vault & floor stock transitions</p>
                 </div>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-4 bg-black/20 rounded-2xl border border-white/5">
-                    <span className="text-xs font-bold text-gray-300">Pending Forfeits</span>
-                    <span className="text-sm font-black text-white">{pendingApproval.length}</span>
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200/60">
+                    <span className="font-medium text-gray-700">Pending Forfeitures</span>
+                    <span className="font-bold text-gray-900 font-mono">{pendingApproval.length}</span>
                   </div>
-                  <div className="flex items-center justify-between p-4 bg-black/20 rounded-2xl border border-white/5">
-                    <span className="text-xs font-bold text-gray-300">Ready for Retail</span>
-                    <span className="text-sm font-black text-white">{readyForRetail.length}</span>
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200/60">
+                    <span className="font-medium text-gray-700">Ready for Retail Floor</span>
+                    <span className="font-bold text-gray-900 font-mono">{readyForRetail.length}</span>
                   </div>
                 </div>
                 <button 
                   onClick={() => setActiveTab('inventory')}
-                  className="w-full py-3 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-500 transition"
+                  className="w-full py-2.5 bg-[#C85A32] text-white rounded-xl text-xs font-semibold hover:bg-[#A94725] transition"
                 >
-                  Approve Stock
+                  View Floor Inventory
                 </button>
               </div>
             </div>
 
-            {/* Inventory Attention */}
-            <div className="p-8 rounded-[2rem] bg-[#1A1A1A] border border-[#2A2A2A] space-y-6">
+            {/* Inventory Health Widget */}
+            <div className="p-6 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Inventory Health</h3>
-                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider">Inventory Health & Security</h3>
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
               </div>
               
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {[
-                  { label: 'Total In Stock', val: inventory.length, icon: Package, color: 'text-emerald-400' },
-                  { label: 'Active Pawns', val: activeLoans.length, icon: Lock, color: 'text-blue-400' },
-                  { label: 'Flagged / Hold', val: inventory.filter(i => i.status === 'Flagged' || i.status === 'Reserved').length, icon: AlertCircle, color: 'text-red-400' }
+                  { label: 'Total In Stock', val: inventory.length, icon: Package, color: 'text-emerald-600' },
+                  { label: 'Active Pawn Collateral', val: activeLoans.length, icon: Lock, color: 'text-blue-600' },
+                  { label: 'Flagged / Restricted', val: inventory.filter(i => i.status === 'Flagged' || i.status === 'Reserved').length, icon: AlertCircle, color: 'text-amber-600' }
                 ].map((stat, i) => (
-                  <div key={i} className="p-5 rounded-2xl bg-black/20 border border-white/5">
-                    <div className="flex items-center gap-2 mb-2">
-                      <stat.icon className={`w-3 h-3 ${stat.color}`} />
-                      <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">{stat.label}</span>
+                  <div key={i} className="p-4 rounded-xl bg-gray-50 border border-gray-200/60">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <stat.icon className={`w-3.5 h-3.5 ${stat.color}`} />
+                      <span className="text-[11px] font-semibold text-gray-500">{stat.label}</span>
                     </div>
-                    <p className="text-xl font-black text-white tabular-nums">{stat.val}</p>
+                    <p className="text-2xl font-bold text-gray-900 font-mono">{stat.val}</p>
                   </div>
                 ))}
               </div>
@@ -221,78 +233,75 @@ export const Home: React.FC = () => {
           </div>
 
           {/* 4. TODAY'S BUSINESS SUMMARY (RIGHT) */}
-          <aside className="space-y-10">
-            <h2 className="text-xs font-black text-gray-500 uppercase tracking-[0.3em]">Today's Performance</h2>
+          <aside className="space-y-4">
+            <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Today's Performance</h2>
             
-            <div className="rounded-[2.5rem] bg-[#1A1A1A] border border-[#2A2A2A] overflow-hidden shadow-2xl">
-              <div className="p-8 space-y-8">
-                <div className="space-y-2">
-                  <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">Net Retail Revenue</p>
-                  <p className="text-4xl font-black text-[#E87A5D] font-mono tracking-tighter">R {todayTotals.salesValue.toLocaleString()}</p>
+            <div className="rounded-2xl bg-white border border-gray-200 shadow-xs overflow-hidden">
+              <div className="p-6 space-y-5">
+                <div>
+                  <p className="text-xs font-medium text-gray-500">Net Retail Revenue</p>
+                  <p className="text-3xl font-bold text-gray-900 font-mono mt-0.5">
+                    R {todayTotals.salesValue.toLocaleString()}
+                  </p>
                 </div>
 
-                <div className="h-px bg-gradient-to-r from-transparent via-[#333] to-transparent" />
+                <div className="h-px bg-gray-100" />
 
-                <div className="space-y-6">
+                <div className="space-y-3.5 text-xs">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                        <TrendingUp className="w-5 h-5 text-emerald-400" />
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                        <TrendingUp className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-white">Retail Sales</p>
-                        <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Checkout Sessions</p>
+                        <p className="font-semibold text-gray-900">Retail Sales</p>
+                        <p className="text-[10px] text-gray-400">Checkout Sessions</p>
                       </div>
                     </div>
-                    <span className="text-lg font-black text-white tabular-nums">{todayTotals.sales}</span>
+                    <span className="font-bold text-gray-900 font-mono text-sm">{todayTotals.sales}</span>
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                        <ArrowRightLeft className="w-5 h-5 text-blue-400" />
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-orange-50 text-[#C85A32] flex items-center justify-center">
+                        <ArrowRightLeft className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-white">Asset Buys</p>
-                        <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Inventory Inflow</p>
+                        <p className="font-semibold text-gray-900">Stock Inflow</p>
+                        <p className="text-[10px] text-gray-400">Items Added</p>
                       </div>
                     </div>
-                    <span className="text-lg font-black text-white tabular-nums">{todayTotals.buys}</span>
+                    <span className="font-bold text-gray-900 font-mono text-sm">{todayTotals.buys}</span>
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
-                        <Lock className="w-5 h-5 text-purple-400" />
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                        <Lock className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-white">Pawn Loans</p>
-                        <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Pledges Created</p>
+                        <p className="font-semibold text-gray-900">Pawn Pledges</p>
+                        <p className="text-[10px] text-gray-400">Pledges Initiated</p>
                       </div>
                     </div>
-                    <span className="text-lg font-black text-white tabular-nums">{todayTotals.pawns}</span>
+                    <span className="font-bold text-gray-900 font-mono text-sm">{todayTotals.pawns}</span>
                   </div>
                 </div>
 
-                <div className="p-6 rounded-2xl bg-black/40 border border-white/5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Cash Payouts</span>
-                    <TrendingUp className="w-3 h-3 text-red-400 rotate-180" />
-                  </div>
-                  <p className="text-xl font-black text-white font-mono">R {todayTotals.payouts.toLocaleString()}</p>
+                <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-200/60 space-y-1">
+                  <span className="text-[11px] font-medium text-gray-500">Cash Payouts</span>
+                  <p className="text-lg font-bold text-gray-900 font-mono">
+                    R {todayTotals.payouts.toLocaleString()}
+                  </p>
                 </div>
               </div>
 
-              <div className="bg-[#141414] p-6 border-t border-[#2A2A2A]">
-                <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-gray-500 mb-4">
-                  <span>System Integrity</span>
-                  <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <span className="px-2 py-1 rounded bg-black/40 border border-white/5 text-[9px] font-bold text-gray-400">NCR COMPLIANT</span>
-                  <span className="px-2 py-1 rounded bg-black/40 border border-white/5 text-[9px] font-bold text-gray-400">SAPS FORM 21</span>
-                  <span className="px-2 py-1 rounded bg-black/40 border border-white/5 text-[9px] font-bold text-gray-400">VAULT SYNC</span>
-                </div>
+              <div className="bg-[#F8F9FA] px-6 py-3.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500 font-medium">
+                <span>Compliance Active</span>
+                <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  NCR & SAPS Verified
+                </span>
               </div>
             </div>
           </aside>
@@ -301,4 +310,3 @@ export const Home: React.FC = () => {
     </div>
   );
 };
-
