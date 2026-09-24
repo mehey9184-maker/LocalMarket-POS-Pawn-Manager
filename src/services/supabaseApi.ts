@@ -1445,6 +1445,7 @@ export const staffApi = {
     role: 'cashier' | 'senior_cashier' | 'manager';
     cashierCode: string;
     pinCode?: string;
+    email?: string;
   }): Promise<{ success: boolean; profile?: ProfileRow; error?: string }> {
     try {
       const session = await authApi.getSession();

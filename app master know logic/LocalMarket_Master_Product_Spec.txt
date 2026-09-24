@@ -65,15 +65,17 @@ Alerts should be clickable and lead directly to the relevant record. Guidance sh
 
 6. USER ROLES AND PERMISSIONS
 -----------------------------
-Expose only two shop-managed staff roles in the interface: Cashier and Manager. The technical admin role remains in the database/platform but must be hidden from normal owners and staff.
+Expose only three shop-managed staff roles in the interface: Cashier, Senior Cashier, and Manager. The technical admin role remains in the database/platform but must be hidden from normal owners and staff.
 
 Owner is the business-account controller and should have owner-level access to shop setup, staff, reports, branding, business settings, and sensitive financial information.
 
 Cashier: sell, search, add stock, buy from sellers, create pawns, use customer/seller lookup, and complete permitted counter operations. No unrestricted historical editing, no sensitive cost/profit visibility, and no unrestricted refunds/voids.
 
-Manager: cashier capabilities plus approvals, refunds/voids, price changes, more reporting, and controlled operational administration.
+Senior Cashier: standard cashier capabilities with additional trust for high-value transactions.
 
-Owner: full shop management, staff, branding, business profile, reports, and multi-branch capabilities when enabled.
+Manager: cashier/senior capabilities plus approvals, refunds/voids, price changes, more reporting, staff management for cashiers, and controlled operational administration.
+
+Owner: full shop management, staff (including managers), branding, business profile, reports, and multi-branch capabilities when enabled.
 
 
 7. OWNER ONBOARDING
@@ -102,15 +104,18 @@ The database already contains shop_profiles and a metadata JSONB field; major br
 -----------------------------
 Owner login: email + password, with optional PIN for sensitive actions.
 
-Staff login: the shop is remembered on the device after setup; staff use username + 6-digit PIN for fast entry. The UI should not force a cashier to type a shop code repeatedly.
+Staff login: the shop is remembered on the device after setup; staff use username/cashier code + 6-digit PIN for fast entry via the Account Picker.
 
-Owner creates cashier/manager accounts from inside the app: Profile/Staff -> Add Cashier or Add Manager -> choose name, username, role, and 6-digit PIN -> create.
+Owner creates cashier/senior/manager accounts from inside the app: Profile/Staff -> Provision Staff -> choose name, role, cashier code, email (optional), and 6-digit PIN.
 
-Cashiers should be able to remain active for up to 12 hours through a device/session policy. Show the session state and require re-authentication when the session expires.
+Management: Owners and Managers can manage staff via Profile -> Staff & Access.
+- Add/Provision Staff: Create real authenticated accounts.
+- Change Role: Promote or change roles (Cashier <-> Senior <-> Manager).
+- Reset PIN: Securely reset a staff member's 6-digit terminal PIN.
+- Update Schedule: Set working days, start/end times, and shift behaviors (overnight, early login).
+- Deactivate/Reactivate: Instantly control terminal access while preserving historical transaction attribution.
 
-Add Switch User and Lock Terminal controls in the profile/session area. Switching staff should not require signing out the whole terminal.
-
-Forgot PIN: cashier sees a simple message telling them to ask the owner/manager to reset the PIN. The owner performs the reset inside Staff management.
+Forgot PIN: cashier asks the owner/manager to reset the PIN inside Staff management.
 
 Important backend correction: do not auto-assign new users to the first active shop. New users must be associated with the correct shop explicitly.
 
@@ -427,7 +432,7 @@ Flow D - Pawn: Add Stock -> Pawn -> enter customer ID -> existing customer appea
 
 Flow E - Retail sale: Sell -> search/scan item -> cart -> payment -> receipt -> inventory marked sold -> sale recorded. No customer account required by default.
 
-Flow F - Staff: Owner -> Staff -> Add Cashier -> username + 6-digit PIN -> cashier logs into remembered shop -> 12-hour session -> switch/lock user.
+Flow F - Staff Management: Owner -> Profile -> Staff & Access -> Provision Staff -> role, code, and PIN -> staff member instantly available in Account Picker -> can login via 6-digit PIN on shop device. Owner can later change roles, reset PINs, or deactivate access from the same panel.
 
 Flow G - Bulk import: Owner/manager -> Inventory -> Import Stock -> XLSX/CSV -> preview/validate -> fix/review -> import -> generated SKUs -> summary.
 

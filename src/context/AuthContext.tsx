@@ -18,11 +18,12 @@ interface AuthContextType {
     role: 'cashier' | 'senior_cashier' | 'manager';
     cashierCode: string;
     pinCode?: string;
+    email?: string;
   }) => Promise<{ success: boolean; profile?: ProfileRow; error?: string }>;
   logout: () => Promise<void>;
   logoutManager: () => void;
   refreshProfile: () => Promise<void>;
-  updateStaffProfile: (id: string, updates: Partial<ProfileRow>) => Promise<{ success: boolean; error?: string }>;
+  updateStaffProfile: (id: string, updates: Partial<ProfileRow>, reason?: string) => Promise<{ success: boolean; error?: string }>;
   users: ProfileRow[];
   isAccountPickerOpen: boolean;
   setIsAccountPickerOpen: (open: boolean) => void;
@@ -246,6 +247,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     role: 'cashier' | 'senior_cashier' | 'manager';
     cashierCode: string;
     pinCode?: string;
+    email?: string;
   }) => {
     if (!isManager && !isOwner) {
       return { success: false, error: 'Unauthorized: Manager or Owner authority required to provision staff.' };
@@ -258,13 +260,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    return await staffApi.provisionStaff({
+    const res = await staffApi.provisionStaff({
       shopId,
       fullName: data.fullName,
       role: data.role,
       cashierCode: data.cashierCode,
-      pinCode: data.pinCode
+      pinCode: data.pinCode,
+      email: data.email
     });
+
+    if (res.success) {
+      await refreshProfile();
+    }
+
+    return res;
   };
 
   const logout = async () => {
@@ -279,8 +288,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setManagerElevation(false);
   };
 
-  const updateStaffProfile = async (id: string, updates: Partial<ProfileRow>) => {
-    const res = await staffApi.updateStaffProfile(id, updates);
+  const updateStaffProfile = async (id: string, updates: Partial<ProfileRow>, reason?: string) => {
+    const res = await staffApi.updateStaffProfile(id, updates, reason);
     if (res.success) {
       await refreshProfile();
     }

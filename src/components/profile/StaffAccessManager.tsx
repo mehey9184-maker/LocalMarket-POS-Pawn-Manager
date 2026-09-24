@@ -15,7 +15,8 @@ import {
   Calendar,
   Lock,
   ArrowLeft,
-  Loader2
+  Loader2,
+  Key
 } from 'lucide-react';
 
 export const StaffAccessManager: React.FC = () => {
@@ -47,6 +48,39 @@ export const StaffAccessManager: React.FC = () => {
     setIsSaving(false);
   };
 
+  const handleUpdateSchedule = async (updates: any) => {
+    if (!selectedStaff) return;
+    const currentSchedule = (selectedStaff.schedule as any) || {};
+    const newSchedule = { ...currentSchedule, ...updates };
+    
+    setIsSaving(true);
+    const res = await updateStaffProfile(selectedStaff.id, { schedule: newSchedule }, 'Work schedule modified');
+    if (res.success) {
+      setSelectedStaff({ ...selectedStaff, schedule: newSchedule });
+      showToast('Schedule Updated', `Working hours for ${selectedStaff.full_name} modified.`, 'success');
+    } else {
+      showToast('Update Failed', res.error || 'Could not update schedule.', 'error');
+    }
+    setIsSaving(false);
+  };
+
+  const handleUpdateRole = async (newRole: string) => {
+    if (!selectedStaff) return;
+    if (newRole === selectedStaff.role) return;
+
+    if (!window.confirm(`Are you sure you want to change ${selectedStaff.full_name}'s role to ${newRole.replace('_', ' ')}?`)) return;
+
+    setIsSaving(true);
+    const res = await updateStaffProfile(selectedStaff.id, { role: newRole as any }, `Role changed to ${newRole}`);
+    if (res.success) {
+      setSelectedStaff({ ...selectedStaff, role: newRole as any });
+      showToast('Role Updated', `Profile changed to ${newRole.replace('_', ' ')}.`, 'success');
+    } else {
+      showToast('Update Failed', res.error || 'Could not update role.', 'error');
+    }
+    setIsSaving(false);
+  };
+
   const handleResetPin = async () => {
     if (!selectedStaff) return;
     const newPin = window.prompt('Enter new 6-digit PIN:');
@@ -56,7 +90,7 @@ export const StaffAccessManager: React.FC = () => {
     }
     
     setIsSaving(true);
-    const res = await updateStaffProfile(selectedStaff.id, { pinCode: newPin }, 'PIN reset by authorized user');
+    const res = await updateStaffProfile(selectedStaff.id, { pin_code: newPin }, 'PIN reset by authorized user');
     if (res.success) {
       showToast('PIN Updated', 'Staff PIN has been reset.', 'success');
     } else {
@@ -109,9 +143,23 @@ export const StaffAccessManager: React.FC = () => {
               <User className="w-10 h-10 text-gray-600" />
             )}
           </div>
-          <div>
-            <h2 className="text-2xl font-bold text-white">{selectedStaff.full_name}</h2>
-            <p className="text-gray-500 font-mono text-xs uppercase tracking-widest mt-1">{selectedStaff.role.replace('_', ' ')} · {selectedStaff.cashier_code}</p>
+          <div className="flex-1">
+            <div className="flex items-center gap-4">
+              <h2 className="text-2xl font-bold text-white">{selectedStaff.full_name}</h2>
+              <select
+                value={selectedStaff.role}
+                onChange={(e) => handleUpdateRole(e.target.value)}
+                disabled={isSaving}
+                className="bg-[#1A1A1A] border border-[#282828] rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-[#C85A32] focus:border-[#C85A32] outline-none transition-all cursor-pointer"
+              >
+                <option value="cashier">Cashier</option>
+                <option value="senior_cashier">Senior Cashier</option>
+                <option value="manager">Manager</option>
+                {selectedStaff.role === 'owner' && <option value="owner">Owner</option>}
+                {selectedStaff.role === 'admin' && <option value="admin">Admin</option>}
+              </select>
+            </div>
+            <p className="text-gray-500 font-mono text-xs uppercase tracking-widest mt-1">Operator ID: {selectedStaff.cashier_code} · {selectedStaff.email}</p>
           </div>
         </div>
 
@@ -242,27 +290,39 @@ export const StaffAccessManager: React.FC = () => {
                 <h3 className="text-sm font-bold uppercase tracking-widest">Account Security</h3>
               </div>
               <p className="text-[11px] text-gray-500 leading-relaxed">
-                Deactivating an account will immediately invalidate all active terminal sessions for this staff member.
+                Resetting the PIN or deactivating the account will immediately affect terminal access.
               </p>
-              <button 
-                onClick={async () => {
-                  const confirmed = window.confirm(`Are you sure you want to ${selectedStaff.is_active ? 'deactivate' : 'activate'} this staff account?`);
-                  if (confirmed) {
-                    const res = await updateStaffProfile(selectedStaff.id, { is_active: !selectedStaff.is_active });
-                    if (res.success) {
-                      setSelectedStaff({ ...selectedStaff, is_active: !selectedStaff.is_active });
-                      showToast('Status Updated', 'Account status has been changed successfully.', 'success');
+              
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={handleResetPin}
+                  disabled={isSaving}
+                  className="w-full py-3 rounded-xl text-xs font-bold border border-red-500/20 text-red-500 hover:bg-red-500/10 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  <span>Reset Terminal PIN</span>
+                </button>
+
+                <button 
+                  onClick={async () => {
+                    const confirmed = window.confirm(`Are you sure you want to ${selectedStaff.is_active ? 'deactivate' : 'activate'} this staff account?`);
+                    if (confirmed) {
+                      const res = await updateStaffProfile(selectedStaff.id, { is_active: !selectedStaff.is_active });
+                      if (res.success) {
+                        setSelectedStaff({ ...selectedStaff, is_active: !selectedStaff.is_active });
+                        showToast('Status Updated', 'Account status has been changed successfully.', 'success');
+                      }
                     }
-                  }
-                }}
-                className={`w-full py-3 rounded-xl text-xs font-bold border transition-colors ${
-                  selectedStaff.is_active 
-                    ? 'border-red-500/20 text-red-500 hover:bg-red-500/10' 
-                    : 'border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10'
-                }`}
-              >
-                {selectedStaff.is_active ? 'Deactivate Account' : 'Reactivate Account'}
-              </button>
+                  }}
+                  className={`w-full py-3 rounded-xl text-xs font-bold border transition-colors ${
+                    selectedStaff.is_active 
+                      ? 'border-red-500/20 text-red-500 hover:bg-red-500/10' 
+                      : 'border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10'
+                  }`}
+                >
+                  {selectedStaff.is_active ? 'Deactivate Account' : 'Reactivate Account'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -359,6 +419,7 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         role: formData.role,
         cashierCode: formData.cashierCode.trim(),
         pinCode: formData.pinCode.trim() || undefined,
+        email: formData.email.trim() || undefined,
       });
 
       if (res.success) {
