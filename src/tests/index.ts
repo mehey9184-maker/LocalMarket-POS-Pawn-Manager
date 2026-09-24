@@ -7,6 +7,7 @@ import { runIdentifierAndSourceOfTruthTests } from './identifierAndSourceOfTruth
 import { runAtomicBuyAndPawnIntegrityTests } from './atomicBuyAndPawnIntegrity.test';
 import { runV1DefectRepairPassTests } from './v1DefectRepairPass.test';
 import { runTerminalSessionTests } from './terminalSession.test';
+import { runIntelligentAssistanceTests } from './intelligentAssistance.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -21,6 +22,7 @@ export async function runAllTests() {
   await runAtomicBuyAndPawnIntegrityTests();
   await runV1DefectRepairPassTests();
   await runTerminalSessionTests();
+  runIntelligentAssistanceTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');
