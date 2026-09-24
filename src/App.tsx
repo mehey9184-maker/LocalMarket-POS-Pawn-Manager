@@ -14,6 +14,7 @@ import { Inventory } from './components/screens/Inventory';
 import { Customers } from './components/screens/Customers';
 import { CashierProfile } from './components/screens/CashierProfile';
 import { VaultManager } from './components/screens/VaultManager';
+import { SapsRegister } from './components/screens/SapsRegister';
 import { LandingPage } from './components/screens/LandingPage';
 import { AuthPage } from './components/screens/AuthPage';
 import { AccountPicker } from './components/auth/AccountPicker';
@@ -66,9 +67,10 @@ const MainLayout: React.FC = () => {
         {activeTab === 'sell' && <Sell />}
         {activeTab === 'buy-pawn' && <BuyPawn />}
         {activeTab === 'inventory' && <Inventory />}
+        {activeTab === 'vault' && <VaultManager />}
+        {activeTab === 'saps' && <SapsRegister />}
         {activeTab === 'customers' && <Customers />}
         {activeTab === 'profile' && <CashierProfile />}
-        {activeTab === 'vault' && <VaultManager />}
       </main>
 
       {/* Hardware Scanner Camera Modal */}

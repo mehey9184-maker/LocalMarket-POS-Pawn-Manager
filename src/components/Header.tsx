@@ -101,6 +101,7 @@ export const Header: React.FC<HeaderProps> = () => {
     { id: 'buy-pawn', label: 'Add Stock' },
     { id: 'inventory', label: 'Inventory' },
     { id: 'vault', label: 'Vault' },
+    { id: 'saps', label: 'SAPS Register' },
     { id: 'customers', label: 'Customers' }
   ];
 

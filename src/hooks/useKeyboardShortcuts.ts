@@ -50,9 +50,10 @@ export const useKeyboardShortcuts = (options?: KeyboardShortcutOptions) => {
             sell: 'Front POS Terminal',
             'buy-pawn': 'Buy / Pawn Intake Desk',
             inventory: 'Vault & Stockroom Manager',
-            customers: 'Consolidated Records & SAPS',
+            customers: 'Consolidated Records & Clients',
             profile: 'Cashier Profile & Performance',
-            vault: 'Secure Vault Operations'
+            vault: 'Secure Vault Operations',
+            saps: 'SAPS Form 21 Statutory Register'
           };
           showToast(`Switched Tab`, tabNames[targetTab], 'info');
           return;

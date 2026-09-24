@@ -1,7 +1,11 @@
 {
   "name": "localmarket-pos-pawn-manager",
+  "productName": "LocalMarket POS & Pawn Manager",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Hybrid Retail POS, Second-Hand Goods Buy/Pawn Intake, Vault Stockroom Manager, and SAPS Compliance Register",
+  "author": "LocalMarket Engineering <support@localmarket.co.za>",
+  "main": "dist-electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

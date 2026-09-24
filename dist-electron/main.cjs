@@ -26,8 +26,42 @@ var import_electron = require("electron");
 var import_path = __toESM(require("path"), 1);
 var import_fs = __toESM(require("fs"), 1);
 var mainWindow = null;
+var embeddedServer = null;
+var serverPort = 3e3;
 var isDev = process.env.NODE_ENV === "development" || !import_electron.app.isPackaged;
-function createWindow() {
+async function startEmbeddedBackend() {
+  process.env.IS_ELECTRON_MAIN = "true";
+  process.env.ELECTRON_APP = "true";
+  try {
+    const candidatePaths = [
+      import_path.default.join(__dirname, "../dist/server.cjs"),
+      import_path.default.join(import_electron.app.getAppPath(), "dist/server.cjs"),
+      import_path.default.join(process.cwd(), "dist/server.cjs"),
+      import_path.default.join(__dirname, "server.cjs")
+    ];
+    let serverModule = null;
+    for (const p of candidatePaths) {
+      if (import_fs.default.existsSync(p)) {
+        serverModule = require(p);
+        break;
+      }
+    }
+    if (serverModule && typeof serverModule.startServer === "function") {
+      const { server, port } = await serverModule.startServer(3e3);
+      embeddedServer = server;
+      serverPort = port;
+      console.log(`[Electron Main] Embedded Express server running on http://127.0.0.1:${port}`);
+      return port;
+    }
+  } catch (err) {
+    console.error("[Electron Main] Embedded server startup error:", err);
+  }
+  return 3e3;
+}
+async function createWindow() {
+  if (!isDev || !process.env.VITE_DEV_SERVER_URL) {
+    serverPort = await startEmbeddedBackend();
+  }
   mainWindow = new import_electron.BrowserWindow({
     width: 1366,
     height: 768,
@@ -63,26 +97,28 @@ function createWindow() {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools();
   } else {
-    const indexPath = import_path.default.join(__dirname, "../dist/index.html");
-    if (import_fs.default.existsSync(indexPath)) {
-      mainWindow.loadFile(indexPath);
-    } else {
-      mainWindow.loadFile(import_path.default.join(import_electron.app.getAppPath(), "dist/index.html"));
-    }
+    mainWindow.loadURL(`http://127.0.0.1:${serverPort}`);
   }
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
-import_electron.app.whenReady().then(() => {
-  createWindow();
-  import_electron.app.on("activate", () => {
+import_electron.app.whenReady().then(async () => {
+  await createWindow();
+  import_electron.app.on("activate", async () => {
     if (import_electron.BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      await createWindow();
     }
   });
 });
 import_electron.app.on("window-all-closed", () => {
+  if (embeddedServer) {
+    try {
+      embeddedServer.close();
+    } catch (e) {
+      console.warn("Server shutdown note:", e);
+    }
+  }
   if (process.platform !== "darwin") {
     import_electron.app.quit();
   }

@@ -411,6 +411,7 @@ export const ScannerModal: React.FC = () => {
 
         const hints = new Map<DecodeHintType, any>();
         hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
+        hints.set(DecodeHintType.TRY_HARDER, false);
 
         const reader = new BrowserMultiFormatReader(hints, {
           delayBetweenScanAttempts: 250,
@@ -419,10 +420,25 @@ export const ScannerModal: React.FC = () => {
         readerRef.current = reader;
 
         if (videoRef.current) {
-          reader.decodeFromVideoElement(videoRef.current, (result) => {
+          reader.decodeFromVideoElement(videoRef.current, (result, err) => {
             lastDecodeAttemptAtRef.current = Date.now();
             if (result && result.getText()) {
               handleDecodedCode(result.getText());
+              return;
+            }
+            if (err) {
+              const errName = (err as any).name || '';
+              const errMsg = (err as any).message || '';
+              const isExpectedMiss = 
+                errName === 'NotFoundException' || 
+                errName === 'ChecksumException' || 
+                errName === 'FormatException' ||
+                errMsg.includes('No MultiFormat Readers') ||
+                errMsg.includes('NotFoundException');
+              
+              if (!isExpectedMiss) {
+                console.debug('[Scanner Diagnostic] Decoder frame event:', err);
+              }
             }
           });
         }

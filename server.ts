@@ -1121,24 +1121,54 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  // Vite middleware for development (disabled in Electron packaged mode)
+  if (process.env.NODE_ENV !== "production" && !process.env.ELECTRON_APP) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const candidatePaths = [
+      path.join(process.cwd(), "dist"),
+      path.join(__dirname, "../dist"),
+      path.join(__dirname, "dist")
+    ];
+    const distPath = candidatePaths.find(p => fs.existsSync(path.join(p, "index.html"))) || candidatePaths[0];
+    
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  return new Promise<{ app: express.Application; server: any; port: number }>((resolve, reject) => {
+    const server = app.listen(PORT, "0.0.0.0", () => {
+      const actualPort = (server.address() as any)?.port || PORT;
+      console.log(`LocalMarket Server running on http://127.0.0.1:${actualPort}`);
+      resolve({ app, server, port: actualPort });
+    });
+
+    server.on("error", (err: any) => {
+      if (err.code === "EADDRINUSE" && PORT !== 0) {
+        console.warn(`Port ${PORT} in use, binding to ephemeral port...`);
+        const fallback = app.listen(0, "127.0.0.1", () => {
+          const actualPort = (fallback.address() as any)?.port;
+          console.log(`LocalMarket Server running on fallback http://127.0.0.1:${actualPort}`);
+          resolve({ app, server: fallback, port: actualPort });
+        });
+      } else {
+        reject(err);
+      }
+    });
   });
 }
 
-startServer();
+export { startServer };
+
+// Standalone execution entry
+if (typeof process !== "undefined" && !process.env.IS_ELECTRON_MAIN) {
+  startServer(Number(process.env.PORT) || 3000).catch(err => {
+    console.error("LocalMarket Server initialization error:", err);
+  });
+}

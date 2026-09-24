@@ -3,10 +3,49 @@ import path from 'path';
 import fs from 'fs';
 
 let mainWindow: BrowserWindow | null = null;
+let embeddedServer: any = null;
+let serverPort: number = 3000;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
-function createWindow() {
+async function startEmbeddedBackend(): Promise<number> {
+  process.env.IS_ELECTRON_MAIN = 'true';
+  process.env.ELECTRON_APP = 'true';
+
+  try {
+    const candidatePaths = [
+      path.join(__dirname, '../dist/server.cjs'),
+      path.join(app.getAppPath(), 'dist/server.cjs'),
+      path.join(process.cwd(), 'dist/server.cjs'),
+      path.join(__dirname, 'server.cjs')
+    ];
+
+    let serverModule: any = null;
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        serverModule = require(p);
+        break;
+      }
+    }
+
+    if (serverModule && typeof serverModule.startServer === 'function') {
+      const { server, port } = await serverModule.startServer(3000);
+      embeddedServer = server;
+      serverPort = port;
+      console.log(`[Electron Main] Embedded Express server running on http://127.0.0.1:${port}`);
+      return port;
+    }
+  } catch (err) {
+    console.error('[Electron Main] Embedded server startup error:', err);
+  }
+  return 3000;
+}
+
+async function createWindow() {
+  if (!isDev || !process.env.VITE_DEV_SERVER_URL) {
+    serverPort = await startEmbeddedBackend();
+  }
+
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 768,
@@ -48,13 +87,8 @@ function createWindow() {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools();
   } else {
-    // In production, load the built index.html from dist
-    const indexPath = path.join(__dirname, '../dist/index.html');
-    if (fs.existsSync(indexPath)) {
-      mainWindow.loadFile(indexPath);
-    } else {
-      mainWindow.loadFile(path.join(app.getAppPath(), 'dist/index.html'));
-    }
+    // In production, load via the embedded Express backend server so all /api/* routes work seamlessly
+    mainWindow.loadURL(`http://127.0.0.1:${serverPort}`);
   }
 
   mainWindow.on('closed', () => {
@@ -62,17 +96,24 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  createWindow();
+app.whenReady().then(async () => {
+  await createWindow();
 
-  app.on('activate', () => {
+  app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      await createWindow();
     }
   });
 });
 
 app.on('window-all-closed', () => {
+  if (embeddedServer) {
+    try {
+      embeddedServer.close();
+    } catch (e) {
+      console.warn('Server shutdown note:', e);
+    }
+  }
   if (process.platform !== 'darwin') {
     app.quit();
   }
