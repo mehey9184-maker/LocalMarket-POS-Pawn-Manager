@@ -13,7 +13,8 @@ import {
   refundsApi,
   sapsApi, 
   logsApi,
-  sellerReversalsApi 
+  sellerReversalsApi,
+  shopProfilesApi 
 } from './supabaseApi';
 
 /**
@@ -163,15 +164,33 @@ export const SyncService = {
         }
 
         case 'rules': {
-          // System rules sync audit log
+          const rules = log.payload?.rules || log.payload;
+          const reason = log.payload?.reason || 'Replayed from offline business rules mutation';
+          const rpcRes = await shopProfilesApi.updateShopBusinessRulesRpc(rules, reason);
+          if (!rpcRes.success) {
+            throw new Error(rpcRes.error || 'Server rejected business rules update');
+          }
           await logsApi.createLog(
             'BUSINESS_RULES_SYNCED',
             'Sync Engine',
-            { updatedFields: Object.keys(log.payload || {}) },
+            { updatedFields: Object.keys(rules || {}) },
             'audit',
             undefined,
             shopId
           );
+          break;
+        }
+
+        case 'shopProfile': {
+          const targetShopId = log.entityId || log.payload?.id || shopId;
+          if (!targetShopId) {
+            throw new Error('Shop ID missing for shop profile sync');
+          }
+          const payload = log.payload;
+          const updated = await shopProfilesApi.updateShopProfile(targetShopId, payload);
+          if (!updated) {
+            throw new Error('Server rejected shop profile update');
+          }
           break;
         }
 

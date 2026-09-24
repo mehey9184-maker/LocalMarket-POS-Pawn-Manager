@@ -14,7 +14,7 @@ export async function runAllTests() {
   await runExternalProviderManagerTests();
   await runStabilityAndScannerTests();
   await runIdentityVerificationIntegrityTests();
-  runIdentifierAndSourceOfTruthTests();
+  await runIdentifierAndSourceOfTruthTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');

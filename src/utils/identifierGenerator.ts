@@ -1,12 +1,16 @@
 /**
  * Identifier Generator Utility
  * 
- * Provides cryptographically secure, collision-safe business identifiers
+ * Provides cryptographically secure, collision-checked business identifiers
  * adhering strictly to the store's human-readable format specifications:
- * - SKUs: LM-xxxxx
- * - Seller Transactions: ST-xxxxxx
- * - Pawn Tickets: PWN-xxxx
- * - Receipts: REC-xxxxxx
+ * - SKUs: LM-xxxxx (5-digit random, fallback to LM-xxxxx-HEX with existence validation)
+ * - Seller Transactions: ST-xxxxxx (6-digit random, fallback to ST-xxxxxx-HEX with existence validation)
+ * - Pawn Tickets: PWN-xxxx (4-digit random, expanding to 5-digit PWN-xxxxx, fallback to PWN-xxxxx-HEX with existence validation)
+ * - Receipts: REC-xxxxxx (6-digit cryptographically uniform random with collision checking, NOT sequential)
+ * 
+ * Collision Safety Guarantee:
+ * Every primary and fallback generation path checks the supplied existence callback.
+ * An identifier is returned ONLY after it has explicitly passed the collision check.
  */
 
 /**
@@ -32,10 +36,22 @@ export function getCryptoRandomInt(min: number, max: number): number {
 }
 
 /**
- * Generates an Inventory SKU in the standard LM-xxxxx format (5-digit random),
- * ensuring collision avoidance against provided inventory items or lookup callback.
+ * Generates random hexadecimal string from cryptographically secure random bytes.
+ */
+function getHexEntropy(byteCount: number): string {
+  const bytes = new Uint8Array(byteCount);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+
+/**
+ * Generates an Inventory SKU in the standard LM-xxxxx format (5-digit random).
+ * If the 5-digit space experiences collisions against existing inventory, falls back
+ * to high-entropy suffixed candidates (LM-xxxxx-HEX) while rigorously validating
+ * every candidate against the supplied collision check before returning.
  */
 export function generateUniqueSku(isExisting?: (sku: string) => boolean): string {
+  // Primary attempts: standard 5-digit LM-xxxxx format
   for (let attempt = 0; attempt < 50; attempt++) {
     const num = getCryptoRandomInt(10000, 99999);
     const sku = `LM-${num}`;
@@ -43,20 +59,27 @@ export function generateUniqueSku(isExisting?: (sku: string) => boolean): string
       return sku;
     }
   }
-  // High-collision fallback: append short hex suffix to preserve LM- prefix while guaranteeing uniqueness
-  const num = getCryptoRandomInt(10000, 99999);
-  const hex = Array.from(crypto.getRandomValues(new Uint8Array(2)))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-    .toUpperCase();
-  return `LM-${num}-${hex}`;
+
+  // Fallback path: append crypto-safe hex entropy, validating each candidate
+  let fallbackAttempt = 0;
+  while (true) {
+    fallbackAttempt++;
+    const num = getCryptoRandomInt(10000, 99999);
+    const byteLength = fallbackAttempt > 50 ? 4 : 2;
+    const hex = getHexEntropy(byteLength);
+    const candidate = `LM-${num}-${hex}`;
+    if (!isExisting || !isExisting(candidate)) {
+      return candidate;
+    }
+  }
 }
 
 /**
- * Generates a Seller Statutory Transaction Number in the standard ST-xxxxxx format (6-digit random),
- * checking for collision avoidance against existing transactions.
+ * Generates a Seller Statutory Transaction Number in the standard ST-xxxxxx format (6-digit random).
+ * Every candidate generated in primary and fallback paths is validated against the existence check.
  */
 export function generateUniqueTransactionNumber(isExisting?: (txNum: string) => boolean): string {
+  // Primary attempts: standard 6-digit ST-xxxxxx format
   for (let attempt = 0; attempt < 50; attempt++) {
     const num = getCryptoRandomInt(100000, 999999);
     const txNum = `ST-${num}`;
@@ -64,19 +87,29 @@ export function generateUniqueTransactionNumber(isExisting?: (txNum: string) => 
       return txNum;
     }
   }
-  const num = getCryptoRandomInt(100000, 999999);
-  const hex = Array.from(crypto.getRandomValues(new Uint8Array(2)))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-    .toUpperCase();
-  return `ST-${num}-${hex}`;
+
+  // Fallback path: append crypto-safe hex entropy, validating each candidate
+  let fallbackAttempt = 0;
+  while (true) {
+    fallbackAttempt++;
+    const num = getCryptoRandomInt(100000, 999999);
+    const byteLength = fallbackAttempt > 50 ? 4 : 2;
+    const hex = getHexEntropy(byteLength);
+    const candidate = `ST-${num}-${hex}`;
+    if (!isExisting || !isExisting(candidate)) {
+      return candidate;
+    }
+  }
 }
 
 /**
- * Generates a Pawn Ticket Number in the standard PWN-xxxx format (4-digit random),
- * checking for collision avoidance against active or archived loans.
+ * Generates a Pawn Ticket Number in the standard PWN-xxxx format (4-digit random).
+ * Expands to 5-digit PWN-xxxxx if 4-digit space experiences collisions.
+ * In saturated loan databases, falls back to PWN-xxxxx-HEX while rigorously verifying
+ * that every candidate passes the collision check before returning.
  */
 export function generateUniquePawnTicket(isExisting?: (ticket: string) => boolean): string {
+  // Primary attempts: standard 4-digit PWN-xxxx format
   for (let attempt = 0; attempt < 50; attempt++) {
     const num = getCryptoRandomInt(1000, 9999);
     const ticket = `PWN-${num}`;
@@ -84,16 +117,39 @@ export function generateUniquePawnTicket(isExisting?: (ticket: string) => boolea
       return ticket;
     }
   }
-  // In dense loan databases, expand safely to 5 digits
-  const num = getCryptoRandomInt(10000, 99999);
-  return `PWN-${num}`;
+
+  // Secondary attempts: dense loan database expansion to 5 digits
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const num = getCryptoRandomInt(10000, 99999);
+    const ticket = `PWN-${num}`;
+    if (!isExisting || !isExisting(ticket)) {
+      return ticket;
+    }
+  }
+
+  // Fallback path: append crypto-safe hex entropy, validating each candidate
+  let fallbackAttempt = 0;
+  while (true) {
+    fallbackAttempt++;
+    const num = getCryptoRandomInt(10000, 99999);
+    const byteLength = fallbackAttempt > 50 ? 4 : 2;
+    const hex = getHexEntropy(byteLength);
+    const candidate = `PWN-${num}-${hex}`;
+    if (!isExisting || !isExisting(candidate)) {
+      return candidate;
+    }
+  }
 }
 
 /**
- * Generates a Point of Sale Receipt Number in the standard REC-xxxxxx format (6-digit random),
- * checking for collision avoidance against existing sales transactions.
+ * Generates a Point of Sale Receipt Number in the standard REC-xxxxxx format (6-digit random).
+ * 
+ * Note: Receipt numbers are non-sequential cryptographically uniform random identifiers
+ * with collision checking against existing sales records.
+ * Every candidate generated in primary and fallback paths is validated against the existence check.
  */
 export function generateUniqueReceiptNumber(isExisting?: (receipt: string) => boolean): string {
+  // Primary attempts: standard 6-digit REC-xxxxxx format
   for (let attempt = 0; attempt < 50; attempt++) {
     const num = getCryptoRandomInt(100000, 999999);
     const receipt = `REC-${num}`;
@@ -101,10 +157,17 @@ export function generateUniqueReceiptNumber(isExisting?: (receipt: string) => bo
       return receipt;
     }
   }
-  const num = getCryptoRandomInt(100000, 999999);
-  const hex = Array.from(crypto.getRandomValues(new Uint8Array(2)))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-    .toUpperCase();
-  return `REC-${num}-${hex}`;
+
+  // Fallback path: append crypto-safe hex entropy, validating each candidate
+  let fallbackAttempt = 0;
+  while (true) {
+    fallbackAttempt++;
+    const num = getCryptoRandomInt(100000, 999999);
+    const byteLength = fallbackAttempt > 50 ? 4 : 2;
+    const hex = getHexEntropy(byteLength);
+    const candidate = `REC-${num}-${hex}`;
+    if (!isExisting || !isExisting(candidate)) {
+      return candidate;
+    }
+  }
 }

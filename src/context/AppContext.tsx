@@ -260,6 +260,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateBusinessRules = useCallback(async (updates: Partial<BusinessRules>, reason?: string) => {
     const nextRules = { ...businessRules, ...updates };
+    const targetShopId = shopProfile.id || currentUserProfile?.shop_id || 'default-shop';
+    const isOwner = currentUserProfile?.role === 'owner';
+
+    // 1. Online: when authenticated as owner, attempt server persistence first
+    if (navigator.onLine && currentUserProfile?.shop_id && isOwner) {
+      try {
+        const res = await shopProfilesApi.updateShopBusinessRulesRpc(nextRules, reason);
+        if (res.success) {
+          // Server update confirmed authoritative: persist to state and local cache
+          setBusinessRules(nextRules);
+          localStorage.setItem('lm_business_rules', JSON.stringify(nextRules));
+          
+          setShopProfile(sp => {
+            const updated = { ...sp, businessRules: nextRules };
+            localStorage.setItem('lm_shop_profile', JSON.stringify(updated));
+            return updated;
+          });
+
+          showToast('Settings Persisted', 'Business rules updated and audited on server.', 'success');
+          return;
+        } else {
+          console.warn('Server rejected business rules update, queueing offline outbox sync:', res.error);
+        }
+      } catch (err) {
+        console.warn('Network error updating business rules, queueing offline outbox sync:', err);
+      }
+    }
+
+    // 2. Offline / Fallback:
+    // Update local state/cache for offline operational continuity
     setBusinessRules(nextRules);
     localStorage.setItem('lm_business_rules', JSON.stringify(nextRules));
     
@@ -269,33 +299,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updated;
     });
 
-    if (currentUserProfile?.shop_id && currentUserProfile.role === 'owner') {
-      try {
-        const res = await shopProfilesApi.updateShopBusinessRulesRpc(nextRules, reason);
-        if (res.success) {
-          showToast('Settings Persisted', 'Business rules updated and audited on server.', 'success');
-        } else {
-          showToast('Sync Warning', 'Local settings saved but server update failed.', 'amber');
-        }
-      } catch (err) {
-        console.error('Failed to sync business rules:', err);
-      }
-    } else {
-      showToast('Settings Saved', 'Local business rules updated.', 'success');
-    }
-  }, [businessRules, currentUserProfile, showToast]);
-
-  const updateShopProfile = useCallback(async (updates: Partial<ShopProfile>) => {
-    // 1. Optimistic update and local cache update for offline continuity
-    setShopProfile(prev => {
-      const next = { ...prev, ...updates };
-      localStorage.setItem('lm_shop_profile', JSON.stringify(next));
-      return next;
+    // 3. Durable pending sync record created in Dexie syncLogs outbox
+    await queueSyncAction('rules', targetShopId, 'update', {
+      rules: nextRules,
+      reason: reason || 'Offline business rules mutation'
     });
 
-    // 2. Authoritative server update when connected and authenticated with management role
-    const targetShopId = shopProfile.id || currentUserProfile?.shop_id;
-    if (targetShopId && (currentUserProfile?.role === 'owner' || currentUserProfile?.role === 'manager')) {
+    showToast('Offline Mode', 'Business rules saved locally and queued for cloud sync.', 'amber');
+  }, [businessRules, shopProfile.id, currentUserProfile, queueSyncAction, showToast]);
+
+  const updateShopProfile = useCallback(async (updates: Partial<ShopProfile>) => {
+    const next = { ...shopProfile, ...updates };
+    const targetShopId = shopProfile.id || currentUserProfile?.shop_id || 'default-shop';
+    const canManage = currentUserProfile?.role === 'owner' || currentUserProfile?.role === 'manager';
+
+    // 1. Online: when authenticated with management privileges, attempt server persistence first
+    if (navigator.onLine && canManage && targetShopId) {
       try {
         const payload: any = {};
         if (updates.shop_name !== undefined) payload.shop_name = updates.shop_name;
@@ -315,23 +334,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const updated = await shopProfilesApi.updateShopProfile(targetShopId, payload);
         if (updated) {
+          // Server update confirmed authoritative: persist to state and local cache
+          setShopProfile(next);
+          localStorage.setItem('lm_shop_profile', JSON.stringify(next));
           showToast('Store Profile Updated', 'Persisted to server database.', 'success');
           return;
+        } else {
+          console.warn('Server rejected shop profile update, queueing offline outbox sync');
         }
       } catch (err) {
-        console.warn('Server shop profile update failed, cached locally:', err);
-        showToast('Offline Mode', 'Store profile saved locally. Will sync when server is reachable.', 'amber');
-        return;
+        console.warn('Server shop profile update failed, queueing offline outbox sync:', err);
       }
     }
-    showToast('Store Profile Updated', 'Changes saved locally on device', 'success');
-  }, [shopProfile.id, currentUserProfile, showToast]);
+
+    // 2. Offline / Fallback:
+    // Update local state/cache for offline operational continuity
+    setShopProfile(next);
+    localStorage.setItem('lm_shop_profile', JSON.stringify(next));
+
+    // 3. Durable pending sync record created in Dexie syncLogs outbox
+    await queueSyncAction('shopProfile', targetShopId, 'update', updates);
+
+    showToast('Offline Mode', 'Store profile saved locally and queued for server sync.', 'amber');
+  }, [shopProfile, currentUserProfile, queueSyncAction, showToast]);
 
   // Auth Effects: Server profile & business rules are authoritative when available
+  // Conflict Safety:
+  // - During startup/auth, server data is authoritative IF there is no unsynced local mutation.
+  // - A pending offline mutation in db.syncLogs will NOT be overwritten by server hydration before replay.
+  // - When sync triggers and completes, lastSyncTime updates, allowing authoritative server hydration.
+  // - Conflict resolution model: Terminal offline changes queue in the outbox and replay upon reconnect
+  //   (last-write-wins at commit time via audited RPC). When no pending mutations exist, fresh server state rules.
   useEffect(() => {
     if (currentUserProfile?.shop_id) {
-      shopProfilesApi.getShopById(currentUserProfile.shop_id).then(shop => {
+      shopProfilesApi.getShopById(currentUserProfile.shop_id).then(async (shop) => {
         if (shop) {
+          // Check for pending/syncing/failed outbox records
+          const pendingLogs = await db.syncLogs
+            .where('status')
+            .anyOf('pending', 'syncing', 'failed')
+            .toArray();
+
+          const hasPendingRules = pendingLogs.some(l => l.entityType === 'rules');
+          const hasPendingProfile = pendingLogs.some(l => l.entityType === 'shopProfile');
+
           const serverRules = (shop as any).business_rules as BusinessRules;
           const mappedShop: ShopProfile = {
             id: shop.id,
@@ -352,23 +398,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             receipt_footer: shop.receipt_footer || '',
             businessRules: serverRules
           };
-          // Server profile is authoritative: overwrite local cache
-          setShopProfile(mappedShop);
-          localStorage.setItem('lm_shop_profile', JSON.stringify(mappedShop));
+
+          // Only hydrate store profile from server if no pending local mutations are waiting to replay
+          if (!hasPendingProfile) {
+            setShopProfile(mappedShop);
+            localStorage.setItem('lm_shop_profile', JSON.stringify(mappedShop));
+          } else {
+            console.log('[AppContext] Preserving pending local shopProfile mutation during server hydration');
+          }
           
-          if (serverRules) {
-            // Authoritative server rules take strict precedence; merge with defaults for any missing fields
+          // Only hydrate business rules from server if no pending local mutations are waiting to replay
+          if (serverRules && !hasPendingRules) {
             const authoritativeRules: BusinessRules = {
               ...DEFAULT_BUSINESS_RULES,
               ...serverRules
             };
             setBusinessRules(authoritativeRules);
             localStorage.setItem('lm_business_rules', JSON.stringify(authoritativeRules));
+          } else if (hasPendingRules) {
+            console.log('[AppContext] Preserving pending local businessRules mutation during server hydration');
           }
         }
       });
     }
-  }, [currentUserProfile]);
+  }, [currentUserProfile, syncStatus.lastSyncTime]);
 
   const logSystemEvent = useCallback(async (
     eventType: string,

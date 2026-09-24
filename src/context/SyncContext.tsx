@@ -4,6 +4,7 @@ import { db } from '../db';
 import { SyncLog, SyncStatus } from '../types';
 import { isSupabaseConfigured } from '../services/supabase';
 import { SyncService } from '../services/SyncService';
+import { useAuth } from './AuthContext';
 
 interface SyncContextType {
   syncStatus: SyncStatus;
@@ -24,6 +25,7 @@ interface SyncContextType {
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
 export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { shopId } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(localStorage.getItem('last_sync_time'));
@@ -64,20 +66,20 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setIsSyncing(true);
     try {
-      await SyncService.processAllPendingSync();
+      await SyncService.processAllPendingSync(shopId || undefined);
       const now = new Date().toISOString();
       setLastSyncTime(now);
       localStorage.setItem('last_sync_time', now);
     } finally {
       setIsSyncing(false);
     }
-  }, [isSyncing, isOnline]);
+  }, [isSyncing, isOnline, shopId]);
 
   const retryFailedSync = async (logId: number) => {
     const log = await db.syncLogs.get(logId);
     if (log) {
       await db.syncLogs.update(logId, { status: 'syncing' });
-      await SyncService.syncEntity(log as SyncLog);
+      await SyncService.syncEntity(log as SyncLog, shopId || undefined);
     }
   };
 
