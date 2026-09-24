@@ -817,6 +817,7 @@ export const BuyPawn: React.FC = () => {
         item: { title: `${finalBasket.length} Items`, sku: transactionNumber } as any
       });
 
+      await draftService.closeDraft(draftId);
       setStep('completion');
       if (syncLogStatus === 'completed') {
         showToast('Batch Purchase Complete', `${finalBasket.length} items acquired atomically and logged to SAPS`, 'success');
@@ -1010,6 +1011,7 @@ export const BuyPawn: React.FC = () => {
         loan: { id: loanId, ticketNumber } as any
       });
 
+      await draftService.closeDraft(draftId);
       setStep('completion');
       if (syncLogStatus === 'completed') {
         showToast('Pawn Finalized', `Ticket ${ticketNumber} created and asset vaulted atomically`, 'success');
@@ -1031,6 +1033,7 @@ export const BuyPawn: React.FC = () => {
   }, [txType, customers, sellers, identitySearch]);
 
   const resetWorkflow = () => {
+    setDraftId(crypto.randomUUID());
     setStep('mode');
     setTxType(null);
     setSelectedIdentity(null);
