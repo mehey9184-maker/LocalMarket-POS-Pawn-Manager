@@ -68,6 +68,74 @@ export const SyncService = {
           break;
         }
 
+        case 'buyAcquisition': {
+          const payload = log.payload;
+          const rpcRes = await sellerTransactionsApi.completeBuyAcquisitionRpc({
+            transactionId: payload.transactionId || log.entityId,
+            transactionNumber: payload.transactionNumber,
+            sellerId: payload.sellerId,
+            items: payload.items,
+            totalAmount: payload.totalAmount,
+            paymentMethod: payload.paymentMethod,
+            paymentStatus: payload.paymentStatus,
+            transactionStatus: payload.transactionStatus,
+            complianceStatus: payload.complianceStatus,
+            sapsRef: payload.sapsRef,
+            officerName: payload.officerName,
+            policeStationRef: payload.policeStationRef,
+            shopId: payload.shopId || shopId,
+            metadata: payload.metadata
+          });
+
+          if (!rpcRes.success) {
+            throw new Error(rpcRes.error || 'complete_buy_acquisition rejected by database');
+          }
+          break;
+        }
+
+        case 'pawnIntake': {
+          const payload = log.payload;
+          const rpcRes = await pawnLoansApi.completePawnIntakeRpc({
+            loanId: payload.loanId || log.entityId,
+            ticketNumber: payload.ticketNumber,
+            customerId: payload.customerId,
+            itemId: payload.itemId,
+            itemSku: payload.itemSku,
+            itemTitle: payload.itemTitle,
+            itemCategory: payload.itemCategory,
+            itemBrand: payload.itemBrand,
+            itemModel: payload.itemModel,
+            serialOrImei: payload.serialOrImei,
+            condition: payload.condition,
+            itemImageUrl: payload.itemImageUrl,
+            specs: payload.specs,
+            stockLocation: payload.stockLocation,
+            internalNote: payload.internalNote,
+            principal: payload.principal,
+            ncrMonthlyRate: payload.ncrMonthlyRate,
+            monthlyInterest: payload.monthlyInterest,
+            monthlyStorageAdminFee: payload.monthlyStorageAdminFee,
+            totalRedemptionAmount: payload.totalRedemptionAmount,
+            extensionFee: payload.extensionFee,
+            startDate: payload.startDate,
+            expiryDate: payload.expiryDate,
+            daysRemaining: payload.daysRemaining,
+            vaultShelf: payload.vaultShelf,
+            qrToken: payload.qrToken,
+            officerName: payload.officerName,
+            policeStationRef: payload.policeStationRef,
+            sapsEntryId: payload.sapsEntryId,
+            sapsEntryNumber: payload.sapsEntryNumber,
+            history: payload.history,
+            shopId: payload.shopId || shopId
+          });
+
+          if (!rpcRes.success) {
+            throw new Error(rpcRes.error || 'complete_pawn_intake rejected by database');
+          }
+          break;
+        }
+
         case 'sellerTransactions': {
           const payload = log.payload;
           if (shopId && payload.transactionNumber) {

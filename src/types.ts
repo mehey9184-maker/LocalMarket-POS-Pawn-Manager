@@ -216,7 +216,7 @@ export interface BusinessRules {
 
 export interface SyncLog {
   id?: number;
-  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules' | 'sellers' | 'sellerTransactions' | 'sellerReversals' | 'refunds' | 'shopProfile';
+  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules' | 'sellers' | 'sellerTransactions' | 'sellerReversals' | 'refunds' | 'shopProfile' | 'buyAcquisition' | 'pawnIntake';
   entityId: string;
   action: 'create' | 'update' | 'delete';
   payload: any;

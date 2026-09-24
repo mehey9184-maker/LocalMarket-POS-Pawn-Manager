@@ -10,6 +10,9 @@ import { ItemCondition, InventoryItem, PawnLoan, Customer, Seller, ItemStatus } 
 import { roundRetailPrice, calculatePawnFees } from '../../utils/pricingRules';
 import { generateUniqueSku, generateUniqueTransactionNumber, generateUniquePawnTicket } from '../../utils/identifierGenerator';
 import { marketIntelligenceApi } from '../../services/marketIntelligenceApi';
+import { db } from '../../db';
+import { isSupabaseConfigured } from '../../services/supabase';
+import { sellerTransactionsApi, pawnLoansApi } from '../../services/supabaseApi';
 import { MarketCheckCard } from '../common/MarketCheckCard';
 import { MarketCheckResult } from '../../types/marketIntelligence';
 import { motion, AnimatePresence } from 'motion/react';
@@ -544,23 +547,39 @@ export const BuyPawn: React.FC = () => {
     }
 
     const transactionId = crypto.randomUUID();
-    const transactionNumber = generateUniqueTransactionNumber();
+    const existingTxList = await db.sellerTransactions.toArray();
+    const existingTxSet = new Set(existingTxList.map(t => t.transactionNumber));
+    const transactionNumber = generateUniqueTransactionNumber(tn => existingTxSet.has(tn));
     const totalPayout = finalBasket.reduce((sum, i) => sum + i.agreedOffer, 0);
+    const nowIso = new Date().toISOString();
 
     if (txType === 'buy') {
       const seller = selectedIdentity as Seller;
-      const transactionItems: any[] = [];
+      const complianceStatus = seller.verified ? 'VERIFIED' : 'PENDING';
+      const inventoryItemsToAdd: InventoryItem[] = [];
+      const transactionItemsToAdd: any[] = [];
+      const sapsEntriesToAdd: any[] = [];
+      const rpcItemsPayload: any[] = [];
+
+      const currentInventory = await db.inventory.toArray();
+      const existingSkuSet = new Set(currentInventory.map(i => i.sku));
 
       for (const bItem of finalBasket) {
-        const sku = generateUniqueSku(s => inventory.some(i => i.sku === s));
-        
-        const itemId = await addItem({
+        const itemId = bItem.id || crypto.randomUUID();
+        const sku = generateUniqueSku(s => existingSkuSet.has(s));
+        existingSkuSet.add(sku);
+
+        const sapsId = crypto.randomUUID();
+        const sapsEntryNo = `SAPS-${new Date().getFullYear()}-${sapsId.slice(0, 8).toUpperCase()}`;
+
+        const invItem: InventoryItem = {
+          id: itemId,
           sku,
           title: bItem.title,
           category: bItem.category,
-          brand: bItem.brand || undefined,
-          model: bItem.model || undefined,
-          serialOrImei: bItem.serialOrImei || 'N/A',
+          brand: bItem.brand?.trim() || undefined,
+          model: bItem.model?.trim() || undefined,
+          serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
           condition: bItem.condition,
           acquisitionType: 'Buy',
           costBasis: bItem.agreedOffer,
@@ -572,10 +591,12 @@ export const BuyPawn: React.FC = () => {
           sourceType: 'seller',
           sourceStatus: seller.verified ? 'verified' : 'pending',
           sourceNote: `Purchased from ${seller.fullName} (${seller.idNumber})`,
-          internalNote: bItem.internalNote || undefined
-        });
+          internalNote: bItem.internalNote?.trim() || undefined,
+          addedAt: nowIso
+        };
+        inventoryItemsToAdd.push(invItem);
 
-        transactionItems.push({
+        transactionItemsToAdd.push({
           id: crypto.randomUUID(),
           sellerTransactionId: transactionId,
           shopId: shopProfile.id,
@@ -584,14 +605,15 @@ export const BuyPawn: React.FC = () => {
           itemTitle: bItem.title,
           amountPaid: bItem.agreedOffer,
           retailPrice: bItem.suggestedRetail,
-          serialOrImei: bItem.serialOrImei || 'N/A',
+          serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
           condition: bItem.condition,
-          createdAt: new Date().toISOString()
+          createdAt: nowIso
         });
 
-        // Record SAPS Form 21 Entry for EACH item
-        await addSapsEntry({
-          timestamp: new Date().toISOString(),
+        sapsEntriesToAdd.push({
+          id: sapsId,
+          entryNumber: sapsEntryNo,
+          timestamp: nowIso,
           customerId: seller.id,
           customerName: seller.fullName,
           customerIdNumber: seller.idNumber,
@@ -599,31 +621,103 @@ export const BuyPawn: React.FC = () => {
           customerPhone: seller.mobile,
           itemDescription: bItem.title,
           category: bItem.category,
-          serialOrImei: bItem.serialOrImei || 'N/A',
+          serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
           condition: bItem.condition,
           acquisitionType: 'Buy',
           considerationPaid: bItem.agreedOffer,
-          officerName: user?.user_metadata?.full_name || 'System Operator',
-          policeStationRef: shopProfile.saps_dealer_license,
-          verificationStatus: seller.verified ? 'VERIFIED' : 'PENDING',
+          officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
+          policeStationRef: shopProfile.saps_dealer_license || 'SAPS License',
+          verificationStatus: complianceStatus,
           barcodeRef: sku
+        });
+
+        rpcItemsPayload.push({
+          id: itemId,
+          sku,
+          title: bItem.title,
+          category: bItem.category,
+          brand: bItem.brand?.trim() || null,
+          model: bItem.model?.trim() || null,
+          serial_or_imei: bItem.serialOrImei?.trim() || 'N/A',
+          condition: bItem.condition,
+          amount_paid: bItem.agreedOffer,
+          retail_price: bItem.suggestedRetail,
+          image_url: bItem.imageUrl,
+          specs: [bItem.brand, bItem.model].filter(Boolean).join(' • ') || null,
+          stock_location: 'Retail Floor',
+          internal_note: bItem.internalNote?.trim() || null,
+          saps_entry_id: sapsId,
+          saps_entry_number: sapsEntryNo
         });
       }
 
-      // Record Statutory Seller Transaction (Relational)
-      await addSellerTransaction({
+      const txRecord = {
+        id: transactionId,
         shopId: shopProfile.id || 'default-shop',
         sellerId: seller.id,
         transactionNumber,
         totalProposedPayout: totalPayout,
         totalApprovedPayout: totalPayout,
-        paymentStatus: 'Paid',
-        status: 'Acquired',
-        complianceStatus: seller.verified ? 'VERIFIED' : 'PENDING',
-        timestamp: new Date().toISOString(),
-        items: transactionItems,
+        paymentStatus: 'Paid' as const,
+        status: 'Acquired' as const,
+        complianceStatus: complianceStatus as any,
+        timestamp: nowIso,
+        items: transactionItemsToAdd,
         sapsRef: transactionNumber
+      };
+
+      const buyPayload = {
+        transactionId,
+        transactionNumber,
+        sellerId: seller.id,
+        items: rpcItemsPayload,
+        totalAmount: totalPayout,
+        paymentMethod: 'cash',
+        paymentStatus: 'Paid',
+        transactionStatus: 'Acquired',
+        complianceStatus,
+        sapsRef: transactionNumber,
+        officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
+        policeStationRef: shopProfile.saps_dealer_license || '',
+        shopId: shopProfile.id
+      };
+
+      let syncLogId: number | undefined;
+
+      // 1. ATOMIC LOCAL DEXIE COMMIT
+      await db.transaction('rw', [db.inventory, db.sellerTransactions, db.sellerTransactionItems, db.saps, db.syncLogs], async () => {
+        await db.inventory.bulkAdd(inventoryItemsToAdd);
+        await db.sellerTransactionItems.bulkAdd(transactionItemsToAdd);
+        await db.sellerTransactions.add(txRecord);
+        await db.saps.bulkAdd(sapsEntriesToAdd);
+
+        syncLogId = await db.syncLogs.add({
+          entityType: 'buyAcquisition',
+          entityId: transactionId,
+          action: 'create',
+          payload: buyPayload,
+          status: 'pending',
+          createdAt: nowIso,
+          retryCount: 0
+        });
       });
+
+      // 2. ATOMIC SERVER REPLICATION (if online)
+      if (isSupabaseConfigured() && navigator.onLine) {
+        try {
+          const rpcRes = await sellerTransactionsApi.completeBuyAcquisitionRpc(buyPayload);
+          if (rpcRes.success && syncLogId) {
+            await db.syncLogs.update(syncLogId, {
+              status: 'completed',
+              syncedAt: new Date().toISOString()
+            });
+          } else if (!rpcRes.success) {
+            console.warn('Online atomic buy acquisition returned error, queued for retry:', rpcRes.error);
+          }
+        } catch (err: any) {
+          console.warn('Network error during online buy acquisition, queued for offline retry:', err?.message);
+        }
+      }
 
       setResult({
         assetTag: transactionNumber,
@@ -631,24 +725,32 @@ export const BuyPawn: React.FC = () => {
       });
 
       setStep('completion');
-      showToast('Batch Purchase Complete', `${finalBasket.length} items added and logged to SAPS`, 'success');
+      showToast('Batch Purchase Complete', `${finalBasket.length} items acquired atomically and logged to SAPS`, 'success');
       return;
     }
 
     if (txType === 'pawn' && pawnCalculations) {
-      // Pawn currently remains single-item per ticket in this business logic, 
-      // but we use the new authoritative structures.
       const pCustomer = selectedIdentity as Customer;
-      const ticketNumber = generateUniquePawnTicket(t => pawnLoans.some(l => l.ticketNumber === t));
-      const sku = generateUniqueSku(s => inventory.some(i => i.sku === s));
+      const allLoans = await db.loans.toArray();
+      const ticketNumber = generateUniquePawnTicket(t => allLoans.some(l => l.ticketNumber === t));
+      const currentInventory = await db.inventory.toArray();
+      const sku = generateUniqueSku(s => currentInventory.some(i => i.sku === s));
 
-      const itemId = await addItem({
+      const loanId = crypto.randomUUID();
+      const itemId = crypto.randomUUID();
+      const sapsId = crypto.randomUUID();
+      const sapsEntryNo = `SAPS-${new Date().getFullYear()}-${sapsId.slice(0, 8).toUpperCase()}`;
+      const qrToken = `TKN-${loanId.slice(0, 8).toUpperCase()}`;
+      const verificationStatus = pCustomer.verified ? 'VERIFIED' : 'PENDING';
+
+      const invItem: InventoryItem = {
+        id: itemId,
         sku,
         title: itemData.title,
         category: itemData.category,
-        brand: itemData.brand || undefined,
-        model: itemData.model || undefined,
-        serialOrImei: itemData.serialOrImei || 'N/A',
+        brand: itemData.brand?.trim() || undefined,
+        model: itemData.model?.trim() || undefined,
+        serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
         condition: itemData.condition,
         acquisitionType: 'Pawn',
         costBasis: agreedOffer,
@@ -662,10 +764,12 @@ export const BuyPawn: React.FC = () => {
         sourceType: 'pawn',
         sourceStatus: pCustomer.verified ? 'verified' : 'pending',
         sourceNote: `Pawned by ${pCustomer.fullName} under Ticket ${ticketNumber}`,
-        internalNote: itemData.internalNote || undefined
-      });
+        internalNote: itemData.internalNote?.trim() || undefined,
+        addedAt: nowIso
+      };
 
-      const loanId = await createLoan({
+      const loanRecord: PawnLoan = {
+        id: loanId,
         ticketNumber,
         customerId: pCustomer.id,
         customerName: pCustomer.fullName,
@@ -675,7 +779,7 @@ export const BuyPawn: React.FC = () => {
         itemId: itemId,
         itemTitle: itemData.title,
         itemCategory: itemData.category,
-        serialOrImei: itemData.serialOrImei || 'N/A',
+        serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
         condition: itemData.condition,
         itemImageUrl: itemData.imageUrl,
         principal: agreedOffer,
@@ -684,24 +788,25 @@ export const BuyPawn: React.FC = () => {
         monthlyStorageAdminFee: pawnCalculations.adminFee,
         totalRedemptionAmount: pawnCalculations.totalRedemption,
         extensionFee: pawnCalculations.adminFee + pawnCalculations.interest,
-        startDate: new Date().toISOString().split('T')[0],
+        startDate: nowIso.split('T')[0],
         expiryDate: pawnCalculations.expiryDate,
         daysRemaining: businessRules.defaultLoanTermDays,
         daysElapsed: 0,
         vaultShelf: businessRules.defaultVaultShelf,
         status: 'Active',
-        qrToken: `TKN-${crypto.randomUUID()}`,
+        qrToken,
         history: [{
-          date: new Date().toISOString(),
+          date: nowIso,
           action: 'Created',
           amount: agreedOffer,
           note: 'Pawn loan initiated'
         }]
-      });
+      };
 
-      // Record Statutory SAPS Form 21 Entry
-      await addSapsEntry({
-        timestamp: new Date().toISOString(),
+      const sapsRecord = {
+        id: sapsId,
+        entryNumber: sapsEntryNo,
+        timestamp: nowIso,
         customerId: pCustomer.id,
         customerName: pCustomer.fullName,
         customerIdNumber: pCustomer.idNumber,
@@ -709,15 +814,86 @@ export const BuyPawn: React.FC = () => {
         customerPhone: pCustomer.mobile,
         itemDescription: itemData.title,
         category: itemData.category,
-        serialOrImei: itemData.serialOrImei || 'N/A',
+        serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
         condition: itemData.condition,
-        acquisitionType: 'Pawn',
+        acquisitionType: 'Pawn' as const,
         considerationPaid: agreedOffer,
-        officerName: user?.user_metadata?.full_name || 'System Operator',
-        policeStationRef: shopProfile.saps_dealer_license,
-        verificationStatus: pCustomer.verified ? 'VERIFIED' : 'PENDING',
+        officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
+        policeStationRef: shopProfile.saps_dealer_license || 'SAPS License',
+        verificationStatus: verificationStatus as any,
         barcodeRef: sku
+      };
+
+      const pawnPayload = {
+        loanId,
+        ticketNumber,
+        customerId: pCustomer.id,
+        itemId,
+        itemSku: sku,
+        itemTitle: itemData.title,
+        itemCategory: itemData.category,
+        itemBrand: itemData.brand?.trim() || undefined,
+        itemModel: itemData.model?.trim() || undefined,
+        serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
+        condition: itemData.condition,
+        itemImageUrl: itemData.imageUrl,
+        specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
+        stockLocation: businessRules.defaultVaultShelf,
+        internalNote: itemData.internalNote?.trim() || undefined,
+        principal: agreedOffer,
+        ncrMonthlyRate: businessRules.pawnMonthlyInterestRate,
+        monthlyInterest: pawnCalculations.interest,
+        monthlyStorageAdminFee: pawnCalculations.adminFee,
+        totalRedemptionAmount: pawnCalculations.totalRedemption,
+        extensionFee: pawnCalculations.adminFee + pawnCalculations.interest,
+        startDate: nowIso.split('T')[0],
+        expiryDate: pawnCalculations.expiryDate,
+        daysRemaining: businessRules.defaultLoanTermDays,
+        vaultShelf: businessRules.defaultVaultShelf,
+        qrToken,
+        officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
+        policeStationRef: shopProfile.saps_dealer_license || '',
+        sapsEntryId: sapsId,
+        sapsEntryNumber: sapsEntryNo,
+        history: loanRecord.history,
+        shopId: shopProfile.id
+      };
+
+      let syncLogId: number | undefined;
+
+      // 1. ATOMIC LOCAL DEXIE COMMIT
+      await db.transaction('rw', [db.inventory, db.loans, db.saps, db.syncLogs], async () => {
+        await db.inventory.add(invItem);
+        await db.loans.add(loanRecord);
+        await db.saps.add(sapsRecord);
+
+        syncLogId = await db.syncLogs.add({
+          entityType: 'pawnIntake',
+          entityId: loanId,
+          action: 'create',
+          payload: pawnPayload,
+          status: 'pending',
+          createdAt: nowIso,
+          retryCount: 0
+        });
       });
+
+      // 2. ATOMIC SERVER REPLICATION (if online)
+      if (isSupabaseConfigured() && navigator.onLine) {
+        try {
+          const rpcRes = await pawnLoansApi.completePawnIntakeRpc(pawnPayload);
+          if (rpcRes.success && syncLogId) {
+            await db.syncLogs.update(syncLogId, {
+              status: 'completed',
+              syncedAt: new Date().toISOString()
+            });
+          } else if (!rpcRes.success) {
+            console.warn('Online atomic pawn intake returned error, queued for retry:', rpcRes.error);
+          }
+        } catch (err: any) {
+          console.warn('Network error during online pawn intake, queued for offline retry:', err?.message);
+        }
+      }
 
       setResult({
         assetTag: sku,
@@ -727,7 +903,7 @@ export const BuyPawn: React.FC = () => {
       });
 
       setStep('completion');
-      showToast('Pawn Finalized', `Ticket ${ticketNumber} created and asset vaulted`, 'success');
+      showToast('Pawn Finalized', `Ticket ${ticketNumber} created and asset vaulted atomically`, 'success');
     }
   };
 

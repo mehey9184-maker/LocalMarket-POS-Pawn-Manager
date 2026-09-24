@@ -804,6 +804,49 @@ export const sellerTransactionsApi = {
     if (error) throw error;
   },
 
+  async completeBuyAcquisitionRpc(params: {
+    transactionId: string;
+    transactionNumber: string;
+    sellerId: string;
+    items: any[];
+    totalAmount?: number;
+    paymentMethod?: string;
+    paymentStatus?: string;
+    transactionStatus?: string;
+    complianceStatus?: string;
+    sapsRef?: string;
+    officerName?: string;
+    policeStationRef?: string;
+    shopId?: string;
+    metadata?: any;
+  }): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { data, error } = await supabase.rpc('complete_buy_acquisition', {
+          p_transaction_id: params.transactionId,
+          p_transaction_number: params.transactionNumber,
+          p_seller_id: params.sellerId,
+          p_items: params.items,
+          p_total_amount: params.totalAmount ?? 0,
+          p_payment_method: params.paymentMethod || 'cash',
+          p_payment_status: params.paymentStatus || 'Paid',
+          p_transaction_status: params.transactionStatus || 'Acquired',
+          p_compliance_status: params.complianceStatus || null,
+          p_saps_ref: params.sapsRef || null,
+          p_officer_name: params.officerName || null,
+          p_police_station_ref: params.policeStationRef || null,
+          p_shop_id: params.shopId || null,
+          p_metadata: params.metadata || {}
+        });
+
+        if (error) return { success: false, error: error.message };
+        return { success: true, data };
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Buy acquisition failed.' };
+    }
+  },
+
   async createTransactionBatchRpc(tx: SellerTransaction): Promise<{ success: boolean; error?: string }> {
     try {
       return await withAuthRecovery(async (supabase) => {
@@ -987,6 +1030,85 @@ export const pawnLoansApi = {
     const { data, error } = await supabase.from('pawn_loans').select('*').eq('ticket_number', ticketNumber).maybeSingle();
     if (error) return null;
     return data;
+  },
+
+  async completePawnIntakeRpc(params: {
+    loanId: string;
+    ticketNumber: string;
+    customerId: string;
+    itemId: string;
+    itemSku: string;
+    itemTitle: string;
+    itemCategory: string;
+    itemBrand?: string;
+    itemModel?: string;
+    serialOrImei?: string;
+    condition?: string;
+    itemImageUrl?: string;
+    specs?: string;
+    stockLocation?: string;
+    internalNote?: string;
+    principal: number;
+    ncrMonthlyRate?: number;
+    monthlyInterest?: number;
+    monthlyStorageAdminFee?: number;
+    totalRedemptionAmount?: number;
+    extensionFee?: number;
+    startDate?: string;
+    expiryDate?: string;
+    daysRemaining?: number;
+    vaultShelf?: string;
+    qrToken?: string;
+    officerName?: string;
+    policeStationRef?: string;
+    sapsEntryId?: string;
+    sapsEntryNumber?: string;
+    history?: any[];
+    shopId?: string;
+  }): Promise<{ success: boolean; data?: any; error?: string }> {
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        const { data, error } = await supabase.rpc('complete_pawn_intake', {
+          p_loan_id: params.loanId,
+          p_ticket_number: params.ticketNumber,
+          p_customer_id: params.customerId,
+          p_item_id: params.itemId,
+          p_item_sku: params.itemSku,
+          p_item_title: params.itemTitle,
+          p_item_category: params.itemCategory,
+          p_item_brand: params.itemBrand || null,
+          p_item_model: params.itemModel || null,
+          p_serial_or_imei: params.serialOrImei || null,
+          p_condition: params.condition || 'Good',
+          p_item_image_url: params.itemImageUrl || null,
+          p_specs: params.specs || null,
+          p_stock_location: params.stockLocation || null,
+          p_internal_note: params.internalNote || null,
+          p_principal: params.principal,
+          p_ncr_monthly_rate: params.ncrMonthlyRate ?? 0.05,
+          p_monthly_interest: params.monthlyInterest ?? 0.00,
+          p_monthly_storage_admin_fee: params.monthlyStorageAdminFee ?? 0.00,
+          p_total_redemption_amount: params.totalRedemptionAmount ?? 0.00,
+          p_extension_fee: params.extensionFee ?? 0.00,
+          p_start_date: params.startDate || new Date().toISOString().split('T')[0],
+          p_expiry_date: params.expiryDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+          p_days_remaining: params.daysRemaining ?? 30,
+          p_vault_shelf: params.vaultShelf || 'Vault A - Shelf 1',
+          p_qr_token: params.qrToken || null,
+          p_officer_name: params.officerName || null,
+          p_police_station_ref: params.policeStationRef || null,
+          p_saps_entry_id: params.sapsEntryId || null,
+          p_saps_entry_number: params.sapsEntryNumber || null,
+          p_history: params.history || [],
+          p_shop_id: params.shopId || null
+        });
+
+        if (error) return { success: false, error: error.message };
+        return { success: true, data };
+      });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Pawn intake failed.' };
+    }
   },
 
   async upsertLoan(loan: Database['public']['Tables']['pawn_loans']['Insert']): Promise<void> {

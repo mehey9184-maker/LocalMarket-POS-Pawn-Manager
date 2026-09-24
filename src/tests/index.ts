@@ -4,6 +4,7 @@ import { runExternalProviderManagerTests } from './externalProviderManager.test'
 import { runStabilityAndScannerTests } from './stabilityAndScanner.test';
 import { runIdentityVerificationIntegrityTests } from './identityVerificationIntegrity.test';
 import { runIdentifierAndSourceOfTruthTests } from './identifierAndSourceOfTruth.test';
+import { runAtomicBuyAndPawnIntegrityTests } from './atomicBuyAndPawnIntegrity.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -15,6 +16,7 @@ export async function runAllTests() {
   await runStabilityAndScannerTests();
   await runIdentityVerificationIntegrityTests();
   await runIdentifierAndSourceOfTruthTests();
+  await runAtomicBuyAndPawnIntegrityTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');
