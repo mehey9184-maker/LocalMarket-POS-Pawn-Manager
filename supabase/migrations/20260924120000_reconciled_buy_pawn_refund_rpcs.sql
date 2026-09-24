@@ -1,10 +1,10 @@
 -- ============================================================================
--- RECONCILED BUY, PAWN & REFUND RPCs (20260924120000)
+-- PRODUCTION-COMPATIBLE RECONCILED RPCs (20260924120000)
 -- Reconciles complete_buy_acquisition, complete_pawn_intake, request_refund,
--- and approve_refund with the actual production schema.
+-- and approve_refund with the actual production database schema.
 -- ============================================================================
 
--- 1. RECONCILED ATOMIC BUY ACQUISITION RPC
+-- 1. PRODUCTION-COMPATIBLE ATOMIC BUY ACQUISITION RPC
 CREATE OR REPLACE FUNCTION public.complete_buy_acquisition(
     p_transaction_id UUID,
     p_transaction_number TEXT,
@@ -83,7 +83,7 @@ BEGIN
         RAISE EXCEPTION 'Cannot perform acquisition for a different shop branch.';
     END IF;
 
-    -- 3. Verify Seller
+    -- 3. Verify Seller exists and belongs to shop context
     SELECT * INTO v_seller 
     FROM public.sellers 
     WHERE id = p_seller_id;
@@ -232,6 +232,27 @@ BEGIN
             status = EXCLUDED.status,
             updated_at = now();
 
+        -- Insert child item using ACTUAL seller_transaction_items schema
+        INSERT INTO public.seller_transaction_items (
+            id,
+            shop_id,
+            seller_id,
+            item_id,
+            title,
+            amount,
+            transaction_type,
+            created_at
+        ) VALUES (
+            COALESCE((v_item_elem->>'seller_item_id')::UUID, gen_random_uuid()),
+            v_effective_shop_id,
+            p_seller_id,
+            v_item_id,
+            v_item_title,
+            v_amount_paid,
+            'Buy',
+            now()
+        );
+
         -- Insert SAPS register entry
         v_saps_id := COALESCE((v_item_elem->>'saps_entry_id')::UUID, gen_random_uuid());
         v_saps_entry_no := COALESCE(v_item_elem->>'saps_entry_number', 'SAPS-' || SUBSTRING(v_saps_id::text, 1, 8));
@@ -282,7 +303,7 @@ BEGIN
         ON CONFLICT (entry_number) DO NOTHING;
     END LOOP;
 
-    -- 7. Insert Parent Seller Transaction
+    -- 7. Insert Parent Seller Transaction using ACTUAL seller_transactions schema
     INSERT INTO public.seller_transactions (
         id,
         shop_id,
@@ -344,10 +365,11 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.complete_buy_acquisition TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.complete_buy_acquisition(uuid, text, uuid, jsonb, numeric, text, text, text, text, text, text, text, uuid, jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.complete_buy_acquisition(uuid, text, uuid, jsonb, numeric, text, text, text, text, text, text, text, uuid, jsonb) TO authenticated, service_role;
 
 
--- 2. RECONCILED ATOMIC PAWN INTAKE RPC
+-- 2. PRODUCTION-COMPATIBLE ATOMIC PAWN INTAKE RPC
 CREATE OR REPLACE FUNCTION public.complete_pawn_intake(
     p_loan_id UUID,
     p_ticket_number TEXT,
@@ -398,7 +420,6 @@ DECLARE
     v_item_serial TEXT;
     v_cast_condition item_condition;
     v_cast_item_status item_status;
-    v_cast_loan_status loan_status;
 BEGIN
     -- 1. Authentication Check
     IF auth.uid() IS NULL THEN
@@ -484,12 +505,6 @@ BEGIN
         v_cast_item_status := 'Vault Hold'::item_status;
     END;
 
-    BEGIN
-        v_cast_loan_status := 'Active'::loan_status;
-    EXCEPTION WHEN OTHERS THEN
-        v_cast_loan_status := 'Active'::loan_status;
-    END;
-
     -- 6. Insert / Update shop_items
     INSERT INTO public.shop_items (
         id,
@@ -546,7 +561,7 @@ BEGIN
         status = EXCLUDED.status,
         updated_at = now();
 
-    -- 7. Insert pawn_loans
+    -- 7. Insert pawn_loans (status is TEXT 'Active')
     INSERT INTO public.pawn_loans (
         id,
         shop_id,
@@ -604,7 +619,7 @@ BEGIN
         p_days_remaining,
         0,
         p_vault_shelf,
-        v_cast_loan_status,
+        'Active',
         p_qr_token,
         p_history,
         now(),
@@ -687,10 +702,11 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.complete_pawn_intake TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.complete_pawn_intake(uuid, text, uuid, uuid, text, text, text, text, text, text, text, text, text, text, text, numeric, numeric, numeric, numeric, numeric, numeric, date, date, integer, text, text, text, text, uuid, text, jsonb, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.complete_pawn_intake(uuid, text, uuid, uuid, text, text, text, text, text, text, text, text, text, text, text, numeric, numeric, numeric, numeric, numeric, numeric, date, date, integer, text, text, text, text, uuid, text, jsonb, uuid) TO authenticated, service_role;
 
 
--- 3. RECONCILED REQUEST REFUND RPC
+-- 3. PRODUCTION-COMPATIBLE REQUEST REFUND RPC
 CREATE OR REPLACE FUNCTION public.request_refund(
     p_receipt_number TEXT,
     p_item_id UUID,
@@ -723,6 +739,15 @@ BEGIN
         RAISE EXCEPTION 'User has no assigned shop.';
     END IF;
 
+    -- Positive quantity and refund amount validation
+    IF COALESCE(p_quantity, 0) <= 0 THEN
+        RAISE EXCEPTION 'Quantity must be greater than zero.';
+    END IF;
+
+    IF COALESCE(p_refund_amount, 0) < 0 THEN
+        RAISE EXCEPTION 'Refund amount cannot be negative.';
+    END IF;
+
     -- Verify sale receipt
     SELECT * INTO v_sale
     FROM public.sales
@@ -739,6 +764,10 @@ BEGIN
 
     IF v_item.id IS NULL THEN
         RAISE EXCEPTION 'Item not found in current branch.';
+    END IF;
+
+    IF v_item.status != 'Sold' THEN
+        RAISE EXCEPTION 'Item "%" is not currently recorded as Sold.', v_item.title;
     END IF;
 
     -- Check for existing pending refund
@@ -817,10 +846,11 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.request_refund TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.request_refund(text, uuid, integer, numeric, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.request_refund(text, uuid, integer, numeric, text) TO authenticated, service_role;
 
 
--- 4. RECONCILED APPROVE REFUND RPC
+-- 4. PRODUCTION-COMPATIBLE APPROVE REFUND RPC
 CREATE OR REPLACE FUNCTION public.approve_refund(
     p_refund_id UUID,
     p_approved BOOLEAN,
@@ -861,6 +891,11 @@ BEGIN
 
     IF v_req.status != 'Pending Approval' THEN
         RAISE EXCEPTION 'Refund request is already %.', v_req.status;
+    END IF;
+
+    -- Self-approval prohibition
+    IF v_req.requested_by = auth.uid() THEN
+        RAISE EXCEPTION 'Self-approval is not permitted. Manager or Owner approval required.';
     END IF;
 
     IF p_approved THEN
@@ -948,4 +983,5 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.approve_refund TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.approve_refund(uuid, boolean, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.approve_refund(uuid, boolean, text) TO authenticated, service_role;
