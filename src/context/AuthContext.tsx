@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authApi, profilesApi, staffApi } from '../services/supabaseApi';
 import { ProfileRow, UserRole } from '../types/supabase';
+import { Permissions } from '../types';
 
 interface AuthContextType {
   user: any | null;
@@ -11,7 +12,11 @@ interface AuthContextType {
   isLoading: boolean;
   isOwner: boolean;
   isManager: boolean;
+  isSeniorCashier: boolean;
   isCashier: boolean;
+  isAtLeastSeniorCashier: boolean;
+  isAtLeastManager: boolean;
+  hasPermission: (permission: keyof Permissions) => boolean;
   verifyManagerPin: (pin: string) => Promise<{ success: boolean; error?: string }>;
   provisionStaff: (data: {
     fullName: string;
@@ -212,9 +217,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const rawRole = (profile?.role || 'cashier') as UserRole;
   const isOwner = rawRole === 'owner' || rawRole === 'admin';
-  const isManager = isOwner || rawRole === 'manager' || managerElevation;
+  const isManager = rawRole === 'manager' || managerElevation;
+  const isSeniorCashier = rawRole === 'senior_cashier';
   const isCashier = true; // All authenticated staff have baseline cashier permissions
+  
+  const isAtLeastSeniorCashier = isOwner || isManager || isSeniorCashier;
+  const isAtLeastManager = isOwner || isManager;
   const shopId = profile?.shop_id || null;
+
+  const hasPermission = (permission: keyof Permissions): boolean => {
+    // Owners and Admins have absolute authority
+    if (isOwner) return true;
+    
+    // Check role-based defaults if specific permission JSON is missing or incomplete
+    const perms = (profile?.permissions as any) || {};
+    
+    // Explicit permission grant in the profile takes precedence
+    if (perms[permission] === true) return true;
+    if (perms[permission] === false) return false;
+
+    // Fallback to role-based sensible defaults
+    if (isManager) {
+      // Managers get most things by default unless explicitly revoked
+      return true;
+    }
+    
+    if (isSeniorCashier) {
+      // Senior Cashiers get a subset of trusted permissions by default
+      const seniorDefaults: (keyof Permissions)[] = ['sales', 'inventory', 'pawn', 'sellerAcquisitions'];
+      return seniorDefaults.includes(permission);
+    }
+    
+    // Standard Cashier defaults
+    const cashierDefaults: (keyof Permissions)[] = ['sales'];
+    return cashierDefaults.includes(permission);
+  };
 
   const verifyManagerPin = async (pin: string): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -306,7 +343,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isLoading, 
       isOwner,
       isManager, 
+      isSeniorCashier,
       isCashier,
+      isAtLeastSeniorCashier,
+      isAtLeastManager,
+      hasPermission,
       verifyManagerPin,
       provisionStaff,
       logout,

@@ -43,6 +43,8 @@ export const CashierProfile: React.FC = () => {
   const { 
     isOwner, 
     isManager, 
+    isAtLeastManager,
+    hasPermission,
     role, 
     logout, 
     setIsAccountPickerOpen,
@@ -81,7 +83,7 @@ export const CashierProfile: React.FC = () => {
 
   const sidebarItems = [
     { id: 'account', label: 'My Account', icon: User, show: true },
-    { id: 'staff', label: 'Staff & Access', icon: UserPlus, show: isOwner || isManager },
+    { id: 'staff', label: 'Staff & Access', icon: UserPlus, show: hasPermission('staff') },
     { id: 'owner', label: 'Owner Settings', icon: Settings, show: isOwner },
     { id: 'support', label: 'Support / About', icon: HelpCircle, show: true },
   ];
@@ -103,7 +105,7 @@ export const CashierProfile: React.FC = () => {
             </div>
             <div>
               <p className="text-sm font-bold text-white truncate max-w-[140px]">{profile?.full_name}</p>
-              <p className="text-[10px] text-gray-500 font-mono uppercase tracking-widest">{role}</p>
+              <p className="text-[10px] text-gray-500 font-mono uppercase tracking-widest">{profile?.role?.replace('_', ' ')}</p>
             </div>
           </div>
 
@@ -352,7 +354,7 @@ export const CashierProfile: React.FC = () => {
       <RefundModal 
         isOpen={isRefundModalOpen} 
         onClose={() => setIsRefundModalOpen(false)} 
-        isManager={isManager}
+        hasApprovalAuthority={hasPermission('refunds')}
       />
     </div>
   );
@@ -361,10 +363,10 @@ export const CashierProfile: React.FC = () => {
 interface RefundModalProps {
   isOpen: boolean;
   onClose: () => void;
-  isManager: boolean;
+  hasApprovalAuthority: boolean;
 }
 
-const RefundModal: React.FC<RefundModalProps> = ({ isOpen, onClose, isManager }) => {
+const RefundModal: React.FC<RefundModalProps> = ({ isOpen, onClose, hasApprovalAuthority }) => {
   const { refundRequests, approveRefund, requestRefund } = useSales();
   const { showToast } = useApp();
   const [filter, setFilter] = useState<'all' | 'Pending Approval' | 'Approved' | 'Rejected'>('all');
@@ -453,7 +455,7 @@ const RefundModal: React.FC<RefundModalProps> = ({ isOpen, onClose, isManager })
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-black font-mono text-white">R {req.refundAmount.toLocaleString()}</p>
-                    {isManager && req.status === 'Pending Approval' && (
+                    {hasApprovalAuthority && req.status === 'Pending Approval' && (
                       <div className="flex gap-2 mt-3">
                         <button 
                           onClick={() => approveRefund({ refundId: req.id, approved: false })}

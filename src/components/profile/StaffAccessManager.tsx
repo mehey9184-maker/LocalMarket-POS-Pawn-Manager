@@ -29,11 +29,12 @@ export const StaffAccessManager: React.FC = () => {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
-  // Filter out owners if the current user is just a manager
+  // Filter out owners and other managers if the current user is just a manager
   const manageableStaff = useMemo(() => {
     if (isOwner) return users;
-    return users.filter(u => u.role !== 'owner' && u.role !== 'admin');
-  }, [users, isOwner]);
+    // Managers can only manage cashiers and senior cashiers (and themselves, though typically filtered out)
+    return users.filter(u => u.role !== 'owner' && u.role !== 'admin' && (u.role !== 'manager' || u.id === profile?.id));
+  }, [users, isOwner, profile?.id]);
 
   const handleUpdatePermissions = async (field: string, value: boolean) => {
     if (!selectedStaff) return;
@@ -171,7 +172,8 @@ export const StaffAccessManager: React.FC = () => {
               >
                 <option value="cashier">Cashier</option>
                 <option value="senior_cashier">Senior Cashier</option>
-                <option value="manager">Manager</option>
+                {isOwner && <option value="manager">Manager</option>}
+                {selectedStaff.role === 'manager' && !isOwner && <option value="manager">Manager</option>}
                 {selectedStaff.role === 'owner' && <option value="owner">Owner</option>}
                 {selectedStaff.role === 'admin' && <option value="admin">Admin</option>}
               </select>
@@ -429,6 +431,8 @@ export const StaffAccessManager: React.FC = () => {
                     ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' 
                     : staff.role === 'senior_cashier'
                     ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                    : staff.role === 'owner' || staff.role === 'admin'
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                     : 'bg-gray-500/10 text-gray-400 border-gray-500/20'
                 }`}>
                   {staff.role.replace('_', ' ')}
@@ -452,7 +456,7 @@ export const StaffAccessManager: React.FC = () => {
 };
 
 const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
-  const { provisionStaff } = useAuth();
+  const { provisionStaff, isOwner } = useAuth();
   const { showToast } = useApp();
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [formData, setFormData] = useState({
@@ -533,7 +537,7 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               >
                 <option value="cashier">Cashier</option>
                 <option value="senior_cashier">Senior Cashier</option>
-                <option value="manager">Manager</option>
+                {isOwner && <option value="manager">Manager</option>}
               </select>
             </div>
           </div>

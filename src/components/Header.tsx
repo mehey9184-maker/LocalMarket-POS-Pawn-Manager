@@ -35,7 +35,7 @@ export const Header: React.FC<HeaderProps> = () => {
     shopProfile,
   } = useApp();
 
-  const { profile, setIsAccountPickerOpen } = useAuth();
+  const { profile, setIsAccountPickerOpen, hasPermission, isAtLeastSeniorCashier } = useAuth();
   const { sellers } = useSellers();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -95,15 +95,26 @@ export const Header: React.FC<HeaderProps> = () => {
     showToast('Customer Selected', `Active client: ${customer.fullName}`, 'info');
   };
 
-  const navTabs: { id: NavTab; label: string }[] = [
-    { id: 'home', label: 'Home' },
-    { id: 'sell', label: 'Sell' },
-    { id: 'buy-pawn', label: 'Add Stock' },
-    { id: 'inventory', label: 'Inventory' },
-    { id: 'vault', label: 'Vault' },
-    { id: 'saps', label: 'SAPS Register' },
-    { id: 'customers', label: 'Customers' }
-  ];
+  const navTabs = useMemo(() => {
+    const tabs: { id: NavTab; label: string }[] = [{ id: 'home', label: 'Home' }];
+    
+    if (hasPermission('sales')) tabs.push({ id: 'sell', label: 'Sell' });
+    
+    if (hasPermission('pawn') || hasPermission('sellerAcquisitions') || hasPermission('inventory')) {
+      tabs.push({ id: 'buy-pawn', label: 'Add Stock' });
+    }
+    
+    if (hasPermission('inventory')) tabs.push({ id: 'inventory', label: 'Inventory' });
+    if (hasPermission('pawn')) tabs.push({ id: 'vault', label: 'Vault' });
+    
+    // SAPS and Customers are trusted data domains
+    if (isAtLeastSeniorCashier) {
+      tabs.push({ id: 'saps', label: 'SAPS Register' });
+      tabs.push({ id: 'customers', label: 'Customers' });
+    }
+    
+    return tabs;
+  }, [hasPermission, isAtLeastSeniorCashier]);
 
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center justify-between gap-6 shrink-0 sticky top-0 z-40 shadow-xs">
@@ -364,7 +375,7 @@ export const Header: React.FC<HeaderProps> = () => {
               {profile?.full_name || 'Staff Member'}
             </p>
             <p className="text-[10px] text-gray-400 font-mono mt-1 uppercase tracking-wider">
-              {profile?.role || 'Shift Active'}
+              {profile?.role?.replace('_', ' ') || 'Shift Active'}
             </p>
           </div>
           <div className={`w-9 h-9 rounded-xl border flex items-center justify-center text-xs font-semibold transition-all ${

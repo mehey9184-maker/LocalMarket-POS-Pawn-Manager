@@ -23,7 +23,7 @@ const InventoryContext = createContext<InventoryContextType | undefined>(undefin
 
 export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction, isOnline } = useSync();
-  const { isManager, isOwner } = useAuth();
+  const { isManager, isOwner, hasPermission } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   
   const inventory = useLiveQuery(() => db.inventory.orderBy('addedAt').reverse().toArray()) || [];
@@ -62,8 +62,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     newPrice: number, 
     reason?: string
   ): Promise<{ success: boolean; error?: string }> => {
-    if (!isManager && !isOwner) {
-      return { success: false, error: 'Unauthorized: Manager or Owner permission required for permanent price alterations.' };
+    if (!hasPermission('pricing')) {
+      return { success: false, error: 'Unauthorized: You do not have permission to alter retail prices.' };
     }
 
     if (newPrice < 0) {

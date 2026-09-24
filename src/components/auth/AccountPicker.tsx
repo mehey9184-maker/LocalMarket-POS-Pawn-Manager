@@ -102,7 +102,7 @@ export const AccountPicker: React.FC = () => {
                   
                   <div className="text-center">
                     <p className="font-bold text-[#e5e2e1] truncate max-w-[140px]">{staff.full_name}</p>
-                    <p className="text-xs text-[#a58b83] uppercase tracking-widest mt-1 font-mono">{staff.role}</p>
+                    <p className="text-xs text-[#a58b83] uppercase tracking-widest mt-1 font-mono">{staff.role.replace('_', ' ')}</p>
                   </div>
 
                   {staff.id === currentProfile?.id && (

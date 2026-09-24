@@ -26,7 +26,7 @@ import { InventoryItem, AcquisitionType } from '../../types';
 
 export const Inventory: React.FC = () => {
   const { inventory, setActiveTab, showToast } = useApp();
-  const { isManager, isOwner } = useAuth();
+  const { isManager, isOwner, hasPermission } = useAuth();
   const { changePermanentRetailPrice } = useInventory();
 
   const [tab, setTab] = useState<'floor' | 'vault' | 'pending'>('floor');
@@ -153,22 +153,26 @@ export const Inventory: React.FC = () => {
             </div>
 
             {/* VAULT MANAGER BUTTON */}
-            <button
-              onClick={() => setActiveTab('vault')}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-semibold shadow-xs hover:bg-amber-500 transition shrink-0"
-            >
-              <Lock className="w-4 h-4" />
-              <span>Vault Manager</span>
-            </button>
+            {hasPermission('pawn') && (
+              <button
+                onClick={() => setActiveTab('vault')}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-semibold shadow-xs hover:bg-amber-500 transition shrink-0"
+              >
+                <Lock className="w-4 h-4" />
+                <span>Vault Manager</span>
+              </button>
+            )}
 
             {/* ADD STOCK BUTTON */}
-            <button
-              onClick={() => setActiveTab('buy-pawn')}
-              className="flex items-center gap-2 px-4 py-2 bg-[#C85A32] text-white rounded-xl text-xs font-semibold shadow-xs hover:bg-[#A94725] transition shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Stock</span>
-            </button>
+            {hasPermission('inventory') && (
+              <button
+                onClick={() => setActiveTab('buy-pawn')}
+                className="flex items-center gap-2 px-4 py-2 bg-[#C85A32] text-white rounded-xl text-xs font-semibold shadow-xs hover:bg-[#A94725] transition shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Stock</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -363,7 +367,7 @@ export const Inventory: React.FC = () => {
                   <div className="p-3 rounded-xl bg-[#F8F9FA] border border-gray-200">
                     <div className="flex items-center justify-between">
                       <span className="text-gray-400 block font-medium">Retail Selling Price</span>
-                      {(isManager || isOwner) && !isEditingPrice && (
+                      {hasPermission('pricing') && !isEditingPrice && (
                         <button
                           onClick={() => setIsEditingPrice(true)}
                           className="text-[10px] text-[#C85A32] hover:underline font-bold flex items-center gap-0.5"

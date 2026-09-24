@@ -315,3 +315,14 @@ export interface WorkflowDraft {
   createdAt: string;
   status: 'active' | 'completed' | 'discarded';
 }
+
+export interface Permissions {
+  sales: boolean;
+  inventory: boolean;
+  pawn: boolean;
+  sellerAcquisitions: boolean;
+  refunds: boolean;
+  pricing: boolean;
+  reports: boolean;
+  staff: boolean;
+}

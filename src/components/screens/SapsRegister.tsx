@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useSaps } from '../../context/SapsContext';
 import { useCustomers } from '../../context/CustomerContext';
+import { useAuth } from '../../context/AuthContext';
 import { SapsEntry } from '../../types';
 import { AutoSizer as AutoSizerComponent } from 'react-virtualized-auto-sizer';
 import { VirtualList } from '../common/VirtualList';
@@ -37,8 +38,9 @@ const SapsEntryRow: React.FC<{
   entry: SapsEntry; 
   onView: (entry: SapsEntry) => void;
   onCancel: (id: string) => void;
+  isAtLeastManager: boolean;
   style?: React.CSSProperties;
-}> = ({ entry, onView, onCancel, style }) => {
+}> = ({ entry, onView, onCancel, isAtLeastManager, style }) => {
   const isPawn = entry.acquisitionType === 'Pawn';
   const isBuy = entry.acquisitionType === 'Buy';
   const isForfeit = entry.acquisitionType === 'Forfeited' || (entry.acquisitionType as any) === 'Forfeit';
@@ -84,7 +86,7 @@ const SapsEntryRow: React.FC<{
       </div>
 
       <div className="w-24 py-2 px-4 text-right flex items-center justify-end gap-2">
-        {!isCancelled && (
+        {!isCancelled && isAtLeastManager && (
           <button
             type="button"
             onClick={() => onCancel(entry.id)}
@@ -111,6 +113,7 @@ export const SapsRegister: React.FC = () => {
   const { showToast, isPoliceInspectionMode, setIsPoliceInspectionMode, activeCustomer, shopProfile } = useApp();
   const { sapsEntries, cancelSapsEntry, exportSapsCsv } = useSaps();
   const { customers } = useCustomers();
+  const { isAtLeastManager } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'Pawn' | 'Buy' | 'Forfeit'>('all');
@@ -289,6 +292,7 @@ export const SapsRegister: React.FC = () => {
                       entry={filteredEntries[index]} 
                       onView={setSelectedEntry} 
                       onCancel={setCancellingEntryId}
+                      isAtLeastManager={isAtLeastManager}
                       style={style} 
                     />
                   )}

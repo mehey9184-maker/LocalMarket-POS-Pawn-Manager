@@ -1147,112 +1147,118 @@ export const BuyPawn: React.FC = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* OPTION 1: EXISTING STOCK */}
-                  <div
-                    onClick={() => handleSelectTxType('existing')}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectTxType('existing'); }}
-                    className="p-7 rounded-2xl bg-white border-2 border-gray-200 hover:border-[#C85A32] transition-all text-left space-y-5 shadow-xs hover:shadow-md cursor-pointer group flex flex-col justify-between"
-                  >
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="w-12 h-12 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
-                          <Package className="w-6 h-6" />
+                  {hasPermission('inventory') && (
+                    <div
+                      onClick={() => handleSelectTxType('existing')}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectTxType('existing'); }}
+                      className="p-7 rounded-2xl bg-white border-2 border-gray-200 hover:border-[#C85A32] transition-all text-left space-y-5 shadow-xs hover:shadow-md cursor-pointer group flex flex-col justify-between"
+                    >
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
+                            <Package className="w-6 h-6" />
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Shop Owned
+                          </span>
                         </div>
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          Shop Owned
-                        </span>
+                        <div>
+                          <h4 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
+                            Existing Stock
+                          </h4>
+                          <p className="text-xs font-medium text-gray-500 mt-0.5">
+                            Already owned by the shop
+                          </p>
+                          <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
+                            Items already in your store prior to onboarding, retail restock, or supplier merchandise. No seller or customer ID needed.
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
-                          Existing Stock
-                        </h4>
-                        <p className="text-xs font-medium text-gray-500 mt-0.5">
-                          Already owned by the shop
-                        </p>
-                        <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
-                          Items already in your store prior to onboarding, retail restock, or supplier merchandise. No seller or customer ID needed.
-                        </p>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#C85A32] pt-4 border-t border-gray-100">
-                      <span>Add Existing Stock</span>
-                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-[#C85A32] pt-4 border-t border-gray-100">
+                        <span>Add Existing Stock</span>
+                        <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* OPTION 2: BUY FROM PERSON */}
-                  <div
-                    onClick={() => handleSelectTxType('buy')}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectTxType('buy'); }}
-                    className="p-7 rounded-2xl bg-white border-2 border-gray-200 hover:border-[#C85A32] transition-all text-left space-y-5 shadow-xs hover:shadow-md cursor-pointer group flex flex-col justify-between"
-                  >
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="w-12 h-12 rounded-xl bg-orange-50 text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
-                          <ShoppingBag className="w-6 h-6" />
+                  {hasPermission('sellerAcquisitions') && (
+                    <div
+                      onClick={() => handleSelectTxType('buy')}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectTxType('buy'); }}
+                      className="p-7 rounded-2xl bg-white border-2 border-gray-200 hover:border-[#C85A32] transition-all text-left space-y-5 shadow-xs hover:shadow-md cursor-pointer group flex flex-col justify-between"
+                    >
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-xl bg-orange-50 text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
+                            <ShoppingBag className="w-6 h-6" />
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-blue-50 text-blue-700 border border-blue-200">
+                            SHG Act 06
+                          </span>
                         </div>
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-blue-50 text-blue-700 border border-blue-200">
-                          SHG Act 06
-                        </span>
+                        <div>
+                          <h4 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
+                            Buy From Person
+                          </h4>
+                          <p className="text-xs font-medium text-gray-500 mt-0.5">
+                            Purchase an item from a seller
+                          </p>
+                          <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
+                            Outright purchase from an individual. Verifies RSA ID or Passport, logs Form 21 register, and creates seller ledger.
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
-                          Buy From Person
-                        </h4>
-                        <p className="text-xs font-medium text-gray-500 mt-0.5">
-                          Purchase an item from a seller
-                        </p>
-                        <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
-                          Outright purchase from an individual. Verifies RSA ID or Passport, logs Form 21 register, and creates seller ledger.
-                        </p>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#C85A32] pt-4 border-t border-gray-100">
-                      <span>Start Seller Purchase</span>
-                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-[#C85A32] pt-4 border-t border-gray-100">
+                        <span>Start Seller Purchase</span>
+                        <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* OPTION 3: PAWN */}
-                  <div
-                    onClick={() => handleSelectTxType('pawn')}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectTxType('pawn'); }}
-                    className="p-7 rounded-2xl bg-white border-2 border-gray-200 hover:border-[#C85A32] transition-all text-left space-y-5 shadow-xs hover:shadow-md cursor-pointer group flex flex-col justify-between"
-                  >
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-                          <Lock className="w-6 h-6" />
+                  {hasPermission('pawn') && (
+                    <div
+                      onClick={() => handleSelectTxType('pawn')}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectTxType('pawn'); }}
+                      className="p-7 rounded-2xl bg-white border-2 border-gray-200 hover:border-[#C85A32] transition-all text-left space-y-5 shadow-xs hover:shadow-md cursor-pointer group flex flex-col justify-between"
+                    >
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                            <Lock className="w-6 h-6" />
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-purple-50 text-purple-700 border border-purple-200">
+                            NCR Act 34
+                          </span>
                         </div>
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-purple-50 text-purple-700 border border-purple-200">
-                          NCR Act 34
-                        </span>
+                        <div>
+                          <h4 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
+                            Pawn
+                          </h4>
+                          <p className="text-xs font-medium text-gray-500 mt-0.5">
+                            Collateral for a loan
+                          </p>
+                          <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
+                            30-day secured credit agreement. Item vaulted securely. Customer retains statutory redemption rights.
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
-                          Pawn
-                        </h4>
-                        <p className="text-xs font-medium text-gray-500 mt-0.5">
-                          Collateral for a loan
-                        </p>
-                        <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
-                          30-day secured credit agreement. Item vaulted securely. Customer retains statutory redemption rights.
-                        </p>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 pt-4 border-t border-gray-100">
-                      <span>Start Pawn Loan</span>
-                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 pt-4 border-t border-gray-100">
+                        <span>Start Pawn Loan</span>
+                        <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </motion.div>
             )}

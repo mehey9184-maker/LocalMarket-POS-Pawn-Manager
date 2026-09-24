@@ -404,8 +404,8 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     approved: boolean;
     note?: string;
   }): Promise<{ success: boolean; error?: string }> => {
-    if (!isManager) {
-      return { success: false, error: 'Unauthorized: Manager or Owner authority required to approve refunds.' };
+    if (!hasPermission('refunds')) {
+      return { success: false, error: 'Unauthorized: You do not have permission to approve refunds.' };
     }
 
     const req = await db.refundRequests.get(params.refundId);
