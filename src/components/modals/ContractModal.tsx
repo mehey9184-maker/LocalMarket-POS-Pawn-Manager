@@ -4,7 +4,7 @@ import { PawnLoan } from '../../types';
 import { ShieldCheck, Printer, MessageSquare, X, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 
 export const ContractModal: React.FC = () => {
-  const { activeContractModal, setActiveContractModal, showToast } = useApp();
+  const { activeContractModal, setActiveContractModal, showToast, shopProfile, currentUserProfile } = useApp();
   const [showFullTerms, setShowFullTerms] = useState(false);
 
   if (!activeContractModal) return null;
@@ -183,8 +183,8 @@ export const ContractModal: React.FC = () => {
               </div>
               <div className="text-right">
                 <p className="font-bold">CREDIT PROVIDER DESK OFFICER:</p>
-                <p className="text-gray-700">Sgt. M. Sithole (Badge #74819)</p>
-                <p className="text-[9px] text-emerald-800 font-bold uppercase">SAPS Station Stamp: 00482/JHB-SWT</p>
+                <p className="text-gray-700">{currentUserProfile?.full_name || 'System Authorized Officer'}</p>
+                <p className="text-[9px] text-emerald-800 font-bold uppercase">SAPS Station Stamp: {shopProfile?.saps_dealer_license || 'PENDING'}</p>
               </div>
             </div>
           </div>

@@ -108,7 +108,7 @@ const SapsEntryRow: React.FC<{
 };
 
 export const SapsRegister: React.FC = () => {
-  const { showToast, isPoliceInspectionMode, setIsPoliceInspectionMode, activeCustomer } = useApp();
+  const { showToast, isPoliceInspectionMode, setIsPoliceInspectionMode, activeCustomer, shopProfile } = useApp();
   const { sapsEntries, cancelSapsEntry, exportSapsCsv } = useSaps();
   const { customers } = useCustomers();
 
@@ -120,11 +120,11 @@ export const SapsRegister: React.FC = () => {
   const [cancellingEntryId, setCancellingEntryId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   
-  const [officerName, setOfficerName] = useState('Capt. K. Dlamini');
-  const [officerRank, setOfficerRank] = useState('Captain');
-  const [officerBadge, setOfficerBadge] = useState('SAPS-8491024');
-  const [officerNotes, setOfficerNotes] = useState('Routine statutory audit completed. Verified registers and serial numbers.');
-  const [hasConfirmedSignoff, setHasConfirmedSignoff] = useState(true);
+  const [officerName, setOfficerName] = useState('');
+  const [officerRank, setOfficerRank] = useState('Constable');
+  const [officerBadge, setOfficerBadge] = useState('');
+  const [officerNotes, setOfficerNotes] = useState('');
+  const [hasConfirmedSignoff, setHasConfirmedSignoff] = useState(false);
   const [recordedVisit, setRecordedVisit] = useState<InspectorVisit | null>(null);
 
   const filteredEntries = useMemo(() => {
@@ -176,7 +176,7 @@ export const SapsRegister: React.FC = () => {
     e.preventDefault();
     const newVisit: InspectorVisit = {
       officerName, rank: officerRank, badgeNumber: officerBadge,
-      station: 'Soweto West SAPS • Code: 00482', notes: officerNotes,
+      station: `SAPS Precinct • License: ${shopProfile?.saps_dealer_license || 'Not Configured'}`, notes: officerNotes,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16)
     };
     setRecordedVisit(newVisit);
@@ -195,7 +195,7 @@ export const SapsRegister: React.FC = () => {
             </div>
             <div>
               <p className="text-xs font-bold uppercase font-mono tracking-wider text-blue-100">Police Inspection Mode</p>
-              <p className="text-[11px] text-blue-200 mt-0.5">Second-Hand Goods Act 6 of 2009 • Station Precinct: Soweto West (00482)</p>
+              <p className="text-[11px] text-blue-200 mt-0.5">Second-Hand Goods Act 6 of 2009 • SHG License: {shopProfile?.saps_dealer_license || 'Not Configured'}</p>
             </div>
           </div>
           <button onClick={() => setIsLogVisitModalOpen(true)} className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold font-mono flex items-center gap-2 transition shadow-xs cursor-pointer">
@@ -228,8 +228,8 @@ export const SapsRegister: React.FC = () => {
               <span className="text-xl font-bold text-[#C85A32] font-mono mt-1 block">R {totalConsiderationPaid.toLocaleString('en-ZA')}</span>
             </div>
             <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs">
-              <span className="text-[10px] text-gray-500 uppercase font-mono block">Police Station Code</span>
-              <span className="text-xl font-bold text-emerald-700 font-mono mt-1 block">00482</span>
+              <span className="text-[10px] text-gray-500 uppercase font-mono block">Dealer SHG License</span>
+              <span className="text-xl font-bold text-emerald-700 font-mono mt-1 block">{shopProfile?.saps_dealer_license || 'Unconfigured'}</span>
             </div>
           </div>
         )}

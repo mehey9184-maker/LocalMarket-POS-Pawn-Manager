@@ -4,7 +4,7 @@ import { Printer, MessageSquare, X, CheckCircle } from 'lucide-react';
 import { thermalPrinter } from '../../services/thermalPrinter';
 
 export const ReceiptModal: React.FC = () => {
-  const { activeReceiptModal, setActiveReceiptModal, showToast } = useApp();
+  const { activeReceiptModal, setActiveReceiptModal, showToast, shopProfile } = useApp();
 
   if (!activeReceiptModal) return null;
 
@@ -67,10 +67,10 @@ export const ReceiptModal: React.FC = () => {
           <div className="w-full bg-white text-black p-5 rounded-lg shadow-xl font-mono text-xs space-y-3 border border-gray-300">
             {/* Store Banner */}
             <div className="text-center border-b border-black/20 pb-2 space-y-0.5">
-              <h2 className="font-black text-sm uppercase tracking-wider">LOCALMARKET SOWETO</h2>
-              <p className="text-[10px] text-gray-700">Powered by LocalEats SA</p>
-              <p className="text-[9px] text-gray-600">Soweto Main Branch • Shop 14, Diepkloof Square</p>
-              <p className="text-[9px] text-gray-600">VAT Reg: 4829104820 • SHG Reg: 00482/JHB-SWT</p>
+              <h2 className="font-black text-sm uppercase tracking-wider">{shopProfile?.shop_name?.toUpperCase() || 'LOCALMARKET'}</h2>
+              <p className="text-[10px] text-gray-700">Official POS Terminal</p>
+              <p className="text-[9px] text-gray-600">{shopProfile?.address || 'Address Pending'}</p>
+              <p className="text-[9px] text-gray-600">SHG Reg: {shopProfile?.saps_dealer_license || 'PENDING'}</p>
               <p className="text-[9px] font-bold text-black uppercase mt-1">TAX INVOICE / KWITANSI</p>
             </div>
 

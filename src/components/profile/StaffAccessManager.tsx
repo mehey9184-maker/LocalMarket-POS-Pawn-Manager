@@ -345,6 +345,11 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     e.preventDefault();
     if (!formData.fullName.trim() || !formData.cashierCode.trim()) return;
 
+    if (formData.pinCode && !/^\d{6}$/.test(formData.pinCode.trim())) {
+      showToast('Invalid PIN', 'Terminal PIN must be exactly 6 numeric digits.', 'error');
+      return;
+    }
+
     setIsProvisioning(true);
     try {
       const res = await provisionStaff({
@@ -426,7 +431,7 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Terminal PIN (4-6 Digits)</label>
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Terminal PIN (Exactly 6 Digits)</label>
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
               <input 
@@ -435,7 +440,7 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 maxLength={6}
                 value={formData.pinCode}
                 onChange={e => setFormData({ ...formData, pinCode: e.target.value.replace(/\D/g, '') })}
-                placeholder="••••"
+                placeholder="••••••"
                 className="w-full h-12 bg-[#1A1A1A] border border-[#282828] rounded-xl pl-11 pr-4 text-sm text-white font-mono tracking-widest focus:border-[#C85A32] outline-none transition-all"
               />
             </div>

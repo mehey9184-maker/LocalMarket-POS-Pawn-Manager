@@ -341,9 +341,9 @@ async function uploadToBackblazeB2(
   }
 }
 
-async function startServer() {
+async function startServer(desiredPort?: number) {
   const app = express();
-  const PORT = 3000;
+  const PORT: number = desiredPort ?? (Number(process.env.PORT) || 3000);
 
   // Support image base64 payloads up to 25MB
   app.use(express.json({ limit: "25mb" }));
@@ -372,8 +372,8 @@ async function startServer() {
       }
 
       const { pin } = req.body;
-      if (!pin) {
-        return res.status(400).json({ success: false, error: "PIN is required." });
+      if (!pin || !/^\d{6}$/.test(String(pin))) {
+        return res.status(400).json({ success: false, error: "PIN must be exactly 6 numeric digits." });
       }
 
       // 1. Atomic Brute Force Lockout Check & Attempt Reservation
@@ -427,6 +427,9 @@ async function startServer() {
       const { cashierCode, pin } = req.body;
       if (!cashierCode || !pin) {
         return res.status(400).json({ success: false, error: "Cashier code and PIN are required." });
+      }
+      if (!/^\d{6}$/.test(String(pin))) {
+        return res.status(400).json({ success: false, error: "PIN must be exactly 6 numeric digits." });
       }
 
       const adminSupabase = getSupabaseAdminClient();
@@ -638,6 +641,21 @@ async function startServer() {
         return res.status(403).json({
           success: false,
           error: "Forbidden: Creating owner or admin accounts via standard staff provisioning is strictly forbidden."
+        });
+      }
+
+      // Managers can only create Cashiers or Senior Cashiers
+      if (callerProfile.role === "manager" && role === "manager") {
+        return res.status(403).json({
+          success: false,
+          error: "Forbidden: Managers can only provision Cashier or Senior Cashier roles. Only Shop Owners can provision Manager roles."
+        });
+      }
+
+      if (pinCode && !/^\d{6}$/.test(String(pinCode))) {
+        return res.status(400).json({
+          success: false,
+          error: "Terminal PIN must be exactly 6 numeric digits."
         });
       }
 
@@ -1119,6 +1137,14 @@ async function startServer() {
       console.error("Market Intelligence check server error:", err);
       return res.status(500).json({ error: err.message || "Failed to complete Market Check." });
     }
+  });
+
+  // Guarantee all /api/* routes return JSON and never fallback to SPA HTML
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({
+      success: false,
+      error: `API endpoint ${req.method} ${req.path} not found.`
+    });
   });
 
   // Vite middleware for development (disabled in Electron packaged mode)

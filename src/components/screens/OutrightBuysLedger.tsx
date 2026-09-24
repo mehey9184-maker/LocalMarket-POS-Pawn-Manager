@@ -132,7 +132,7 @@ const InventoryRow: React.FC<{
 };
 
 export const OutrightBuysLedger: React.FC = () => {
-  const { showToast, setActiveTab, currentUserProfile } = useApp();
+  const { showToast, setActiveTab, currentUserProfile, shopProfile } = useApp();
   const { isManager, isOwner, users } = useAuth();
   const { inventory } = useInventory();
   const { sapsEntries } = useSaps();
@@ -458,8 +458,8 @@ export const OutrightBuysLedger: React.FC = () => {
             </div>
             <div className="bg-[#FAFAFA] text-black p-4 rounded-xl font-mono text-xs space-y-2 border border-gray-300 shadow-xs">
               <div className="text-center border-b border-gray-300 pb-1">
-                <p className="font-bold text-xs text-gray-900">LOCALMARKET SOWETO</p>
-                <p className="text-[9px] text-gray-500">REG #00482</p>
+                <p className="font-bold text-xs text-gray-900">{shopProfile?.shop_name?.toUpperCase() || 'LOCALMARKET'}</p>
+                <p className="text-[9px] text-gray-500">REG #{shopProfile?.saps_dealer_license || 'PENDING'}</p>
               </div>
               <div className="py-2 text-center">
                 <div className="w-full h-8 bg-gray-900 rounded flex items-center justify-around px-2 text-white">

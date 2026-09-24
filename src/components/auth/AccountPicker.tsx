@@ -141,7 +141,7 @@ export const AccountPicker: React.FC = () => {
                 )}
               </div>
               <h2 className="font-headline font-bold text-2xl text-[#e5e2e1] tracking-tight">{selectedStaff.full_name}</h2>
-              <p className="text-sm text-[#a58b83] mt-1">Please enter your 4-6 digit terminal PIN</p>
+              <p className="text-sm text-[#a58b83] mt-1">Please enter your 6-digit terminal PIN</p>
             </div>
 
             <div className="space-y-6">
@@ -152,7 +152,7 @@ export const AccountPicker: React.FC = () => {
                   value={pin}
                   onChange={(e) => setPin(e.target.value.replace(/\D/g, '').substring(0, 6))}
                   onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                  placeholder="Terminal PIN"
+                  placeholder="6-Digit PIN"
                   autoFocus
                   className="w-full h-14 bg-[#1f1e1e] border border-[#282727] rounded-xl pl-12 pr-4 text-center text-2xl tracking-[0.5em] font-mono text-[#e5e2e1] focus:border-[#c85a32] focus:ring-1 focus:ring-[#c85a32] outline-none transition-all placeholder:text-[#a58b83]/30 placeholder:tracking-normal placeholder:text-sm"
                 />
@@ -169,7 +169,7 @@ export const AccountPicker: React.FC = () => {
 
               <button
                 onClick={handleLogin}
-                disabled={isAuthenticating || pin.length < 4}
+                disabled={isAuthenticating || pin.length !== 6}
                 className="w-full h-14 bg-[#c85a32] hover:bg-[#b84e27] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl flex items-center justify-center gap-3 shadow-lg shadow-[#c85a32]/20 transition-all active:scale-[0.98]"
               >
                 {isAuthenticating ? (

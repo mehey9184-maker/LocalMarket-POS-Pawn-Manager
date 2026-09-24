@@ -353,10 +353,10 @@ CREATE TRIGGER on_auth_user_created
                     <span className="material-symbols-outlined text-[#c85a32] text-2xl">point_of_sale</span>
                   </div>
                   <h1 className="font-headline font-bold text-2xl text-[#e5e2e1] tracking-tight">
-                    {isLogin ? 'Welcome back' : 'Register Operator'}
+                    {isLogin ? 'Welcome back' : 'Register Shop Owner Account'}
                   </h1>
                   <p className="text-sm text-[#a58b83] mt-1">
-                    {isLogin ? 'Sign in to your LocalMarket counter terminal' : 'Create your operator profile & secure access'}
+                    {isLogin ? 'Sign in to your LocalMarket counter terminal' : 'Create your shop owner profile & store credentials'}
                   </p>
                 </div>
 

@@ -433,8 +433,11 @@ export const ScannerModal: React.FC = () => {
                 errName === 'NotFoundException' || 
                 errName === 'ChecksumException' || 
                 errName === 'FormatException' ||
+                errName.includes('ReaderException') ||
                 errMsg.includes('No MultiFormat Readers') ||
-                errMsg.includes('NotFoundException');
+                errMsg.includes('NotFoundException') ||
+                errMsg.includes('non-ReaderException') ||
+                errMsg.includes('ReaderException');
               
               if (!isExpectedMiss) {
                 console.debug('[Scanner Diagnostic] Decoder frame event:', err);

@@ -182,7 +182,7 @@ export const VaultManager: React.FC = () => {
   const [searchFilter, setSearchFilter] = useState('');
 
   const [selectedLoanForTransfer, setSelectedLoanForTransfer] = useState<PawnLoan | null>(null);
-  const [managerPin, setManagerPin] = useState(['', '', '', '']);
+  const [managerPin, setManagerPin] = useState(['', '', '', '', '', '']);
   const [targetRetailPrice, setTargetRetailPrice] = useState<number>(0);
   const [isManagerModalOpen, setIsManagerModalOpen] = useState(false);
   const [isMetricsCollapsed, setIsMetricsCollapsed] = useState(false);
@@ -249,7 +249,7 @@ export const VaultManager: React.FC = () => {
     
     if (!authRes.success) {
       showToast('Invalid Manager PIN', 'error');
-      setManagerPin(['', '', '', '']);
+      setManagerPin(['', '', '', '', '', '']);
       return;
     }
 
@@ -607,8 +607,8 @@ export const VaultManager: React.FC = () => {
                 </div>
               </div>
               <div className="p-3.5 bg-[#141414] rounded-xl border border-[#2A2A2A] space-y-2">
-                <span className="text-xs font-semibold text-gray-300 block">Manager Authorization PIN (Default: 8419)</span>
-                <div className="flex gap-2 justify-center">{managerPin.map((digit, idx) => (<input key={idx} type="password" maxLength={1} value={digit} onChange={(e) => { const newPin = [...managerPin]; newPin[idx] = e.target.value.slice(-1); setManagerPin(newPin); }} className="w-12 h-12 text-center rounded-xl bg-[#1E1E1E] border border-[#2A2A2A] text-lg font-bold text-white font-mono focus:border-[#C85A32] focus:outline-none" />))}</div>
+                <span className="text-xs font-semibold text-gray-300 block">Manager Authorization PIN (6 Digits)</span>
+                <div className="flex gap-2 justify-center">{managerPin.map((digit, idx) => (<input key={idx} type="password" maxLength={1} value={digit} onChange={(e) => { const newPin = [...managerPin]; newPin[idx] = e.target.value.slice(-1); setManagerPin(newPin); }} className="w-10 h-10 text-center rounded-xl bg-[#1E1E1E] border border-[#2A2A2A] text-lg font-bold text-white font-mono focus:border-[#C85A32] focus:outline-none" />))}</div>
               </div>
             </div>
             <div className="p-4 bg-[#161616] border-t border-[#2A2A2A] flex items-center justify-between"><span className="text-xs text-gray-400 font-mono">Syncs immediately to POS Floor Stock</span><div className="flex gap-2"><button type="button" onClick={() => setIsManagerModalOpen(false)} className="px-4 py-2 rounded-lg bg-[#2A2A2A] hover:bg-[#383838] text-gray-300 text-xs font-semibold">Cancel</button><button type="button" onClick={handleConfirmPinTransfer} className="px-5 py-2 rounded-lg bg-[#C85A32] hover:bg-[#b04d29] text-white text-xs font-bold flex items-center gap-1.5 shadow"><span>Authorize &amp; Transfer to POS</span><ArrowRight className="w-4 h-4" /></button></div></div>
