@@ -688,7 +688,7 @@ export const BuyPawn: React.FC = () => {
         daysElapsed: 0,
         vaultShelf: businessRules.defaultVaultShelf,
         status: 'Active',
-        qrToken: Math.random().toString(36).substring(7),
+        qrToken: `TKN-${crypto.randomUUID()}`,
         history: [{
           date: new Date().toISOString(),
           action: 'Created',

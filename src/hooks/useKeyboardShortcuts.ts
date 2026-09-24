@@ -13,8 +13,6 @@ export const useKeyboardShortcuts = (options?: KeyboardShortcutOptions) => {
     clearCart,
     completeCheckout,
     setIsScannerModalOpen,
-    isSupabaseModalOpen,
-    setIsSupabaseModalOpen,
     showToast
   } = useApp();
 
@@ -127,13 +125,6 @@ export const useKeyboardShortcuts = (options?: KeyboardShortcutOptions) => {
           }
           return;
         }
-      }
-
-      // --- DEVELOPER SHORTCUT: Toggle Supabase Config (Ctrl+Alt+S) ---
-      if ((isCtrlOrCmd && isAlt && (key === 's' || key === 'S'))) {
-        e.preventDefault();
-        setIsSupabaseModalOpen(!isSupabaseModalOpen);
-        return;
       }
 
       // --- BARCODE SCANNER MODAL TOGGLE (Ctrl+B or F7) ---

@@ -20,12 +20,15 @@ export const CompositeProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     const init = async () => {
       await runMigration();
-      await seedDatabase(
-        INITIAL_INVENTORY,
-        INITIAL_CUSTOMERS,
-        INITIAL_PAWN_LOANS,
-        INITIAL_SAPS_REGISTER
-      );
+      // Isolate demo fixtures: only seed if explicitly configured via environment flag
+      if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ENABLE_DEMO_SEED === 'true') {
+        await seedDatabase(
+          INITIAL_INVENTORY,
+          INITIAL_CUSTOMERS,
+          INITIAL_PAWN_LOANS,
+          INITIAL_SAPS_REGISTER
+        );
+      }
     };
     init().catch(console.error);
   }, []);

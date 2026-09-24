@@ -8,8 +8,8 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/re
 import * as ReactWindow from 'react-window';
 import { AutoSizer as AutoSizerComponent } from 'react-virtualized-auto-sizer';
 
-const FixedSizeGrid = (ReactWindow as any).FixedSizeGrid;
-const FixedSizeList = (ReactWindow as any).FixedSizeList;
+const FixedSizeGrid = (ReactWindow as any).Grid;
+const FixedSizeList = (ReactWindow as any).List;
 const AutoSizer = (AutoSizerComponent as any);
 import {
   Lock,

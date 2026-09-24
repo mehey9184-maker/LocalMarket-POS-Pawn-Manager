@@ -9,7 +9,7 @@ export const terminalService = {
   getDeviceId(): string {
     let deviceId = localStorage.getItem(LOCAL_STORAGE_DEVICE_ID_KEY);
     if (!deviceId) {
-      deviceId = `term-${Math.random().toString(36).substring(2, 11)}`;
+      deviceId = `term-${crypto.randomUUID().slice(0, 12)}`;
       localStorage.setItem(LOCAL_STORAGE_DEVICE_ID_KEY, deviceId);
     }
     return deviceId;

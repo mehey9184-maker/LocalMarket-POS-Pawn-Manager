@@ -12,21 +12,13 @@ import {
   ItemCondition,
   BusinessRules
 } from '../types';
-import {
-  INITIAL_CUSTOMERS,
-  INITIAL_INVENTORY,
-  INITIAL_PAWN_LOANS,
-  INITIAL_SAPS_REGISTER
-} from '../data/initialData';
-import { offlineStorage, OfflineSyncItem } from '../services/offlineStorage';
 import { isSupabaseConfigured } from '../services/supabase';
-import { authApi, profilesApi, shopItemsApi, logsApi, shopProfilesApi } from '../services/supabaseApi';
-import { ProfileRow, SystemLogRow, ShopProfileRow } from '../types/supabase';
-import { DEFAULT_BUSINESS_RULES, roundRetailPrice } from '../utils/pricingRules';
+import { authApi, shopItemsApi, logsApi, shopProfilesApi } from '../services/supabaseApi';
+import { ProfileRow, SystemLogRow } from '../types/supabase';
+import { DEFAULT_BUSINESS_RULES } from '../utils/pricingRules';
 import { useInventory } from './InventoryContext';
 import { useLoans } from './LoanContext';
 import { useCustomers } from './CustomerContext';
-import { useSellers } from './SellerContext';
 import { useSales } from './SalesContext';
 import { useSaps } from './SapsContext';
 import { useSync } from './SyncContext';
@@ -56,21 +48,21 @@ export interface ShopProfile {
 }
 
 export const INITIAL_SHOP_PROFILE: ShopProfile = {
-  shop_code: 'SHOP-SOW-01',
-  shop_name: 'LocalMarket Soweto Central',
-  trading_name: 'LocalMarket Pawnbrokers & Retail (Pty) Ltd',
-  registration_number: '2019/581920/07',
-  vat_number: 'ZA4891029381',
-  saps_dealer_license: 'SAPS-SHG-2024-8842',
-  phone: '+27 (0)11 938 4100',
-  email: 'soweto@localmarketpos.co.za',
-  address: 'Shop 42, Vilakazi Precinct, Soweto, Johannesburg',
-  city: 'Johannesburg',
-  province: 'Gauteng',
-  postal_code: '1804',
+  shop_code: '',
+  shop_name: 'LocalMarket Store',
+  trading_name: '',
+  registration_number: '',
+  vat_number: '',
+  saps_dealer_license: '',
+  phone: '',
+  email: '',
+  address: '',
+  city: '',
+  province: '',
+  postal_code: '',
   currency: 'ZAR',
-  receipt_header: 'LOCALMARKET POS & PAWN BROKERS\nVAT REG: ZA4891029381 | SAPS LIC: SHG-2024-8842',
-  receipt_footer: 'THANK YOU FOR YOUR BUSINESS\nGoods sold as second-hand under SHG Act 06 of 2009\n7-Day Store Warranty with original slip'
+  receipt_header: 'LOCALMARKET POS & PAWN BROKERS',
+  receipt_footer: 'THANK YOU FOR YOUR BUSINESS\nGoods sold as second-hand under SHG Act 06 of 2009'
 };
 
 export interface ToastInfo {
@@ -85,8 +77,6 @@ interface AppContextType {
   cart: CartItem[];
   selectedLoanForSettlement: PawnLoan | null;
   setSelectedLoanForSettlement: (loan: PawnLoan | null) => void;
-  hardwareScannerSource: string;
-  setHardwareScannerSource: (val: string) => void;
   isScannerModalOpen: boolean;
   setIsScannerModalOpen: (val: boolean) => void;
   activeReceiptModal: SaleTransaction | null;
@@ -125,8 +115,6 @@ interface AppContextType {
   };
   
   // Supabase API Integration (Authentication, Database: shop items, profiles, logs)
-  isSupabaseModalOpen: boolean;
-  setIsSupabaseModalOpen: (open: boolean) => void;
   supabaseStatus: {
     isConfigured: boolean;
     isConnected: boolean;
@@ -148,20 +136,6 @@ interface AppContextType {
   clearCart: () => void;
   completeCheckout: (tenderMethod: PaymentMethod, amountTendered: number, receiptType: ReceiptDelivery, customerMobile?: string) => Promise<SaleTransaction>;
   processRefund: (receiptNumber: string, itemId: string, reason: string) => Promise<boolean>;
-
-  // Intake Actions
-  createIntakeTransaction: (data: {
-    customer: Omit<Customer, 'id' | 'createdAt'> & { id?: string };
-    isPawn: boolean;
-    title: string;
-    category: any;
-    serialOrImei: string;
-    condition: ItemCondition;
-    agreedOffer: number;
-    vaultShelf?: string;
-    retailPriceEstimate?: number;
-    imageUrl?: string;
-  }) => Promise<{ loan?: PawnLoan; item: InventoryItem; saps: SapsEntry }>;
 
   // Loan Actions
   redeemLoan: (ticketNumber: string, amountPaid: number) => Promise<{ success: boolean; error?: string }>;
@@ -198,7 +172,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeTab, setActiveTab] = useState<NavTab>('landing');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedLoanForSettlement, setSelectedLoanForSettlement] = useState<PawnLoan | null>(null);
-  const [hardwareScannerSource, setHardwareScannerSource] = useState<string>('phone');
   const [isScannerModalOpen, setIsScannerModalOpen] = useState<boolean>(false);
   const [activeReceiptModal, setActiveReceiptModal] = useState<SaleTransaction | null>(null);
   const [activeContractModal, setActiveContractModal] = useState<PawnLoan | null>(null);
@@ -219,7 +192,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const { user: supabaseUser, profile: currentUserProfile } = useAuth();
 
   // Supabase API Integration State
-  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
   const [supabaseLogs, setSupabaseLogs] = useState<SystemLogRow[]>([]);
   const [supabaseStatus, setSupabaseStatus] = useState({
     isConfigured: isSupabaseConfigured(),
@@ -255,20 +227,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
 
   // Consume Domain Contexts
-  const { inventory, addItem, updateItem } = useInventory();
+  const { inventory, updateItem } = useInventory();
   const { 
     loans: pawnLoans, 
-    createLoan,
     redeemLoan, 
     extendLoan, 
     transferOverdueToFloor, 
     batchTransferOverdue, 
     archiveLoan 
   } = useLoans();
-  const { customers, addCustomer } = useCustomers();
-  const { addSeller, addSellerTransaction } = useSellers();
+  const { customers } = useCustomers();
   const { salesHistory, completeAtomicCheckout, requestRefund, approveRefund } = useSales();
-  const { sapsEntries: sapsRegister, addSapsEntry, exportSapsCsv } = useSaps();
+  const { sapsEntries: sapsRegister, exportSapsCsv } = useSaps();
   const { syncStatus, triggerSync, queueSyncAction } = useSync();
 
   const total = useMemo(() => {
@@ -448,199 +418,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [salesHistory, requestRefund, showToast]);
 
-  const createIntakeTransaction = useCallback(async (data: {
-    customer: Omit<Customer, 'id' | 'createdAt'> & { id?: string };
-    isPawn: boolean;
-    title: string;
-    category: any;
-    serialOrImei: string;
-    condition: ItemCondition;
-    agreedOffer: number;
-    vaultShelf?: string;
-    retailPriceEstimate?: number;
-    imageUrl?: string;
-  }): Promise<{ loan?: PawnLoan; item: InventoryItem; saps: SapsEntry }> => {
-    const itemId = crypto.randomUUID();
-    const sku = `SKU-${Math.floor(100000 + Math.random() * 900000)}`;
-    const addedAt = new Date().toISOString();
-
-    if (data.isPawn) {
-      // 1. Pawn requires a registered Customer
-      let customerId = data.customer.id;
-      if (!customerId) {
-        customerId = await addCustomer({
-          fullName: data.customer.fullName,
-          idNumber: data.customer.idNumber,
-          idType: data.customer.idType,
-          mobile: data.customer.mobile,
-          address: data.customer.address,
-          dob: data.customer.dob,
-          gender: data.customer.gender,
-          verified: data.customer.verified ?? false
-        });
-      }
-
-      const loanId = crypto.randomUUID();
-      const ticketNumber = `#PWN-${Math.floor(1000 + Math.random() * 9000)}`;
-      const retailPrice = data.retailPriceEstimate || Math.round(data.agreedOffer * 1.8);
-
-      const item: InventoryItem = {
-        id: itemId,
-        sku,
-        title: data.title,
-        category: data.category,
-        serialOrImei: data.serialOrImei,
-        condition: data.condition,
-        acquisitionType: 'Pawn',
-        costBasis: data.agreedOffer,
-        retailPrice,
-        status: 'Vault Hold',
-        vaultLocation: data.vaultShelf || 'BIN-A01',
-        imageUrl: data.imageUrl || 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=600&q=80',
-        pawnTicketId: loanId,
-        addedAt
-      };
-      await addItem(item);
-
-      const loan: PawnLoan = {
-        id: loanId,
-        ticketNumber,
-        customerId,
-        customerName: data.customer.fullName,
-        customerIdNumber: data.customer.idNumber,
-        customerMobile: data.customer.mobile,
-        customerAddress: data.customer.address,
-        itemId,
-        itemTitle: data.title,
-        itemCategory: data.category,
-        serialOrImei: data.serialOrImei,
-        condition: data.condition,
-        itemImageUrl: item.imageUrl,
-        principal: data.agreedOffer,
-        ncrMonthlyRate: 0.05,
-        monthlyInterest: data.agreedOffer * 0.05,
-        monthlyStorageAdminFee: data.agreedOffer * 0.08,
-        totalRedemptionAmount: Math.round(data.agreedOffer * 1.13),
-        extensionFee: Math.round(data.agreedOffer * 0.13),
-        startDate: new Date().toISOString().split('T')[0],
-        expiryDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-        daysRemaining: 30,
-        daysElapsed: 0,
-        vaultShelf: data.vaultShelf || 'BIN-A01',
-        status: 'Active',
-        qrToken: `TOKEN-${ticketNumber}`,
-        history: [{
-          date: new Date().toISOString().replace('T', ' ').slice(0, 16),
-          action: 'Created',
-          amount: data.agreedOffer,
-          note: 'Pawn contract initiated.'
-        }]
-      };
-      await createLoan(loan);
-
-      const sapsId = await addSapsEntry({
-        timestamp: addedAt,
-        customerId,
-        customerName: data.customer.fullName,
-        customerIdNumber: data.customer.idNumber,
-        customerAddress: data.customer.address,
-        customerPhone: data.customer.mobile,
-        itemDescription: data.title,
-        category: data.category,
-        serialOrImei: data.serialOrImei,
-        condition: data.condition,
-        acquisitionType: 'Pawn',
-        considerationPaid: data.agreedOffer,
-        officerName: currentUserProfile?.full_name || 'Intake Officer',
-        policeStationRef: 'STN-JHB-01',
-        verificationStatus: data.customer.verified ? 'VERIFIED' : 'PENDING',
-        barcodeRef: sku
-      });
-
-      const saps = await db.saps.get(sapsId);
-      return { loan, item, saps: saps! };
-    } else {
-      // 2. Outright buy creates a registered Seller + SellerTransaction (Spec Rule 16)
-      let sellerId = data.customer.id;
-      if (!sellerId) {
-        sellerId = await addSeller({
-          fullName: data.customer.fullName,
-          idNumber: data.customer.idNumber,
-          idType: data.customer.idType,
-          mobile: data.customer.mobile,
-          address: data.customer.address,
-          verified: data.customer.verified ?? false
-        });
-      }
-
-      const retailPrice = data.retailPriceEstimate || Math.round(data.agreedOffer * 1.8);
-      const item: InventoryItem = {
-        id: itemId,
-        sku,
-        title: data.title,
-        category: data.category,
-        serialOrImei: data.serialOrImei,
-        condition: data.condition,
-        acquisitionType: 'Buy',
-        costBasis: data.agreedOffer,
-        retailPrice,
-        status: 'Retail Floor',
-        imageUrl: data.imageUrl || 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=600&q=80',
-        addedAt
-      };
-      await addItem(item);
-
-      const sapsId = await addSapsEntry({
-        timestamp: addedAt,
-        customerId: sellerId,
-        customerName: data.customer.fullName,
-        customerIdNumber: data.customer.idNumber,
-        customerAddress: data.customer.address,
-        customerPhone: data.customer.mobile,
-        itemDescription: data.title,
-        category: data.category,
-        serialOrImei: data.serialOrImei,
-        condition: data.condition,
-        acquisitionType: 'Buy',
-        considerationPaid: data.agreedOffer,
-        officerName: currentUserProfile?.full_name || 'Intake Officer',
-        policeStationRef: 'STN-JHB-01',
-        verificationStatus: data.customer.verified ? 'VERIFIED' : 'PENDING',
-        barcodeRef: sku
-      });
-
-      const saps = await db.saps.get(sapsId);
-
-      // Record Seller Transaction
-      await addSellerTransaction({
-        shopId: shopProfile.id || 'default-shop',
-        sellerId,
-        totalProposedPayout: data.agreedOffer,
-        totalApprovedPayout: data.agreedOffer,
-        paymentStatus: 'Paid',
-        status: 'Acquired',
-        complianceStatus: data.customer.verified ? 'VERIFIED' : 'PENDING',
-        items: [{
-          id: crypto.randomUUID(),
-          sellerTransactionId: '', // Will be set by addSellerTransaction
-          shopId: shopProfile.id || 'default-shop',
-          itemId,
-          itemSku: sku,
-          itemTitle: data.title,
-          amountPaid: data.agreedOffer,
-          retailPrice: retailPrice,
-          condition: data.condition,
-          serialOrImei: data.serialOrImei,
-          createdAt: addedAt
-        }],
-        timestamp: addedAt,
-        sapsRef: saps?.entryNumber || sku
-      });
-
-      return { item, saps: saps! };
-    }
-  }, [addCustomer, addSeller, addSellerTransaction, addItem, createLoan, addSapsEntry, currentUserProfile]);
-
   return (
     <AppContext.Provider
       value={{
@@ -649,8 +426,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cart,
         selectedLoanForSettlement,
         setSelectedLoanForSettlement,
-        hardwareScannerSource,
-        setHardwareScannerSource,
         isScannerModalOpen,
         setIsScannerModalOpen,
         activeReceiptModal,
@@ -673,8 +448,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateBusinessRules,
         isRulesModalOpen,
         setIsRulesModalOpen,
-        isSupabaseModalOpen,
-        setIsSupabaseModalOpen,
         supabaseStatus,
         supabaseUser,
         currentUserProfile,
@@ -719,7 +492,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
         completeCheckout,
         processRefund,
-        createIntakeTransaction,
         redeemLoan,
         extendLoan,
         transferOverdueToFloor,

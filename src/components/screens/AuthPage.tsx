@@ -246,13 +246,6 @@ CREATE TRIGGER on_auth_user_created
     }
   };
 
-  const simulateBadgeScan = () => {
-    setEmail('OP-4092@localmarket.co.za');
-    setPassword('••••••••');
-    setErrors({});
-    showToast('Badge Detected', 'Sipho D. - Senior Operator', 'success');
-  };
-
   const getInputClass = (error?: string) => {
     return `w-full h-11 bg-[#1f1e1e] text-[#e5e2e1] placeholder:text-[#a58b83]/50 text-sm rounded-lg pl-10 pr-4 border ${
       error ? 'border-red-500/50 focus:border-red-500' : 'border-[#282727] focus:border-[#c85a32]'
