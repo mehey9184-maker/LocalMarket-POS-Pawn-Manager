@@ -329,7 +329,7 @@ export const Header: React.FC<HeaderProps> = () => {
               onClick={() => setActiveTab(tab.id)}
               className={`px-4 py-2 rounded-lg text-[13px] font-medium transition-all whitespace-nowrap cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 ${
                 isActive
-                  ? 'bg-white text-gray-900 font-semibold shadow-xs border border-gray-200/50'
+                  ? 'bg-white text-gray-900 font-semibold'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
               }`}
             >

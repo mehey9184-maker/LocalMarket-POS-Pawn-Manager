@@ -180,7 +180,7 @@ export const Inventory: React.FC = () => {
               onClick={() => setTab('floor')}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 ${
                 tab === 'floor' 
-                  ? 'bg-white text-gray-900 shadow-xs' 
+                  ? 'bg-white text-gray-900' 
                   : 'text-gray-500 hover:text-gray-900'
               }`}
             >
@@ -195,7 +195,7 @@ export const Inventory: React.FC = () => {
               onClick={() => setTab('vault')}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 ${
                 tab === 'vault' 
-                  ? 'bg-white text-gray-900 shadow-xs' 
+                  ? 'bg-white text-gray-900' 
                   : 'text-gray-500 hover:text-gray-900'
               }`}
             >
@@ -210,7 +210,7 @@ export const Inventory: React.FC = () => {
               onClick={() => setTab('pending')}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 ${
                 tab === 'pending' 
-                  ? 'bg-white text-gray-900 shadow-xs' 
+                  ? 'bg-white text-gray-900' 
                   : 'text-gray-500 hover:text-gray-900'
               }`}
             >
