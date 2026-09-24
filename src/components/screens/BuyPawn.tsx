@@ -20,6 +20,9 @@ import { sellerTransactionsApi, pawnLoansApi } from '../../services/supabaseApi'
 import { MarketCheckCard } from '../common/MarketCheckCard';
 import { MarketCheckResult } from '../../types/marketIntelligence';
 import { motion, AnimatePresence } from 'motion/react';
+import { draftService } from '../../services/draftService';
+import { DraftRecoveryModal } from '../modals/DraftRecoveryModal';
+import { WorkflowDraft } from '../../types';
 import {
   ShieldCheck,
   IdCard,
@@ -145,6 +148,51 @@ export const BuyPawn: React.FC = () => {
     }));
     showToast('ID Decoded', `ID #${capturedRsaIdScan.idNumber} decoded — identity still needs verification.`, 'info');
   }, [capturedRsaIdScan, step, txType, customers, sellers, showToast]);
+
+  // --- DRAFT CONTINUITY ---
+  const [activeDrafts, setActiveDrafts] = useState<WorkflowDraft[]>([]);
+  const [draftId, setDraftId] = useState<string>(() => crypto.randomUUID());
+
+  useEffect(() => {
+    if (user) {
+      draftService.getActiveDrafts(user.id).then(drafts => {
+        const relevant = drafts.filter(d => d.workflowType === 'buy' || d.workflowType === 'pawn');
+        setActiveDrafts(relevant);
+      });
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (step !== 'completion' && txType && user) {
+        draftService.saveDraft({
+          id: draftId,
+          userId: user.id,
+          workflowType: txType,
+          step: step,
+          payload: { itemData, newIdentity, selectedIdentity, txType }
+        });
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [step, txType, itemData, newIdentity, selectedIdentity, draftId, user]);
+
+  const handleContinueDraft = (draft: WorkflowDraft) => {
+    setDraftId(draft.id);
+    setTxType(draft.workflowType);
+    setStep(draft.step as WorkflowStep);
+    setItemData(draft.payload.itemData);
+    setNewIdentity(draft.payload.newIdentity);
+    setSelectedIdentity(draft.payload.selectedIdentity);
+    setActiveDrafts([]);
+    showToast('Draft Restored', 'Your previous work has been restored.', 'info');
+  };
+
+  const handleDiscardDraft = (id: string) => {
+    draftService.discardDraft(id);
+    setActiveDrafts(activeDrafts.filter(d => d.id !== id));
+  };
+  // ------------------------
 
   // Item Details State (Common to all flows)
   const [itemData, setItemData] = useState({
@@ -2212,6 +2260,14 @@ export const BuyPawn: React.FC = () => {
             )}
           </AnimatePresence>
         </div>
+        
+        {activeDrafts.length > 0 && (
+          <DraftRecoveryModal
+            drafts={activeDrafts}
+            onContinue={handleContinueDraft}
+            onDiscard={handleDiscardDraft}
+          />
+        )}
       </div>
     </div>
   );
