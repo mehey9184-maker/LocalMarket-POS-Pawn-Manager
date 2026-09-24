@@ -8,6 +8,31 @@ export interface RsaIdParseResult {
   error?: string;
 }
 
+function isValidChecksum(id: string): boolean {
+  const digits = id.split('').map(Number);
+
+  let oddSum = 0;
+  for (let i = 0; i < 12; i += 2) {
+    oddSum += digits[i];
+  }
+
+  let evenConcat = '';
+  for (let i = 1; i < 12; i += 2) {
+    evenConcat += digits[i];
+  }
+
+  const doubled = (parseInt(evenConcat, 10) * 2).toString();
+
+  const evenSum = doubled
+    .split('')
+    .reduce((sum, digit) => sum + Number(digit), 0);
+
+  const checkDigit =
+    (10 - ((oddSum + evenSum) % 10)) % 10;
+
+  return checkDigit === digits[12];
+}
+
 /**
  * Validates South African ID numbers decoded from barcodes or input strings.
  * Structural rules: YYMMDD SSSS C A Z (13 digits)
@@ -71,6 +96,15 @@ export function parseAndValidateRsaId(rawText: string): RsaIdParseResult {
       isValid: false,
       rawText: cleanText,
       error: `Invalid calendar date 'YYMMDD = ${idNumber.substring(0, 6)}' in RSA ID number`
+    };
+  }
+
+  // Validate Checksum digit (digit 13)
+  if (!isValidChecksum(idNumber)) {
+    return {
+      isValid: false,
+      rawText: cleanText,
+      error: 'Checksum failed — ID number may be mistyped or misscanned'
     };
   }
 

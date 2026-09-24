@@ -8,53 +8,96 @@ export function useTerminalSession() {
   const [session, setSession] = useState<TerminalSession | null>(null);
   const [conflict, setConflict] = useState<{ active_session: any } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isOfflineRevalidation, setIsOfflineRevalidation] = useState(false);
 
   const checkAndInitialize = useCallback(async () => {
     if (!user || !profile) {
       setSession(null);
       setIsLoading(false);
+      setIsOfflineRevalidation(false);
       return;
     }
 
     setIsLoading(true);
-    const localSession = await terminalService.getCurrentLocalSession();
-    
-    if (localSession && localSession.status === 'active') {
-      // Check if this local session is still valid on the server
-      const heartbeatRes = await terminalService.heartbeat(localSession.id);
-      if (heartbeatRes.status === 'active') {
+    try {
+      const localSession = await terminalService.getCurrentLocalSession();
+
+      if (localSession && localSession.status === 'active') {
+        // Try server heartbeat/revalidation
+        try {
+          const heartbeatRes = await terminalService.heartbeat(localSession.id);
+          if (heartbeatRes.status === 'active') {
+            setSession(localSession);
+            setIsOfflineRevalidation(false);
+            return;
+          } else if (heartbeatRes.status === 'invalidated' || heartbeatRes.status === 'expired') {
+            // Authoritative invalidation
+            const updated = await terminalService.getCurrentLocalSession();
+            setSession(updated);
+            setIsOfflineRevalidation(false);
+            return;
+          } else {
+            // Transient heartbeat error/network failure - enter temporary offline grace state
+            setSession(localSession);
+            setIsOfflineRevalidation(true);
+            return;
+          }
+        } catch (hbErr) {
+          // Transient network error during heartbeat - keep local session in offline grace state
+          setSession(localSession);
+          setIsOfflineRevalidation(true);
+          return;
+        }
+      }
+
+      // If local session is invalidated/expired, display it directly
+      if (localSession && (localSession.status === 'invalidated' || localSession.status === 'expired')) {
         setSession(localSession);
-        setIsLoading(false);
         return;
       }
-    }
 
-    // No valid local session, check server for other active sessions
-    const serverCheck = await terminalService.checkActiveSession();
-    if (serverCheck.has_active_session) {
-      // Conflict detected
-      if (serverCheck.terminal_id === terminalService.getDeviceId()) {
-        // It's this terminal! Try to recover it.
-        // If recover fails (e.g. status was not active in server_check return, but rpc says it is)
-        // For simplicity, if IDs match, we should just reactivate or use it.
+      // Check server for active sessions
+      const serverCheck = await terminalService.checkActiveSession();
+      if (!serverCheck.success) {
+        // Transient network failure contacting server
+        if (localSession && localSession.status === 'active') {
+          setSession(localSession);
+          setIsOfflineRevalidation(true);
+        } else {
+          setSession(localSession || null);
+        }
+        return;
+      }
+
+      if (serverCheck.has_active_session) {
+        if (serverCheck.terminal_id === terminalService.getDeviceId()) {
+          const activateRes = await terminalService.activateSession(`${profile.full_name}'s Terminal`);
+          if (activateRes.success) {
+            const newLocal = await terminalService.getCurrentLocalSession();
+            setSession(newLocal);
+            setIsOfflineRevalidation(false);
+          }
+        } else {
+          setConflict({ active_session: serverCheck });
+        }
+      } else {
         const activateRes = await terminalService.activateSession(`${profile.full_name}'s Terminal`);
         if (activateRes.success) {
           const newLocal = await terminalService.getCurrentLocalSession();
           setSession(newLocal);
+          setIsOfflineRevalidation(false);
         }
-      } else {
-        setConflict({ active_session: serverCheck });
       }
-    } else {
-      // No active session anywhere, create one
-      const activateRes = await terminalService.activateSession(`${profile.full_name}'s Terminal`);
-      if (activateRes.success) {
-        const newLocal = await terminalService.getCurrentLocalSession();
-        setSession(newLocal);
+    } catch (err) {
+      console.error('Terminal session initialization error:', err);
+      const fallbackLocal = await terminalService.getCurrentLocalSession();
+      if (fallbackLocal && fallbackLocal.status === 'active') {
+        setSession(fallbackLocal);
+        setIsOfflineRevalidation(true);
       }
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   }, [user, profile]);
 
   useEffect(() => {
@@ -66,10 +109,19 @@ export function useTerminalSession() {
     if (!session || session.status !== 'active') return;
 
     const interval = setInterval(async () => {
-      const res = await terminalService.heartbeat(session.id);
-      if (res.status !== 'active') {
-        const updated = await terminalService.getCurrentLocalSession();
-        setSession(updated);
+      try {
+        const res = await terminalService.heartbeat(session.id);
+        if (res.status === 'active') {
+          setIsOfflineRevalidation(false);
+        } else if (res.status === 'invalidated' || res.status === 'expired') {
+          const updated = await terminalService.getCurrentLocalSession();
+          setSession(updated);
+        } else {
+          // Transient network failure during heartbeat
+          setIsOfflineRevalidation(true);
+        }
+      } catch (err) {
+        setIsOfflineRevalidation(true);
       }
     }, 60000); // 1 minute
 
@@ -79,20 +131,45 @@ export function useTerminalSession() {
   const switchTerminal = async () => {
     if (!profile) return;
     setIsLoading(true);
-    const res = await terminalService.activateSession(`${profile.full_name}'s Terminal`);
-    if (res.success) {
-      const newLocal = await terminalService.getCurrentLocalSession();
-      setSession(newLocal);
-      setConflict(null);
+    try {
+      await terminalService.clearLocalSession();
+      const res = await terminalService.activateSession(`${profile.full_name}'s Terminal`);
+      if (res.success) {
+        const newLocal = await terminalService.getCurrentLocalSession();
+        setSession(newLocal);
+        setConflict(null);
+        setIsOfflineRevalidation(false);
+      }
+    } catch (err) {
+      console.error('Switch terminal error:', err);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
+  };
+
+  const reconnectTerminal = async () => {
+    setIsLoading(true);
+    try {
+      const local = await terminalService.getCurrentLocalSession();
+      if (local && (local.status === 'invalidated' || local.status === 'expired')) {
+        await terminalService.clearLocalSession();
+      }
+      setConflict(null);
+      await checkAndInitialize();
+    } catch (err) {
+      console.error('Reconnect terminal error:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return {
     session,
     conflict,
     isLoading,
+    isOfflineRevalidation,
     switchTerminal,
+    reconnectTerminal,
     refresh: checkAndInitialize
   };
 }

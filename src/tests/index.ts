@@ -6,6 +6,7 @@ import { runIdentityVerificationIntegrityTests } from './identityVerificationInt
 import { runIdentifierAndSourceOfTruthTests } from './identifierAndSourceOfTruth.test';
 import { runAtomicBuyAndPawnIntegrityTests } from './atomicBuyAndPawnIntegrity.test';
 import { runV1DefectRepairPassTests } from './v1DefectRepairPass.test';
+import { runTerminalSessionTests } from './terminalSession.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -19,6 +20,7 @@ export async function runAllTests() {
   await runIdentifierAndSourceOfTruthTests();
   await runAtomicBuyAndPawnIntegrityTests();
   await runV1DefectRepairPassTests();
+  await runTerminalSessionTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');

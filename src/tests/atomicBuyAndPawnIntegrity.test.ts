@@ -10,7 +10,7 @@ export async function runAtomicBuyAndPawnIntegrityTests() {
   const testSeller: Seller = {
     id: '11111111-1111-4111-8111-111111111111',
     fullName: 'David Nkosi',
-    idNumber: '8901015800084',
+    idNumber: '8901015800087',
     mobile: '0821234567',
     address: '42 Market Street, Johannesburg',
     idType: 'RSA Smart ID',
@@ -149,7 +149,7 @@ export async function runAtomicBuyAndPawnIntegrityTests() {
     id: '55555555-5555-4555-8555-555555555555',
     fullName: 'Thabo Khumalo',
     idType: 'RSA Smart ID',
-    idNumber: '9203145800081',
+    idNumber: '9203145800080',
     mobile: '0719876543',
     address: '15 Vilakazi St, Soweto',
     verified: true,

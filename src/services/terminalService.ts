@@ -7,10 +7,12 @@ const LOCAL_STORAGE_DEVICE_ID_KEY = 'localmarket_device_id';
 
 export const terminalService = {
   getDeviceId(): string {
-    let deviceId = localStorage.getItem(LOCAL_STORAGE_DEVICE_ID_KEY);
+    let deviceId = typeof window !== 'undefined' ? localStorage.getItem(LOCAL_STORAGE_DEVICE_ID_KEY) : 'term-node-test';
     if (!deviceId) {
       deviceId = `term-${crypto.randomUUID().slice(0, 12)}`;
-      localStorage.setItem(LOCAL_STORAGE_DEVICE_ID_KEY, deviceId);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(LOCAL_STORAGE_DEVICE_ID_KEY, deviceId);
+      }
     }
     return deviceId;
   },
@@ -45,21 +47,29 @@ export const terminalService = {
     return res;
   },
 
+  async clearLocalSession() {
+    await db.terminalSessions.clear();
+  },
+
   async heartbeat(sessionId: string) {
-    const res = await terminalSessionsApi.heartbeatRpc(sessionId);
-    
-    if (res.status === 'active') {
-      await db.terminalSessions.update(sessionId, {
-        lastHeartbeatAt: new Date().toISOString()
-      });
-    } else if (res.status === 'invalidated' || res.status === 'expired') {
-      await db.terminalSessions.update(sessionId, {
-        status: res.status,
-        invalidatedAt: (res as any).invalidated_at
-      });
+    try {
+      const res = await terminalSessionsApi.heartbeatRpc(sessionId);
+      
+      if (res.status === 'active') {
+        await db.terminalSessions.update(sessionId, {
+          lastHeartbeatAt: new Date().toISOString()
+        });
+      } else if (res.status === 'invalidated' || res.status === 'expired') {
+        await db.terminalSessions.update(sessionId, {
+          status: res.status as any,
+          invalidatedAt: (res as any).invalidated_at
+        });
+      }
+      
+      return res;
+    } catch (err: any) {
+      return { success: false, status: 'error', error: err?.message || 'Heartbeat exception' };
     }
-    
-    return res;
   },
 
   async getCurrentLocalSession(): Promise<TerminalSession | null> {

@@ -125,11 +125,11 @@ export async function runStabilityAndScannerTests() {
 
   // Test 6: RSA PDF417 payload containing extra text extracts 13-digit ID candidate
   {
-    const rawPdf417Payload = 'RSA_DRIVERS_LICENSE|SURNAME:MOKOENA|NAME:THABO|ID:9203155091084|EXP:2028-12-31';
+    const rawPdf417Payload = 'RSA_DRIVERS_LICENSE|SURNAME:MOKOENA|NAME:THABO|ID:8001015009087|EXP:2028-12-31';
     const parsed = parseAndValidateRsaId(rawPdf417Payload);
 
     assertTrue(parsed.isValid, 'Test 6: Complex PDF417 string successfully extracted 13-digit ID');
-    assertEqual(parsed.idNumber, '9203155091084', 'Test 6: Correct 13-digit candidate extracted from raw payload');
+    assertEqual(parsed.idNumber, '8001015009087', 'Test 6: Correct 13-digit candidate extracted from raw payload');
   }
 
   // Test 7: Decoded RSA ID does not automatically mark identity as verified

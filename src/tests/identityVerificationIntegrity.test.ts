@@ -31,7 +31,7 @@ export async function runIdentityVerificationIntegrityTests() {
 
   // Test 1: RSA ID decoded => verified=false / pending
   {
-    const rawRsaBarcode = '9204145082089';
+    const rawRsaBarcode = '9204145082086';
     const parsed = parseAndValidateRsaId(rawRsaBarcode);
     assertTrue(parsed.isValid, 'Test 1: Valid RSA ID barcode decoded');
 
@@ -52,7 +52,7 @@ export async function runIdentityVerificationIntegrityTests() {
   {
     const newSellerInput: Omit<Seller, 'id' | 'createdAt'> = {
       fullName: 'Bongani Sithole',
-      idNumber: '8905125192083',
+      idNumber: '8905125192089',
       idType: 'RSA Smart ID',
       mobile: '+27 82 555 1234',
       address: '42 Ndaba Street, Soweto',
@@ -67,7 +67,7 @@ export async function runIdentityVerificationIntegrityTests() {
 
     const newCustomerInput: Omit<Customer, 'id' | 'createdAt'> = {
       fullName: 'Lerato Khumalo',
-      idNumber: '9508230192088',
+      idNumber: '9508230192089',
       idType: 'RSA Smart ID',
       mobile: '+27 71 888 4321',
       address: '15 Vilakazi Street, Orlando West',
@@ -84,7 +84,7 @@ export async function runIdentityVerificationIntegrityTests() {
     const existingUnverifiedCustomer: Customer = {
       id: 'cust-12345',
       fullName: 'Nomvula Dlamini',
-      idNumber: '9204145082089',
+      idNumber: '9204145082086',
       idType: 'RSA Smart ID',
       mobile: '+27 83 111 2222',
       address: '88 Fox Street, Johannesburg',
@@ -93,7 +93,7 @@ export async function runIdentityVerificationIntegrityTests() {
     };
 
     // Simulate decoding an RSA barcode matching this customer
-    const rawRsaBarcode = '9204145082089';
+    const rawRsaBarcode = '9204145082086';
     const parsed = parseAndValidateRsaId(rawRsaBarcode);
     const matchedRecord = existingUnverifiedCustomer.idNumber === parsed.idNumber ? existingUnverifiedCustomer : null;
 
@@ -107,7 +107,7 @@ export async function runIdentityVerificationIntegrityTests() {
     let sellerRecord: Seller = {
       id: 'seller-777',
       fullName: 'Kagiso Molefe',
-      idNumber: '9002155092081',
+      idNumber: '9002155092080',
       idType: 'RSA Smart ID',
       mobile: '+27 84 999 8888',
       address: '10 Commissioner St, JHB',
@@ -140,11 +140,11 @@ export async function runIdentityVerificationIntegrityTests() {
 
   // Test 5: Scanner captures actual ID data without fabricating names
   {
-    const rawBarcode = '9204145082089';
+    const rawBarcode = '9204145082086';
     const parsed = parseAndValidateRsaId(rawBarcode);
 
     assertTrue(parsed.isValid, 'Test 5: Barcode valid');
-    assertEqual(parsed.idNumber, '9204145082089', 'Test 5: Real 13-digit ID number captured from barcode');
+    assertEqual(parsed.idNumber, '9204145082086', 'Test 5: Real 13-digit ID number captured from barcode');
     assertEqual(parsed.dob, '1992-04-14', 'Test 5: DOB parsed accurately from ID formula');
     assertEqual(parsed.gender, 'Male', 'Test 5: Gender parsed accurately from ID formula');
     assertEqual(parsed.citizenship, 'SA Citizen', 'Test 5: Citizenship parsed accurately from ID formula');

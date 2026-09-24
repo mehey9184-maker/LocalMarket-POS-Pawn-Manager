@@ -951,15 +951,22 @@ export const sellerReversalsApi = {
 // 7c. TERMINAL SESSIONS (Authoritative Device/Staff Sessions)
 // ==========================================
 export const terminalSessionsApi = {
-  async checkActiveSessionRpc(): Promise<{ has_active_session: boolean; session_id?: string; terminal_id?: string; terminal_name?: string }> {
+  async checkActiveSessionRpc(): Promise<{ success: boolean; has_active_session: boolean; session_id?: string; terminal_id?: string; terminal_name?: string; error?: string }> {
     try {
       return await withAuthRecovery(async (supabase) => {
         const { data, error } = await supabase.rpc('check_active_terminal_session');
-        if (error) throw error;
-        return data as any;
+        if (error) return { success: false, has_active_session: false, error: error.message };
+        const result = data as any;
+        return {
+          success: true,
+          has_active_session: Boolean(result?.has_active_session),
+          session_id: result?.session_id,
+          terminal_id: result?.terminal_id,
+          terminal_name: result?.terminal_name
+        };
       });
-    } catch (err) {
-      return { has_active_session: false };
+    } catch (err: any) {
+      return { success: false, has_active_session: false, error: err?.message || 'Check active session failed.' };
     }
   },
 
