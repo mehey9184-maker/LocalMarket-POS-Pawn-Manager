@@ -3,6 +3,7 @@ import { runRsaIdScannerTests } from './rsaIdScanner.test';
 import { runExternalProviderManagerTests } from './externalProviderManager.test';
 import { runStabilityAndScannerTests } from './stabilityAndScanner.test';
 import { runIdentityVerificationIntegrityTests } from './identityVerificationIntegrity.test';
+import { runIdentifierAndSourceOfTruthTests } from './identifierAndSourceOfTruth.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -13,6 +14,7 @@ export async function runAllTests() {
   await runExternalProviderManagerTests();
   await runStabilityAndScannerTests();
   await runIdentityVerificationIntegrityTests();
+  runIdentifierAndSourceOfTruthTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');

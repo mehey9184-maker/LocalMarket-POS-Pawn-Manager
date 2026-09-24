@@ -8,6 +8,7 @@ import { useSellers } from '../../context/SellerContext';
 import { useSaps } from '../../context/SapsContext';
 import { ItemCondition, InventoryItem, PawnLoan, Customer, Seller, ItemStatus } from '../../types';
 import { roundRetailPrice, calculatePawnFees } from '../../utils/pricingRules';
+import { generateUniqueSku, generateUniqueTransactionNumber, generateUniquePawnTicket } from '../../utils/identifierGenerator';
 import { marketIntelligenceApi } from '../../services/marketIntelligenceApi';
 import { MarketCheckCard } from '../common/MarketCheckCard';
 import { MarketCheckResult } from '../../types/marketIntelligence';
@@ -81,7 +82,7 @@ export const BuyPawn: React.FC = () => {
   const { showToast, businessRules, shopProfile, setActiveContractModal, capturedRsaIdScan } = useApp();
   const { user } = useAuth();
   const { addItem, inventory } = useInventory();
-  const { createLoan } = useLoans();
+  const { createLoan, loans: pawnLoans } = useLoans();
   const { customers, addCustomer, updateCustomer } = useCustomers();
   const { sellers, addSeller, updateSeller, addSellerTransaction } = useSellers();
   const { addSapsEntry } = useSaps();
@@ -445,7 +446,7 @@ export const BuyPawn: React.FC = () => {
 
   // 1. FINALISE EXISTING STOCK (No Seller, No Customer, No SAPS Form 21, No Pawn Loan)
   const handleFinalizeExistingStock = async () => {
-    const sku = `LM-${Math.floor(Math.random() * 90000 + 10000)}`;
+    const sku = generateUniqueSku(s => inventory.some(i => i.sku === s));
     const costBasisNum = parseFloat(costBasisInput) || 0;
     const retailPriceNum = parseFloat(retailPriceInput) || 0;
 
@@ -543,7 +544,7 @@ export const BuyPawn: React.FC = () => {
     }
 
     const transactionId = crypto.randomUUID();
-    const transactionNumber = `ST-${Math.floor(Math.random() * 900000 + 100000)}`;
+    const transactionNumber = generateUniqueTransactionNumber();
     const totalPayout = finalBasket.reduce((sum, i) => sum + i.agreedOffer, 0);
 
     if (txType === 'buy') {
@@ -551,7 +552,7 @@ export const BuyPawn: React.FC = () => {
       const transactionItems: any[] = [];
 
       for (const bItem of finalBasket) {
-        const sku = `LM-${Math.floor(Math.random() * 90000 + 10000)}`;
+        const sku = generateUniqueSku(s => inventory.some(i => i.sku === s));
         
         const itemId = await addItem({
           sku,
@@ -613,6 +614,7 @@ export const BuyPawn: React.FC = () => {
       await addSellerTransaction({
         shopId: shopProfile.id || 'default-shop',
         sellerId: seller.id,
+        transactionNumber,
         totalProposedPayout: totalPayout,
         totalApprovedPayout: totalPayout,
         paymentStatus: 'Paid',
@@ -637,8 +639,8 @@ export const BuyPawn: React.FC = () => {
       // Pawn currently remains single-item per ticket in this business logic, 
       // but we use the new authoritative structures.
       const pCustomer = selectedIdentity as Customer;
-      const ticketNumber = `PWN-${Math.floor(Math.random() * 9000 + 1000)}`;
-      const sku = `LM-${Math.floor(Math.random() * 90000 + 10000)}`;
+      const ticketNumber = generateUniquePawnTicket(t => pawnLoans.some(l => l.ticketNumber === t));
+      const sku = generateUniqueSku(s => inventory.some(i => i.sku === s));
 
       const itemId = await addItem({
         sku,

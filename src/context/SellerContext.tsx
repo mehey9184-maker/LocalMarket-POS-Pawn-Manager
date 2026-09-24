@@ -4,6 +4,7 @@ import { db } from '../db';
 import { Seller, SellerTransaction, SellerTransactionStatus, SellerPaymentStatus, SellerReversalRecord } from '../types';
 import Fuse from 'fuse.js';
 import { useSync } from './SyncContext';
+import { generateUniqueTransactionNumber } from '../utils/identifierGenerator';
 
 interface SellerContextType {
   sellers: Seller[];
@@ -15,7 +16,7 @@ interface SellerContextType {
   getSellerById: (id: string) => Promise<Seller | undefined>;
   getSellerByIdNumber: (idNumber: string) => Promise<Seller | undefined>;
   getSellerTransactions: (sellerId: string) => Promise<SellerTransaction[]>;
-  addSellerTransaction: (tx: Omit<SellerTransaction, 'id' | 'transactionNumber'>) => Promise<string>;
+  addSellerTransaction: (tx: Omit<SellerTransaction, 'id' | 'transactionNumber'> & { transactionNumber?: string }) => Promise<string>;
   updateSellerTransactionStatus: (txId: string, status: SellerTransactionStatus, paymentStatus?: SellerPaymentStatus) => Promise<void>;
   reverseSellerAcquisition: (txId: string, itemId: string, reason: string, actorId: string, actorName: string, approvingManagerId: string) => Promise<boolean>;
 }
@@ -67,9 +68,14 @@ export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return await db.sellerTransactions.where('sellerId').equals(sellerId).reverse().sortBy('timestamp');
   };
 
-  const addSellerTransaction = async (txData: Omit<SellerTransaction, 'id' | 'transactionNumber'>) => {
+  const addSellerTransaction = async (txData: Omit<SellerTransaction, 'id' | 'transactionNumber'> & { transactionNumber?: string }) => {
     const id = crypto.randomUUID();
-    const transactionNumber = `ST-${Math.floor(Math.random() * 900000 + 100000)}`;
+    let transactionNumber = txData.transactionNumber;
+    if (!transactionNumber) {
+      const existing = await db.sellerTransactions.toArray();
+      const existingSet = new Set(existing.map(t => t.transactionNumber));
+      transactionNumber = generateUniqueTransactionNumber(tn => existingSet.has(tn));
+    }
     const newTx: SellerTransaction = { 
       ...txData, 
       id, 

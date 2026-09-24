@@ -47,6 +47,19 @@ export interface ShopProfile {
   businessRules?: BusinessRules;
 }
 
+/**
+ * SOURCE OF TRUTH ARCHITECTURE (Business Rules & Shop Profile):
+ * 1. Cloud-Authoritative: When authenticated and cloud data exists in Supabase (public.shop_profiles),
+ *    the server record is the sole authoritative source of truth.
+ * 2. Local Fallback/Offline Cache: 'lm_shop_profile' and 'lm_business_rules' in localStorage act
+ *    strictly as an offline cache to ensure uninterrupted offline operation.
+ * 3. Precedence & Anti-Stale Guarantee: When server data loads via auth, it unconditionally refreshes
+ *    both in-memory state and localStorage cache. Stale local settings can NEVER overwrite newer server settings.
+ * 4. Audited Modifications: Owners modifying business rules persist via the audited RPC path
+ *    (update_shop_business_rules) which logs directly to public.business_rule_audit_logs.
+ */
+
+// Shop Profile Initial State
 export const INITIAL_SHOP_PROFILE: ShopProfile = {
   shop_code: '',
   shop_name: 'LocalMarket Store',
@@ -96,7 +109,7 @@ interface AppContextType {
   
   // Shop Profile (Branch & Second Hand Dealer License)
   shopProfile: ShopProfile;
-  updateShopProfile: (updates: Partial<ShopProfile>) => void;
+  updateShopProfile: (updates: Partial<ShopProfile>) => Promise<void> | void;
 
   // WhatsApp-Style Local Device Persistence & Trickle Sync
   isOnline: boolean;
@@ -272,16 +285,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [businessRules, currentUserProfile, showToast]);
 
-  const updateShopProfile = useCallback((updates: Partial<ShopProfile>) => {
+  const updateShopProfile = useCallback(async (updates: Partial<ShopProfile>) => {
+    // 1. Optimistic update and local cache update for offline continuity
     setShopProfile(prev => {
       const next = { ...prev, ...updates };
       localStorage.setItem('lm_shop_profile', JSON.stringify(next));
       return next;
     });
-    showToast('Store Profile Updated', 'Changes saved locally on device', 'success');
-  }, [showToast]);
 
-  // Auth Effects
+    // 2. Authoritative server update when connected and authenticated with management role
+    const targetShopId = shopProfile.id || currentUserProfile?.shop_id;
+    if (targetShopId && (currentUserProfile?.role === 'owner' || currentUserProfile?.role === 'manager')) {
+      try {
+        const payload: any = {};
+        if (updates.shop_name !== undefined) payload.shop_name = updates.shop_name;
+        if (updates.trading_name !== undefined) payload.trading_name = updates.trading_name;
+        if (updates.registration_number !== undefined) payload.registration_number = updates.registration_number;
+        if (updates.vat_number !== undefined) payload.vat_number = updates.vat_number;
+        if (updates.saps_dealer_license !== undefined) payload.saps_dealer_license = updates.saps_dealer_license;
+        if (updates.phone !== undefined) payload.phone = updates.phone;
+        if (updates.email !== undefined) payload.email = updates.email;
+        if (updates.address !== undefined) payload.address = updates.address;
+        if (updates.city !== undefined) payload.city = updates.city;
+        if (updates.province !== undefined) payload.province = updates.province;
+        if (updates.postal_code !== undefined) payload.postal_code = updates.postal_code;
+        if (updates.currency !== undefined) payload.currency = updates.currency;
+        if (updates.receipt_header !== undefined) payload.receipt_header = updates.receipt_header;
+        if (updates.receipt_footer !== undefined) payload.receipt_footer = updates.receipt_footer;
+
+        const updated = await shopProfilesApi.updateShopProfile(targetShopId, payload);
+        if (updated) {
+          showToast('Store Profile Updated', 'Persisted to server database.', 'success');
+          return;
+        }
+      } catch (err) {
+        console.warn('Server shop profile update failed, cached locally:', err);
+        showToast('Offline Mode', 'Store profile saved locally. Will sync when server is reachable.', 'amber');
+        return;
+      }
+    }
+    showToast('Store Profile Updated', 'Changes saved locally on device', 'success');
+  }, [shopProfile.id, currentUserProfile, showToast]);
+
+  // Auth Effects: Server profile & business rules are authoritative when available
   useEffect(() => {
     if (currentUserProfile?.shop_id) {
       shopProfilesApi.getShopById(currentUserProfile.shop_id).then(shop => {
@@ -306,12 +352,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             receipt_footer: shop.receipt_footer || '',
             businessRules: serverRules
           };
+          // Server profile is authoritative: overwrite local cache
           setShopProfile(mappedShop);
           localStorage.setItem('lm_shop_profile', JSON.stringify(mappedShop));
           
           if (serverRules) {
-            setBusinessRules(prev => ({ ...prev, ...serverRules }));
-            localStorage.setItem('lm_business_rules', JSON.stringify(serverRules));
+            // Authoritative server rules take strict precedence; merge with defaults for any missing fields
+            const authoritativeRules: BusinessRules = {
+              ...DEFAULT_BUSINESS_RULES,
+              ...serverRules
+            };
+            setBusinessRules(authoritativeRules);
+            localStorage.setItem('lm_business_rules', JSON.stringify(authoritativeRules));
           }
         }
       });

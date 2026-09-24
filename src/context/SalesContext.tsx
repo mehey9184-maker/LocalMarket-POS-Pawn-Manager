@@ -6,6 +6,7 @@ import Fuse from 'fuse.js';
 import { useSync } from './SyncContext';
 import { useAuth } from './AuthContext';
 import { salesApi, refundsApi, isSupabaseConfigured, getValidSupabaseSession, isAuthExpiryError } from '../services/supabaseApi';
+import { generateUniqueReceiptNumber } from '../utils/identifierGenerator';
 
 interface SalesContextType {
   salesHistory: SaleTransaction[];
@@ -177,7 +178,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Stable identifiers generated ONCE per checkout attempt
     const saleId = crypto.randomUUID();
-    const receiptNumber = `REC-${Math.floor(100000 + Math.random() * 900000)}`;
+    const receiptNumber = generateUniqueReceiptNumber(rn => salesHistory.some(s => s.receiptNumber === rn));
     const timestamp = new Date().toISOString();
     const cashier = params.cashierName || profile?.full_name || 'Cashier';
 
