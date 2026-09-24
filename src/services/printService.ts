@@ -4,13 +4,13 @@ import { PrintTemplate } from '../components/common/PrintTemplate';
 import React from 'react';
 
 export const printService = {
-  printDocument(document: PrintableDocument) {
+  printDocument(printData: PrintableDocument) {
     const printContainer = document.createElement('div');
     printContainer.id = 'print-root';
     document.body.appendChild(printContainer);
 
     const root = createRoot(printContainer);
-    root.render(React.createElement(PrintTemplate, { document }));
+    root.render(React.createElement(PrintTemplate, { document: printData }));
 
     // Give React a moment to render before calling print
     setTimeout(() => {

@@ -90,7 +90,7 @@ const SellerHistoryDisplay: React.FC<{ sellerId: string }> = ({ sellerId }) => {
 
 export const BuyPawn: React.FC = () => {
   const { showToast, businessRules, shopProfile, setActiveContractModal, capturedRsaIdScan } = useApp();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const { addItem, inventory } = useInventory();
   const { createLoan, loans: pawnLoans } = useLoans();
   const { customers, addCustomer, updateCustomer } = useCustomers();

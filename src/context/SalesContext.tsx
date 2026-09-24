@@ -46,7 +46,7 @@ const SalesContext = createContext<SalesContextType | undefined>(undefined);
 
 export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction, isOnline } = useSync();
-  const { shopId, user, profile, isManager } = useAuth();
+  const { shopId, user, profile, isManager, hasPermission } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
 
   // Live queries from Dexie

@@ -41,7 +41,7 @@ export async function runResumableWorkTests() {
 
   // Test 2: Draft status rules (drafts are not transactions)
   {
-    const draftStatus = 'active';
+    const draftStatus = 'active' as any;
     const isCompletedTransaction = false;
     assertTrue(draftStatus !== 'completed_transaction', 'Test 2: Draft status is distinctly not a completed transaction');
     assertTrue(!isCompletedTransaction, 'Test 2: Saving a draft does not execute a business transaction');
@@ -49,8 +49,8 @@ export async function runResumableWorkTests() {
 
   // Test 3: User isolation logic
   {
-    const draftUserId = 'user-alice';
-    const requestingUserId = 'user-bob';
+    const draftUserId = 'user-alice' as any;
+    const requestingUserId = 'user-bob' as any;
     const isIsolated = draftUserId !== requestingUserId;
     assertTrue(isIsolated, 'Test 3: Drafts are strictly isolated by staff/user ID, preventing cross-employee access');
   }

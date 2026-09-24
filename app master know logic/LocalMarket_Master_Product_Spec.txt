@@ -67,15 +67,17 @@ Alerts should be clickable and lead directly to the relevant record. Guidance sh
 -----------------------------
 Expose only three shop-managed staff roles in the interface: Cashier, Senior Cashier, and Manager. The technical admin role remains in the database/platform but must be hidden from normal owners and staff.
 
-Owner is the business-account controller and should have owner-level access to shop setup, staff, reports, branding, business settings, and sensitive financial information.
+Authorization is enforced server-side. Role hierarchy and permissions cannot be bypassed by client-side requests or direct permission JSON manipulation.
 
-Cashier: sell, search, add stock, buy from sellers, create pawns, use customer/seller lookup, and complete permitted counter operations. No unrestricted historical editing, no sensitive cost/profit visibility, and no unrestricted refunds/voids.
+Owner: full shop management, staff (including managers), branding, business profile, reports, and multi-branch capabilities when enabled. Full authority over sensitive financial and security operations.
 
-Senior Cashier: standard cashier capabilities with additional trust for high-value transactions.
+Manager: operational authority. Can manage Cashier and Senior Cashier roles. Restricted from managing other Managers or Owners. Cannot grant 'Staff Management' permission to lower roles. Can approve refunds, change prices, and view operational reports.
 
-Manager: cashier/senior capabilities plus approvals, refunds/voids, price changes, more reporting, staff management for cashiers, and controlled operational administration.
+Senior Cashier: trusted counter role. Standard cashier capabilities plus default access to Inventory, Pawn, and Seller Intake. Restricted from administrative overrides (refunds, pricing, staff management).
 
-Owner: full shop management, staff (including managers), branding, business profile, reports, and multi-branch capabilities when enabled.
+Cashier: normal counter role. Sales, search, and basic counter operations. Restricted from sensitive data and administrative actions.
+
+Role consistency: The role loaded into AuthContext must match the profile record. Hierarchy and permissions must be consistently applied across the UI and API.
 
 
 7. OWNER ONBOARDING

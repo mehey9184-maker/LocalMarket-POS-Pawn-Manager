@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 export const StaffAccessManager: React.FC = () => {
-  const { users, updateStaffProfile, provisionStaff, isOwner, isManager } = useAuth();
+  const { users, updateStaffProfile, provisionStaff, isOwner, isManager, profile } = useAuth();
   const { showToast } = useApp();
   const [selectedStaff, setSelectedStaff] = useState<ProfileRow | null>(null);
   const [isAddingStaff, setIsAddingStaff] = useState(false);

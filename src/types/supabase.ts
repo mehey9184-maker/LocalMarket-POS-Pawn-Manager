@@ -155,6 +155,7 @@ export interface Database {
           phone: string | null;
           avatar_url: string | null;
           pin_code: string | null;
+          pin_hash: string | null;
           digital_signature: string | null;
           schedule: Json;
           permissions: Json;
@@ -173,6 +174,7 @@ export interface Database {
           phone?: string | null;
           avatar_url?: string | null;
           pin_code?: string | null;
+          pin_hash?: string | null;
           digital_signature?: string | null;
           schedule?: Json;
           permissions?: Json;
@@ -191,6 +193,7 @@ export interface Database {
           phone?: string | null;
           avatar_url?: string | null;
           pin_code?: string | null;
+          pin_hash?: string | null;
           digital_signature?: string | null;
           schedule?: Json;
           permissions?: Json;
