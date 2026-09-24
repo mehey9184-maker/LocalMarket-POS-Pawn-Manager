@@ -10,6 +10,10 @@ import { ItemCondition, InventoryItem, PawnLoan, Customer, Seller, ItemStatus } 
 import { roundRetailPrice, calculatePawnFees } from '../../utils/pricingRules';
 import { generateUniqueSku, generateUniqueTransactionNumber, generateUniquePawnTicket } from '../../utils/identifierGenerator';
 import { marketIntelligenceApi } from '../../services/marketIntelligenceApi';
+import { parseAndValidateRsaId } from '../../utils/rsaIdValidator';
+import { validateAndNormalizeSaPhone } from '../../utils/phoneValidator';
+import { getProductSuggestion } from '../../utils/suggestionEngine';
+import { focusAndScrollErrorField, formatUserFriendlyError } from '../../utils/errorNavigator';
 import { db } from '../../db';
 import { isSupabaseConfigured } from '../../services/supabase';
 import { sellerTransactionsApi, pawnLoansApi } from '../../services/supabaseApi';
@@ -384,54 +388,84 @@ export const BuyPawn: React.FC = () => {
   const handleCreateIdentity = async () => {
     if (!newIdentity.fullName.trim() || !newIdentity.idNumber.trim()) {
       showToast('Validation Error', 'Full name and ID number are required', 'error');
+      const idEl = document.getElementById('new-identity-id-input');
+      if (idEl) focusAndScrollErrorField(idEl);
       return;
     }
 
-    if (txType === 'buy') {
-      const id = await addSeller({
-        fullName: newIdentity.fullName.trim(),
-        idNumber: newIdentity.idNumber.trim(),
-        idType: newIdentity.idType,
-        mobile: newIdentity.mobile.trim(),
-        address: newIdentity.address.trim(),
-        verified: false
-      });
-      const created: Seller = {
-        id,
-        fullName: newIdentity.fullName.trim(),
-        idNumber: newIdentity.idNumber.trim(),
-        idType: newIdentity.idType,
-        mobile: newIdentity.mobile.trim(),
-        address: newIdentity.address.trim(),
-        createdAt: new Date().toISOString(),
-        verified: false
-      };
-      setSelectedIdentity(created);
-    } else {
-      // Pawn customer: honest values without fake DOB or fake gender
-      const id = await addCustomer({
-        fullName: newIdentity.fullName.trim(),
-        idNumber: newIdentity.idNumber.trim(),
-        idType: newIdentity.idType,
-        mobile: newIdentity.mobile.trim(),
-        address: newIdentity.address.trim(),
-        verified: false
-      });
-      const created: Customer = {
-        id,
-        fullName: newIdentity.fullName.trim(),
-        idNumber: newIdentity.idNumber.trim(),
-        idType: newIdentity.idType,
-        mobile: newIdentity.mobile.trim(),
-        address: newIdentity.address.trim(),
-        createdAt: new Date().toISOString(),
-        verified: false
-      };
-      setSelectedIdentity(created);
+    if (newIdentity.idType === 'RSA Smart ID' || newIdentity.idType === 'Green ID Book') {
+      const idCheck = parseAndValidateRsaId(newIdentity.idNumber);
+      if (!idCheck.isValid) {
+        showToast('ID Validation Failed', idCheck.error || 'Please check the ID number.', 'error');
+        const idEl = document.getElementById('new-identity-id-input');
+        if (idEl) focusAndScrollErrorField(idEl);
+        return;
+      }
     }
 
-    setIsCreatingIdentity(false);
-    showToast(`${txType === 'buy' ? 'Seller' : 'Customer'} Saved`, `${newIdentity.fullName} (Verification pending)`, 'info');
+    let finalMobile = newIdentity.mobile.trim();
+    if (finalMobile) {
+      const phoneCheck = validateAndNormalizeSaPhone(finalMobile);
+      if (!phoneCheck.isValid) {
+        showToast('Phone Validation Failed', phoneCheck.error || 'Please check the mobile phone number.', 'error');
+        const phoneEl = document.getElementById('new-identity-mobile-input');
+        if (phoneEl) focusAndScrollErrorField(phoneEl);
+        return;
+      }
+      if (phoneCheck.normalizedNumber) {
+        finalMobile = phoneCheck.displayNumber || phoneCheck.normalizedNumber;
+      }
+    }
+
+    try {
+      if (txType === 'buy') {
+        const id = await addSeller({
+          fullName: newIdentity.fullName.trim(),
+          idNumber: newIdentity.idNumber.trim(),
+          idType: newIdentity.idType,
+          mobile: finalMobile,
+          address: newIdentity.address.trim(),
+          verified: false
+        });
+        const created: Seller = {
+          id,
+          fullName: newIdentity.fullName.trim(),
+          idNumber: newIdentity.idNumber.trim(),
+          idType: newIdentity.idType,
+          mobile: finalMobile,
+          address: newIdentity.address.trim(),
+          createdAt: new Date().toISOString(),
+          verified: false
+        };
+        setSelectedIdentity(created);
+      } else {
+        // Pawn customer: honest values without fake DOB or fake gender
+        const id = await addCustomer({
+          fullName: newIdentity.fullName.trim(),
+          idNumber: newIdentity.idNumber.trim(),
+          idType: newIdentity.idType,
+          mobile: finalMobile,
+          address: newIdentity.address.trim(),
+          verified: false
+        });
+        const created: Customer = {
+          id,
+          fullName: newIdentity.fullName.trim(),
+          idNumber: newIdentity.idNumber.trim(),
+          idType: newIdentity.idType,
+          mobile: finalMobile,
+          address: newIdentity.address.trim(),
+          createdAt: new Date().toISOString(),
+          verified: false
+        };
+        setSelectedIdentity(created);
+      }
+
+      setIsCreatingIdentity(false);
+      showToast(`${txType === 'buy' ? 'Seller' : 'Customer'} Saved`, `${newIdentity.fullName} (Verification pending)`, 'info');
+    } catch (err: any) {
+      showToast('Save Failed', formatUserFriendlyError(err?.message || 'Failed to save record.'), 'error');
+    }
   };
 
   const handleExplicitVerifyIdentity = async () => {
@@ -1274,6 +1308,7 @@ export const BuyPawn: React.FC = () => {
                       <div className="space-y-1">
                         <label className="text-xs font-medium text-gray-600">ID / Passport Number</label>
                         <input
+                          id="new-identity-id-input"
                           type="text"
                           placeholder="e.g. 890412 5240 08 8"
                           value={newIdentity.idNumber}
@@ -1296,6 +1331,7 @@ export const BuyPawn: React.FC = () => {
                       <div className="space-y-1">
                         <label className="text-xs font-medium text-gray-600">Mobile Phone</label>
                         <input
+                          id="new-identity-mobile-input"
                           type="text"
                           placeholder="e.g. +27 72 419 8023"
                           value={newIdentity.mobile}
@@ -1441,6 +1477,22 @@ export const BuyPawn: React.FC = () => {
                           className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:border-[#C85A32] focus:bg-white"
                           autoFocus
                         />
+                        {(() => {
+                          const suggestion = getProductSuggestion(itemData.title);
+                          if (!suggestion.suggestedText) return null;
+                          return (
+                            <div className="flex items-center justify-between bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-xs text-amber-800 mt-1">
+                              <span>{suggestion.message}</span>
+                              <button
+                                type="button"
+                                onClick={() => setItemData({ ...itemData, title: suggestion.suggestedText! })}
+                                className="font-semibold text-[#C85A32] hover:underline cursor-pointer"
+                              >
+                                Accept Suggestion
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* CATEGORY & CONDITION */}
