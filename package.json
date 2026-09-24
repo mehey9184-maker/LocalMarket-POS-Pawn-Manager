@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --format=cjs --outfile=dist-electron/main.cjs --external:electron && esbuild electron/preload.ts --bundle --platform=node --format=cjs --outfile=dist-electron/preload.cjs --external:electron",
+    "package:dist": "npm run build && npm run build:electron && tsx scripts/package-dist.ts",
     "start": "node dist/server.cjs",
-    "clean": "rm -rf dist server.js",
+    "clean": "rm -rf dist dist-electron release server.js",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -39,6 +41,8 @@
     "@types/react-dom": "^19.3.0",
     "@types/w3c-web-usb": "^1.0.14",
     "autoprefixer": "^10.4.21",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
     "pg": "^8.23.0",
     "tailwindcss": "^4.3.3",

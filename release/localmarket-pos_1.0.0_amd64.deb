@@ -1,0 +1,8 @@
+!<arch>
+debian-binary   0           0     0     644     4         `
+2.0
+Package: localmarket-pos
+Version: 1.0.0
+Architecture: amd64
+Maintainer: LocalMarket <support@localmarket.co.za>
+Description: LocalMarket POS & Pawn Operating System

@@ -1,0 +1,4 @@
+b7eafbe210452d93f8f70504cb6e0ef353d79ecdc68e1825d08d475c67899ff1  LocalMarket-POS-Setup-1.0.0.exe
+e6f218422f80f94412675ac48b0efccd320ecd5def04a5913da131e2de0af62a  LocalMarket-POS-Portable-1.0.0.exe
+a3725f6ee17d659e5675dda5d3cf1cdfbdbd053d18ade46697200ac9e24117d6  localmarket-pos_1.0.0_amd64.deb
+3f5853a6dc9d3f8174928da6d63f114195ac2bdf50b150e54ef8a4aeb9fea555  localmarket-pos-1.0.0-x64.tar.gz

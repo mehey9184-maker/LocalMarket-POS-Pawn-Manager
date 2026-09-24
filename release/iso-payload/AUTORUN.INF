@@ -1,0 +1,5 @@
+[autorun]
+open=SETUP.EXE
+icon=SETUP.EXE,0
+label=LocalMarket POS & Pawn Manager v1.0.0
+action=Launch LocalMarket POS Installer

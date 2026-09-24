@@ -1,0 +1,60 @@
+{
+  "appId": "com.localmarket.pos",
+  "productName": "LocalMarket POS & Pawn Manager",
+  "copyright": "Copyright © 2026 LocalMarket SA",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*",
+    "package.json"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ],
+    "artifactName": "LocalMarket-POS-Setup-${version}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "LocalMarket POS"
+  },
+  "linux": {
+    "target": [
+      {
+        "target": "deb",
+        "arch": ["x64"]
+      },
+      {
+        "target": "tar.gz",
+        "arch": ["x64"]
+      }
+    ],
+    "category": "Office;Finance;",
+    "synopsis": "Hybrid Retail POS, Pawn Intake & SAPS Compliance Operating System",
+    "maintainer": "LocalMarket Engineering <support@localmarket.co.za>",
+    "artifactName": "localmarket-pos_${version}_${arch}.${ext}"
+  },
+  "deb": {
+    "depends": [
+      "gconf2",
+      "gconf-service",
+      "libnotify4",
+      "libappindicator1",
+      "libxtst6",
+      "libnss3"
+    ],
+    "priority": "optional"
+  }
+}
