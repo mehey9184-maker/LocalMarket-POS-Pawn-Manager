@@ -114,6 +114,27 @@ export const BuyPawn: React.FC = () => {
     idType: 'RSA Smart ID' as 'RSA Smart ID' | 'Green ID Book' | 'Passport'
   });
 
+  // Item Details State (Common to all flows)
+  const [itemData, setItemData] = useState({
+    title: '',
+    category: 'Phones & Tech' as InventoryItem['category'],
+    brand: '',
+    model: '',
+    serialOrImei: '',
+    condition: 'Good' as ItemCondition,
+    imageUrl: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&q=80&w=300&h=300',
+    stockLocation: 'Main Floor Display',
+    internalNote: '',
+    sourceNote: 'Item was already owned by the shop before LocalMarket onboarding'
+  });
+
+  // Valuation & Pricing State
+  const [agreedOffer, setAgreedOffer] = useState<number>(0); // Payout / Principal
+  const [costBasisInput, setCostBasisInput] = useState<string>('0');
+  const [retailPriceInput, setRetailPriceInput] = useState<string>('0');
+  const [suggestedRetail, setSuggestedRetail] = useState<number>(0);
+  const [existingStockStatus, setExistingStockStatus] = useState<ItemStatus>('Retail Floor');
+
   // Synchronize captured RSA ID scan with customer selection/creation
   useEffect(() => {
     if (!capturedRsaIdScan || step !== 'customer') return;
@@ -195,25 +216,7 @@ export const BuyPawn: React.FC = () => {
   // ------------------------
 
   // Item Details State (Common to all flows)
-  const [itemData, setItemData] = useState({
-    title: '',
-    category: 'Phones & Tech' as InventoryItem['category'],
-    brand: '',
-    model: '',
-    serialOrImei: '',
-    condition: 'Good' as ItemCondition,
-    imageUrl: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&q=80&w=300&h=300',
-    stockLocation: 'Main Floor Display',
-    internalNote: '',
-    sourceNote: 'Item was already owned by the shop before LocalMarket onboarding'
-  });
 
-  // Valuation & Pricing State
-  const [agreedOffer, setAgreedOffer] = useState<number>(0); // Payout / Principal
-  const [costBasisInput, setCostBasisInput] = useState<string>('0');
-  const [retailPriceInput, setRetailPriceInput] = useState<string>('0');
-  const [suggestedRetail, setSuggestedRetail] = useState<number>(0);
-  const [existingStockStatus, setExistingStockStatus] = useState<ItemStatus>('Retail Floor');
 
   // Market Intelligence State
   const [marketCheckData, setMarketCheckData] = useState<MarketCheckResult | null>(null);
