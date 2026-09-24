@@ -178,7 +178,7 @@ export const Inventory: React.FC = () => {
           <div className="flex items-center gap-1.5 p-1 bg-[#F5F6F8] rounded-xl border border-gray-200/80 w-fit">
             <button
               onClick={() => setTab('floor')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 ${
                 tab === 'floor' 
                   ? 'bg-white text-gray-900 shadow-xs' 
                   : 'text-gray-500 hover:text-gray-900'
@@ -193,7 +193,7 @@ export const Inventory: React.FC = () => {
 
             <button
               onClick={() => setTab('vault')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 ${
                 tab === 'vault' 
                   ? 'bg-white text-gray-900 shadow-xs' 
                   : 'text-gray-500 hover:text-gray-900'
@@ -208,7 +208,7 @@ export const Inventory: React.FC = () => {
 
             <button
               onClick={() => setTab('pending')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 ${
                 tab === 'pending' 
                   ? 'bg-white text-gray-900 shadow-xs' 
                   : 'text-gray-500 hover:text-gray-900'

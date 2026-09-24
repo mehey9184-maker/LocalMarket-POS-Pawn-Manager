@@ -476,13 +476,13 @@ export const VaultManager: React.FC = () => {
       {/* Tabs and Search */}
       <div className="bg-[#1E1E1E] rounded-xl p-3 border border-[#2A2A2A] flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm shrink-0">
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <button type="button" onClick={() => setActiveTab('overdue')} className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition flex-1 sm:flex-initial justify-center ${activeTab === 'overdue' ? 'bg-[#C85A32] text-white shadow-sm' : 'bg-[#141414] text-gray-400 hover:text-gray-200 border border-[#2A2A2A]'}`}>
+          <button type="button" onClick={() => setActiveTab('overdue')} className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition flex-1 sm:flex-initial justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 ${activeTab === 'overdue' ? 'bg-[#C85A32] text-white shadow-sm' : 'bg-[#141414] text-gray-400 hover:text-gray-200 border border-[#2A2A2A]'}`}>
             <AlertTriangle className="w-3.5 h-3.5" /><span>Overdue &amp; Forfeits</span><span className="px-1.5 py-0.2 rounded-full bg-black/40 text-[10px] font-mono">{overdueLoans.length}</span>
           </button>
-          <button type="button" onClick={() => setActiveTab('review')} className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition flex-1 sm:flex-initial justify-center ${activeTab === 'review' ? 'bg-[#C85A32] text-white shadow-sm' : 'bg-[#141414] text-gray-400 hover:text-gray-200 border border-[#2A2A2A]'}`}>
+          <button type="button" onClick={() => setActiveTab('review')} className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition flex-1 sm:flex-initial justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 ${activeTab === 'review' ? 'bg-[#C85A32] text-white shadow-sm' : 'bg-[#141414] text-gray-400 hover:text-gray-200 border border-[#2A2A2A]'}`}>
             <ShieldCheck className="w-3.5 h-3.5" /><span>Review Queue</span><span className="px-1.5 py-0.2 rounded-full bg-black/40 text-[10px] font-mono">{reviewQueueLoans.length}</span>
           </button>
-          <button type="button" onClick={() => setActiveTab('storage')} className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition flex-1 sm:flex-initial justify-center ${activeTab === 'storage' ? 'bg-[#C85A32] text-white shadow-sm' : 'bg-[#141414] text-gray-400 hover:text-gray-200 border border-[#2A2A2A]'}`}>
+          <button type="button" onClick={() => setActiveTab('storage')} className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition flex-1 sm:flex-initial justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 ${activeTab === 'storage' ? 'bg-[#C85A32] text-white shadow-sm' : 'bg-[#141414] text-gray-400 hover:text-gray-200 border border-[#2A2A2A]'}`}>
             <Archive className="w-3.5 h-3.5" /><span>Active Vault</span><span className="px-1.5 py-0.2 rounded-full bg-black/40 text-[10px] font-mono">{activeVaultLoans.length}</span>
           </button>
           {activeTab === 'overdue' && overdueLoans.length > 0 && (
