@@ -682,42 +682,53 @@ export const BuyPawn: React.FC = () => {
         shopId: shopProfile.id
       };
 
-      let syncLogId: number | undefined;
+      let syncLogStatus: 'completed' | 'pending' = 'pending';
+      let syncedAt: string | undefined = undefined;
 
-      // 1. ATOMIC LOCAL DEXIE COMMIT
+      // 1. ATOMIC SERVER RPC FIRST IF ONLINE
+      if (isSupabaseConfigured() && navigator.onLine) {
+        try {
+          const rpcRes = await sellerTransactionsApi.completeBuyAcquisitionRpc(buyPayload);
+          if (rpcRes.success) {
+            syncLogStatus = 'completed';
+            syncedAt = new Date().toISOString();
+          } else {
+            const isNetworkError = (msg?: string) => {
+              if (!msg) return false;
+              const lower = msg.toLowerCase();
+              return lower.includes('failed to fetch') || lower.includes('network') || lower.includes('timeout') || lower.includes('aborted');
+            };
+
+            if (!isNetworkError(rpcRes.error)) {
+              // Explicit server rejection - ABORT IMMEDIATELY, do not write fake local data
+              showToast('Acquisition Rejected', rpcRes.error || 'Server rejected acquisition.', 'error');
+              return;
+            }
+            console.warn('Network timeout during buy acquisition, saving locally for offline sync:', rpcRes.error);
+          }
+        } catch (err: any) {
+          console.warn('Network error during online buy acquisition, saving locally for offline sync:', err?.message);
+        }
+      }
+
+      // 2. ATOMIC LOCAL DEXIE COMMIT (Reflecting server success or durable offline outbox)
       await db.transaction('rw', [db.inventory, db.sellerTransactions, db.sellerTransactionItems, db.saps, db.syncLogs], async () => {
         await db.inventory.bulkAdd(inventoryItemsToAdd);
         await db.sellerTransactionItems.bulkAdd(transactionItemsToAdd);
         await db.sellerTransactions.add(txRecord);
         await db.saps.bulkAdd(sapsEntriesToAdd);
 
-        syncLogId = await db.syncLogs.add({
+        await db.syncLogs.add({
           entityType: 'buyAcquisition',
           entityId: transactionId,
           action: 'create',
           payload: buyPayload,
-          status: 'pending',
+          status: syncLogStatus,
+          syncedAt,
           createdAt: nowIso,
           retryCount: 0
         });
       });
-
-      // 2. ATOMIC SERVER REPLICATION (if online)
-      if (isSupabaseConfigured() && navigator.onLine) {
-        try {
-          const rpcRes = await sellerTransactionsApi.completeBuyAcquisitionRpc(buyPayload);
-          if (rpcRes.success && syncLogId) {
-            await db.syncLogs.update(syncLogId, {
-              status: 'completed',
-              syncedAt: new Date().toISOString()
-            });
-          } else if (!rpcRes.success) {
-            console.warn('Online atomic buy acquisition returned error, queued for retry:', rpcRes.error);
-          }
-        } catch (err: any) {
-          console.warn('Network error during online buy acquisition, queued for offline retry:', err?.message);
-        }
-      }
 
       setResult({
         assetTag: transactionNumber,
@@ -725,7 +736,11 @@ export const BuyPawn: React.FC = () => {
       });
 
       setStep('completion');
-      showToast('Batch Purchase Complete', `${finalBasket.length} items acquired atomically and logged to SAPS`, 'success');
+      if (syncLogStatus === 'completed') {
+        showToast('Batch Purchase Complete', `${finalBasket.length} items acquired atomically and logged to SAPS`, 'success');
+      } else {
+        showToast('Saved Offline', `${finalBasket.length} items saved locally and queued for sync`, 'amber');
+      }
       return;
     }
 
@@ -859,41 +874,52 @@ export const BuyPawn: React.FC = () => {
         shopId: shopProfile.id
       };
 
-      let syncLogId: number | undefined;
+      let syncLogStatus: 'completed' | 'pending' = 'pending';
+      let syncedAt: string | undefined = undefined;
 
-      // 1. ATOMIC LOCAL DEXIE COMMIT
+      // 1. ATOMIC SERVER RPC FIRST IF ONLINE
+      if (isSupabaseConfigured() && navigator.onLine) {
+        try {
+          const rpcRes = await pawnLoansApi.completePawnIntakeRpc(pawnPayload);
+          if (rpcRes.success) {
+            syncLogStatus = 'completed';
+            syncedAt = new Date().toISOString();
+          } else {
+            const isNetworkError = (msg?: string) => {
+              if (!msg) return false;
+              const lower = msg.toLowerCase();
+              return lower.includes('failed to fetch') || lower.includes('network') || lower.includes('timeout') || lower.includes('aborted');
+            };
+
+            if (!isNetworkError(rpcRes.error)) {
+              // Explicit server rejection - ABORT IMMEDIATELY, do not write fake local data
+              showToast('Pawn Intake Rejected', rpcRes.error || 'Server rejected pawn intake.', 'error');
+              return;
+            }
+            console.warn('Network timeout during pawn intake, saving locally for offline sync:', rpcRes.error);
+          }
+        } catch (err: any) {
+          console.warn('Network error during online pawn intake, saving locally for offline sync:', err?.message);
+        }
+      }
+
+      // 2. ATOMIC LOCAL DEXIE COMMIT (Reflecting server success or durable offline outbox)
       await db.transaction('rw', [db.inventory, db.loans, db.saps, db.syncLogs], async () => {
         await db.inventory.add(invItem);
         await db.loans.add(loanRecord);
         await db.saps.add(sapsRecord);
 
-        syncLogId = await db.syncLogs.add({
+        await db.syncLogs.add({
           entityType: 'pawnIntake',
           entityId: loanId,
           action: 'create',
           payload: pawnPayload,
-          status: 'pending',
+          status: syncLogStatus,
+          syncedAt,
           createdAt: nowIso,
           retryCount: 0
         });
       });
-
-      // 2. ATOMIC SERVER REPLICATION (if online)
-      if (isSupabaseConfigured() && navigator.onLine) {
-        try {
-          const rpcRes = await pawnLoansApi.completePawnIntakeRpc(pawnPayload);
-          if (rpcRes.success && syncLogId) {
-            await db.syncLogs.update(syncLogId, {
-              status: 'completed',
-              syncedAt: new Date().toISOString()
-            });
-          } else if (!rpcRes.success) {
-            console.warn('Online atomic pawn intake returned error, queued for retry:', rpcRes.error);
-          }
-        } catch (err: any) {
-          console.warn('Network error during online pawn intake, queued for offline retry:', err?.message);
-        }
-      }
 
       setResult({
         assetTag: sku,
@@ -903,7 +929,11 @@ export const BuyPawn: React.FC = () => {
       });
 
       setStep('completion');
-      showToast('Pawn Finalized', `Ticket ${ticketNumber} created and asset vaulted atomically`, 'success');
+      if (syncLogStatus === 'completed') {
+        showToast('Pawn Finalized', `Ticket ${ticketNumber} created and asset vaulted atomically`, 'success');
+      } else {
+        showToast('Saved Offline', `Ticket ${ticketNumber} saved locally and queued for sync`, 'amber');
+      }
     }
   };
 

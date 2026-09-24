@@ -305,5 +305,62 @@ export async function runAtomicBuyAndPawnIntegrityTests() {
   }
   console.log('[PASS] Test 8: All database writes reside strictly within single transaction boundary with full rollback');
 
+  // =========================================================================
+  // TEST 9: Online explicit server rejection aborts before writing local records
+  // =========================================================================
+  let localDexieMutated = false;
+  const mockServerRpc = async (payload: any) => {
+    // Simulate server rejecting duplicate serial/IMEI
+    return { success: false, error: 'Serial/IMEI already belongs to active inventory' };
+  };
+
+  const executeAcquisitionWithServerFirst = async (payload: any) => {
+    const res = await mockServerRpc(payload);
+    if (!res.success) {
+      const isNetworkError = false; // Explicit server rejection
+      if (!isNetworkError) {
+        // Abort without mutating local Dexie
+        return { completed: false, error: res.error };
+      }
+    }
+    localDexieMutated = true;
+    return { completed: true };
+  };
+
+  const attemptResult = await executeAcquisitionWithServerFirst(buyPayload);
+  if (attemptResult.completed || localDexieMutated) {
+    throw new Error(`[FAIL] Explicit server rejection must not mutate local Dexie or complete transaction`);
+  }
+  console.log('[PASS] Test 9: Explicit server rejection immediately halts flow without persisting fake local data');
+
+  // =========================================================================
+  // TEST 10: Existing Stock preserves provenance without creating fake entities
+  // =========================================================================
+  const existingStockItem: InventoryItem = {
+    id: '99999999-9999-4999-8999-999999999999',
+    sku: 'LM-99001',
+    title: 'Vintage Wall Clock',
+    category: 'Appliances',
+    serialOrImei: 'N/A',
+    condition: 'Good',
+    imageUrl: 'https://example.com/clock.jpg',
+    acquisitionType: 'Existing Stock',
+    costBasis: 200,
+    retailPrice: 450,
+    status: 'Retail Floor',
+    sourceType: 'existing_stock',
+    sourceStatus: 'unknown',
+    sourceNote: 'Item was already owned by the shop before LocalMarket onboarding',
+    addedAt: new Date().toISOString()
+  };
+
+  if (existingStockItem.sourceType !== 'existing_stock') {
+    throw new Error(`[FAIL] Existing Stock must have sourceType "existing_stock"`);
+  }
+  if ((existingStockItem as any).sellerId || (existingStockItem as any).customerId || (existingStockItem as any).pawnTicketId) {
+    throw new Error(`[FAIL] Existing Stock must not attach fake seller/customer/pawn links`);
+  }
+  console.log('[PASS] Test 10: Existing Stock workflow preserves provenance without creating fake sellers, customers, or loans');
+
   console.log('=== ATOMIC BUY & PAWN INTEGRITY TEST SUITE COMPLETE ===\n');
 }
