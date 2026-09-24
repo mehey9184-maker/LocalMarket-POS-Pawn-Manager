@@ -1502,6 +1502,20 @@ export const staffApi = {
     } catch (err: any) {
       return { success: false, error: err?.message || 'Network error updating staff profile.' };
     }
+  },
+
+  async getStaffAuditLogs(staffId: string): Promise<any[]> {
+    return await withAuthRecovery(async (supabase) => {
+      const { data, error } = await supabase
+        .from('staff_audit_logs')
+        .select('*')
+        .eq('target_staff_id', staffId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (error) throw error;
+      return data || [];
+    });
   }
 };
 

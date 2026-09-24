@@ -432,7 +432,7 @@ Flow D - Pawn: Add Stock -> Pawn -> enter customer ID -> existing customer appea
 
 Flow E - Retail sale: Sell -> search/scan item -> cart -> payment -> receipt -> inventory marked sold -> sale recorded. No customer account required by default.
 
-Flow F - Staff Management: Owner -> Profile -> Staff & Access -> Provision Staff -> role, code, and PIN -> staff member instantly available in Account Picker -> can login via 6-digit PIN on shop device. Owner can later change roles, reset PINs, or deactivate access from the same panel.
+Flow F - Staff Management: Owner -> Profile -> Staff & Access -> Provision Staff -> role, code, and PIN -> staff member instantly available in Account Picker -> can login via 6-digit PIN on shop device. Owner can later change roles, reset PINs, update work schedules, view administrative history, or deactivate access from the same panel.
 
 Flow G - Bulk import: Owner/manager -> Inventory -> Import Stock -> XLSX/CSV -> preview/validate -> fix/review -> import -> generated SKUs -> summary.
 

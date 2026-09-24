@@ -16,7 +16,8 @@ import {
   Lock,
   ArrowLeft,
   Loader2,
-  Key
+  Key,
+  History
 } from 'lucide-react';
 
 export const StaffAccessManager: React.FC = () => {
@@ -25,6 +26,8 @@ export const StaffAccessManager: React.FC = () => {
   const [selectedStaff, setSelectedStaff] = useState<ProfileRow | null>(null);
   const [isAddingStaff, setIsAddingStaff] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
   // Filter out owners if the current user is just a manager
   const manageableStaff = useMemo(() => {
@@ -107,6 +110,20 @@ export const StaffAccessManager: React.FC = () => {
       ? days.filter((d: number) => d !== day)
       : [...days, day].sort();
     handleUpdateSchedule({ workingDays: newDays });
+  };
+
+  const handleSelectStaff = async (staff: ProfileRow) => {
+    setSelectedStaff(staff);
+    setIsLoadingLogs(true);
+    try {
+      const { staffApi } = await import('../../services/supabaseApi');
+      const logs = await staffApi.getStaffAuditLogs(staff.id);
+      setAuditLogs(logs);
+    } catch (err) {
+      console.warn('Failed to load staff audit logs:', err);
+    } finally {
+      setIsLoadingLogs(false);
+    }
   };
 
   if (isAddingStaff) {
@@ -326,6 +343,49 @@ export const StaffAccessManager: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* AUDIT HISTORY SECTION */}
+        <div className="space-y-6 pt-10 border-t border-[#282828]">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 text-blue-400">
+              <History className="w-5 h-5" />
+              <h3 className="text-sm font-bold uppercase tracking-widest">Administrative History</h3>
+            </div>
+            {isLoadingLogs && <Loader2 className="w-4 h-4 animate-spin text-gray-500" />}
+          </div>
+
+          <div className="bg-[#121212] border border-[#282828] rounded-2xl overflow-hidden divide-y divide-[#282828]">
+            {auditLogs.length > 0 ? auditLogs.map((log) => (
+              <div key={log.id} className="p-5 flex items-start justify-between hover:bg-[#1A1A1A] transition-colors">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-3">
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-widest ${
+                      log.event_type === 'STAFF_PROVISIONED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                      log.event_type === 'PIN_CHANGED' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                      'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                    }`}>
+                      {log.event_type.replace(/_/g, ' ')}
+                    </span>
+                    <span className="text-[10px] text-gray-500 font-mono">
+                      {new Date(log.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-300">{log.reason || 'No description provided'}</p>
+                </div>
+                {log.actor_id && (
+                  <div className="text-right">
+                    <p className="text-[9px] text-gray-500 uppercase tracking-widest">Authorized By</p>
+                    <p className="text-[10px] font-bold text-gray-400">{log.actor_name || 'System Administrator'}</p>
+                  </div>
+                )}
+              </div>
+            )) : (
+              <div className="p-10 text-center text-gray-600">
+                <p className="text-[10px] uppercase font-bold tracking-widest">No Administrative History Found</p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
@@ -350,7 +410,7 @@ export const StaffAccessManager: React.FC = () => {
         {manageableStaff.map(staff => (
           <button
             key={staff.id}
-            onClick={() => setSelectedStaff(staff)}
+            onClick={() => handleSelectStaff(staff)}
             className="group relative bg-[#121212] border border-[#282828] rounded-[2rem] p-6 flex items-center gap-5 transition-all hover:border-[#C85A32] hover:bg-[#1A1A1A] text-left"
           >
             <div className="w-14 h-14 rounded-2xl bg-[#1A1A1A] border border-[#282828] flex items-center justify-center shrink-0 group-hover:border-[#C85A32]/30 transition-colors">
