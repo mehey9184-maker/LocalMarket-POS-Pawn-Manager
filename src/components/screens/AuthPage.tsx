@@ -353,28 +353,11 @@ CREATE TRIGGER on_auth_user_created
                     <span className="material-symbols-outlined text-[#c85a32] text-2xl">point_of_sale</span>
                   </div>
                   <h1 className="font-headline font-bold text-2xl text-[#e5e2e1] tracking-tight">
-                    {isLogin ? 'Welcome back' : 'Register Shop Owner Account'}
+                    Terminal Sign In
                   </h1>
                   <p className="text-sm text-[#a58b83] mt-1">
-                    {isLogin ? 'Sign in to your LocalMarket counter terminal' : 'Create your shop owner profile & store credentials'}
+                    Sign in to your LocalMarket counter terminal. Staff accounts must be provisioned by store management.
                   </p>
-                </div>
-
-                <div className="grid grid-cols-2 p-1 bg-[#0e0e0e] rounded-xl mb-7 border border-[#282727]/40">
-                  <button 
-                    className={`py-2 text-xs sm:text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 ${isLogin ? 'bg-[#1f1e1e] text-[#e5e2e1] shadow-sm' : 'text-[#a58b83] hover:text-[#e5e2e1]'}`}
-                    onClick={() => { setIsLogin(true); setErrors({}); }}
-                  >
-                    <span className="material-symbols-outlined text-base">login</span>
-                    <span>Sign In</span>
-                  </button>
-                  <button 
-                    className={`py-2 text-xs sm:text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 ${!isLogin ? 'bg-[#1f1e1e] text-[#e5e2e1] shadow-sm' : 'text-[#a58b83] hover:text-[#e5e2e1]'}`}
-                    onClick={() => { setIsLogin(false); setErrors({}); }}
-                  >
-                    <span className="material-symbols-outlined text-base">person_add</span>
-                    <span>Register</span>
-                  </button>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -566,14 +549,7 @@ CREATE TRIGGER on_auth_user_created
 
                 <div className="mt-6 pt-5 border-t border-[#282727]/60 text-center">
                   <p className="text-xs text-[#a58b83]">
-                    {isLogin ? "Don't have an operator profile?" : "Already registered?"}
-                    <button 
-                      type="button"
-                      onClick={() => setIsLogin(!isLogin)}
-                      className="text-[#c85a32] hover:underline font-semibold ml-1 focus:outline-none"
-                    >
-                      {isLogin ? "Register here" : "Sign in to terminal"}
-                    </button>
+                    Staff accounts are provisioned by Store Owners and Managers inside the system.
                   </p>
                 </div>
               </>

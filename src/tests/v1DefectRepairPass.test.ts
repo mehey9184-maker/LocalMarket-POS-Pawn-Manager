@@ -105,5 +105,25 @@ export async function runV1DefectRepairPassTests() {
   assertTrue(!isRoleAllowedForCaller('manager', 'owner'), 'Auth Rule: Manager -> Owner BLOCKED');
   assertTrue(!isRoleAllowedForCaller('cashier', 'cashier'), 'Auth Rule: Cashier -> Cashier BLOCKED');
 
+  // --- 5. UI & CLAIMS REGRESSION TESTS ---
+  const authPageContent = fs.readFileSync(path.join(process.cwd(), 'src/components/screens/AuthPage.tsx'), 'utf-8');
+  assertTrue(!authPageContent.includes('Register Operator'), 'AuthPage Test: No "Register Operator" toggle');
+  assertTrue(!authPageContent.includes('Register Shop Owner Account'), 'AuthPage Test: Public staff/owner self-registration tab removed');
+  assertTrue(!authPageContent.includes('Register here'), 'AuthPage Test: No public self-registration link');
+
+  const contractModalContent = fs.readFileSync(path.join(process.cwd(), 'src/components/modals/ContractModal.tsx'), 'utf-8');
+  assertTrue(!contractModalContent.includes('LOCALMARKET SOWETO'), 'ContractModal Test: No hardcoded LOCALMARKET SOWETO');
+  assertTrue(!contractModalContent.includes('Powered by LocalEats SA'), 'ContractModal Test: No hardcoded LocalEats SA branding');
+  assertTrue(!contractModalContent.includes('NCRCP No: 12948'), 'ContractModal Test: No fake NCRCP number 12948');
+  assertTrue(!contractModalContent.includes('biometric vault facilities'), 'ContractModal Test: No unverified biometric vault claim');
+
+  const landingPageContent = fs.readFileSync(path.join(process.cwd(), 'src/components/screens/LandingPage.tsx'), 'utf-8');
+  assertTrue(!landingPageContent.includes('NCR 34 of 2005'), 'LandingPage Test: No hardcoded NCR compliance claim');
+  assertTrue(!landingPageContent.includes('Soweto Flagship Store'), 'LandingPage Test: No hardcoded Soweto Flagship claim');
+  assertTrue(!landingPageContent.includes('Active Terminal Network'), 'LandingPage Test: No hardcoded Active Terminal Network claim');
+
+  const sapsRegisterContent = fs.readFileSync(path.join(process.cwd(), 'src/components/screens/SapsRegister.tsx'), 'utf-8');
+  assertTrue(!sapsRegisterContent.includes('Audit Certified:'), 'SapsRegister Test: Terminology clarifies merchant entry vs government certification');
+
   console.log('=== V1 PRODUCTION DEFECT REPAIR PASS TESTS PASSED ===');
 }

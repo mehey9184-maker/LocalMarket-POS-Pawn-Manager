@@ -77,26 +77,26 @@ export const LandingPage: React.FC = () => {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 w-full flex flex-col items-center text-center py-6 sm:py-10">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#C85A32]/10 border border-[#C85A32]/30 text-[#E87A5D] text-xs font-medium tracking-wide mb-5">
             <span className="w-1.5 h-1.5 rounded-full bg-[#E87A5D] animate-pulse"></span>
-            <span>The Modern Retail POS &amp; Pawn Management Platform</span>
+            <span>Point-of-sale, second-hand goods and pawn workflow management</span>
           </div>
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight leading-[1.15] max-w-3xl mb-4">
-              Township High-Street Retail &amp; <span className="bg-gradient-to-r from-[#E87A5D] to-[#C85A32] bg-clip-text text-transparent font-black">Pawn OS</span>
+              Retail Counter &amp; <span className="bg-gradient-to-r from-[#E87A5D] to-[#C85A32] bg-clip-text text-transparent font-black">Pawn Management OS</span>
           </h1>
           <p className="text-base sm:text-lg text-zinc-300 max-w-2xl mx-auto leading-relaxed mb-8 font-light">
-              Streamlined counter sales, instant collateral appraisals, and NCR-compliant ledger management. Built for local commerce and powered by <a className="text-white font-medium hover:text-[#E87A5D] underline underline-offset-4 decoration-[#E87A5D]/40 transition-colors" href="https://www.localeatssa.co.za/" rel="noopener noreferrer" target="_blank">LocalEats SA</a>.
+              Streamlined counter sales, collateral appraisals, and second-hand goods inventory management software.
           </p>
           
           <div className="relative w-full rounded-xl overflow-hidden border border-[#2A2A2E]/60 bg-[#18181B] shadow-2xl mb-8 group">
             <div className="relative aspect-[16/9] md:aspect-[21/9] w-full overflow-hidden">
               <img 
-                alt="Flagship LocalMarket retail store" 
+                alt="LocalMarket retail store counter" 
                 className="w-full h-full object-cover object-center filter brightness-95 contrast-105 group-hover:scale-105 transition-transform duration-700" 
                 src="https://lh3.googleusercontent.com/aida/AEtjO1VP6YyvELeiPk-07rAo_VKLEXOni6S08hqZpbbjiMEUxHS-Z7QB9hQwp5i4xfEkQ7wKoHhR-nClr5iyxgHRLDk7FM4Dk1sjgxk8I-XSDCi3zr2AdZHQthIUc_yd8xR9NMDxMgFXT7vP_tWrMROTaKIVdyUSCLolmK-i4sRuNXplPM51pQMS9Lcy239avhHk4m1FXZjVUM4cF0cRry_jcrtk4kTncxnL2Y4vSnDZdY-Wk9AjC7HR4P3KSw"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/30"></div>
               <div className="absolute bottom-3 left-4 sm:bottom-4 sm:left-6 flex items-center gap-2 text-xs text-zinc-300 font-mono">
                 <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                <span>Soweto Flagship Store • Active Terminal Network</span>
+                <span>Counter Terminal &amp; Vault Management</span>
               </div>
             </div>
           </div>
@@ -106,9 +106,9 @@ export const LandingPage: React.FC = () => {
               onClick={() => setActiveTab('auth')}
               className="inline-flex items-center justify-center gap-3 px-8 py-4 rounded-sm bg-gradient-to-r from-[#C85A32] to-[#E87A5D] text-white font-bold text-base tracking-wide uppercase shadow-lg shadow-[#C85A32]/30 hover:shadow-[#C85A32]/50 hover:brightness-110 active:scale-95 transition-all focus:outline-none focus:ring-2 focus:ring-[#E87A5D]"
             >
-              <span>Start → Sign In &amp; Register</span>
+              <span>Launch Terminal → Sign In</span>
             </button>
-            <span className="text-xs text-zinc-400 font-mono tracking-wide">Secure operator access • Licensed merchant portal</span>
+            <span className="text-xs text-zinc-400 font-mono tracking-wide">Secure operator access portal</span>
           </div>
         </div>
       </main>
@@ -118,11 +118,10 @@ export const LandingPage: React.FC = () => {
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5 text-center sm:text-left text-[11px] text-zinc-500">
           <div className="flex items-center gap-2 font-mono text-zinc-400">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            <span>NCR 34 of 2005 • SAPS Second-Hand Goods Regulated • SARS Compliant</span>
+            <span>Point-of-sale, second-hand goods and pawn workflow management software</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span>© {new Date().getFullYear()} LocalMarket OS • Part of</span>
-            <a className="text-[#E87A5D] hover:underline font-medium" href="https://www.localeatssa.co.za/" rel="noopener noreferrer" target="_blank">LocalEats SA</a>
+            <span>© {new Date().getFullYear()} LocalMarket OS</span>
           </div>
         </div>
       </footer>

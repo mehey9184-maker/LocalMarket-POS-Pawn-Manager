@@ -44,8 +44,11 @@ export const ContractModal: React.FC = () => {
           <div className="bg-white text-black p-6 rounded-xl shadow-2xl font-serif text-xs space-y-4 border border-gray-300">
             {/* Header */}
             <div className="text-center border-b-2 border-black pb-3 space-y-1">
-              <h2 className="font-black text-base uppercase tracking-wider font-sans">LOCALMARKET SOWETO</h2>
-              <p className="text-[10px] text-gray-700 font-sans">Powered by LocalEats SA • NCRCP No: 12948</p>
+              <h2 className="font-black text-base uppercase tracking-wider font-sans">{shopProfile?.shop_name || 'Not configured'}</h2>
+              <p className="text-[10px] text-gray-700 font-sans">
+                {shopProfile?.registration_number ? `Reg: ${shopProfile.registration_number}` : 'Business Registration: Not configured'} 
+                {shopProfile?.saps_dealer_license ? ` • SAPS License: ${shopProfile.saps_dealer_license}` : ' • SAPS Registration: Not configured'}
+              </p>
               <h3 className="font-bold text-xs uppercase font-sans tracking-wide pt-1">
                 COLLATERAL PLEDGE &amp; SHORT-TERM CREDIT AGREEMENT
               </h3>
@@ -157,7 +160,7 @@ export const ContractModal: React.FC = () => {
               {showFullTerms ? (
                 <div className="mt-2 text-[9px] text-gray-700 space-y-1.5 leading-relaxed pt-2 border-t border-gray-200 animate-in fade-in">
                   <p>
-                    <strong>1. Legal Warranty:</strong> The consumer warrants unencumbered lawful ownership of the pledged collateral. LocalMarket agrees to store and secure the item in designated biometric vault facilities.
+                    <strong>1. Legal Warranty:</strong> The consumer warrants unencumbered lawful ownership of the pledged collateral. The merchant agrees to store and secure the item in designated vault storage facilities.
                   </p>
                   <p>
                     <strong>2. Statutory Redemption Window:</strong> The consumer holds unconditional right of redemption for 30 consecutive calendar days from contract commencement upon settlement of principal and regulated credit fees.
@@ -184,7 +187,7 @@ export const ContractModal: React.FC = () => {
               <div className="text-right">
                 <p className="font-bold">CREDIT PROVIDER DESK OFFICER:</p>
                 <p className="text-gray-700">{currentUserProfile?.full_name || 'System Authorized Officer'}</p>
-                <p className="text-[9px] text-emerald-800 font-bold uppercase">SAPS Station Stamp: {shopProfile?.saps_dealer_license || 'PENDING'}</p>
+                <p className="text-[9px] text-emerald-800 font-bold uppercase">SAPS Dealer License: {shopProfile?.saps_dealer_license || 'Not configured'}</p>
               </div>
             </div>
           </div>
