@@ -47,18 +47,20 @@ export const StaffAccessManager: React.FC = () => {
     setIsSaving(false);
   };
 
-  const handleUpdateSchedule = async (updates: any) => {
+  const handleResetPin = async () => {
     if (!selectedStaff) return;
-    const currentSchedule = (selectedStaff.schedule as any) || {};
-    const newSchedule = { ...currentSchedule, ...updates };
+    const newPin = window.prompt('Enter new 6-digit PIN:');
+    if (!newPin || !/^\d{6}$/.test(newPin)) {
+      showToast('Invalid PIN', 'PIN must be exactly 6 numeric digits.', 'error');
+      return;
+    }
     
     setIsSaving(true);
-    const res = await updateStaffProfile(selectedStaff.id, { schedule: newSchedule });
+    const res = await updateStaffProfile(selectedStaff.id, { pinCode: newPin }, 'PIN reset by authorized user');
     if (res.success) {
-      setSelectedStaff({ ...selectedStaff, schedule: newSchedule });
-      showToast('Schedule Updated', `Working hours for ${selectedStaff.full_name} updated.`, 'success');
+      showToast('PIN Updated', 'Staff PIN has been reset.', 'success');
     } else {
-      showToast('Update Failed', res.error || 'Could not update schedule.', 'error');
+      showToast('Reset Failed', res.error || 'Could not reset PIN.', 'error');
     }
     setIsSaving(false);
   };
