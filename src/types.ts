@@ -303,3 +303,15 @@ export interface SyncStatus {
   pendingCount: number;
   lastSyncTime: string | null;
 }
+
+export interface WorkflowDraft {
+  id: string;
+  userId: string;
+  shopId?: string;
+  workflowType: 'buy' | 'pawn' | 'existing';
+  step: string;
+  payload: any;
+  updatedAt: string;
+  createdAt: string;
+  status: 'active' | 'completed' | 'discarded';
+}
