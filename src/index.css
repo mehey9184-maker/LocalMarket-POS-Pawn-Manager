@@ -1,5 +1,40 @@
 @import "tailwindcss";
 
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-root, #print-root * {
+    visibility: visible;
+  }
+  #print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .print-content {
+    padding: 20px;
+    font-family: sans-serif;
+  }
+  .print-content header {
+    border-bottom: 2px solid #000;
+    margin-bottom: 20px;
+  }
+  .print-content table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .print-content th, .print-content td {
+    text-align: left;
+    padding: 8px;
+    border-bottom: 1px solid #ccc;
+  }
+  .print-content .amount {
+    text-align: right;
+  }
+}
+
 @layer base {
   :root {
     --app-bg: #F5F6F8;

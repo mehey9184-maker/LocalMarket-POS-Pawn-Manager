@@ -9,6 +9,7 @@ import { runV1DefectRepairPassTests } from './v1DefectRepairPass.test';
 import { runTerminalSessionTests } from './terminalSession.test';
 import { runIntelligentAssistanceTests } from './intelligentAssistance.test';
 import { runResumableWorkTests } from './resumableWork.test';
+import { runPrintingTests } from './printingFoundation.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -25,6 +26,7 @@ export async function runAllTests() {
   await runTerminalSessionTests();
   runIntelligentAssistanceTests();
   await runResumableWorkTests();
+  runPrintingTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');
