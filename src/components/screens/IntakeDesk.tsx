@@ -72,15 +72,17 @@ export const IntakeDesk: React.FC = () => {
         setCustomerIdNumber(match.idNumber);
         setCustomerMobile(match.mobile);
         setCustomerAddress(match.address);
+        showToast('Previous Customer Found', `Matched existing customer by ID: ${match.fullName}`, 'info');
       } else {
         setCustomerIdNumber(capturedRsaIdScan.idNumber);
         setCustomerName(''); // DO NOT FABRICATE A NAME
         setCustomerMobile('');
         setCustomerAddress('');
         setIsEditingCustomer(true);
+        showToast('ID Decoded', `ID #${capturedRsaIdScan.idNumber} decoded — identity still needs verification.`, 'info');
       }
     }
-  }, [activeCustomer, capturedRsaIdScan, customers, setActiveCustomer]);
+  }, [activeCustomer, capturedRsaIdScan, customers, setActiveCustomer, showToast]);
 
   // Step 2: Item & Valuation Engine
   const [txType, setTxType] = useState<'pawn' | 'buy'>('pawn');
@@ -204,9 +206,9 @@ export const IntakeDesk: React.FC = () => {
         mobile: customerMobile,
         address: customerAddress,
         idType: 'RSA Smart ID',
-        gender: 'Not Specified',
-        dob: '1992-04-14',
-        verified: true
+        gender: activeCustomer?.gender || 'Not Specified',
+        dob: activeCustomer?.dob || '1992-04-14',
+        verified: activeCustomer?.verified ?? false
       },
       isPawn: txType === 'pawn',
       title,

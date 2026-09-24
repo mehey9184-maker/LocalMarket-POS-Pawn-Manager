@@ -247,12 +247,12 @@ export const ScannerModal: React.FC = () => {
 
       if (existingCustomer) {
         setActiveCustomerRef.current(existingCustomer);
-        showToastRef.current('ID Barcode Decoded', `Matched client: ${existingCustomer.fullName}`, 'success');
+        showToastRef.current('Previous Customer Found', `Matched existing record by ID: ${existingCustomer.fullName}`, 'info');
       } else if (existingSeller) {
-        showToastRef.current('ID Barcode Decoded', `Matched seller: ${existingSeller.fullName}`, 'success');
+        showToastRef.current('Previous Seller Found', `Matched existing record by ID: ${existingSeller.fullName}`, 'info');
       } else {
         setActiveCustomerRef.current(null);
-        showToastRef.current('ID Captured', `Decoded ID #${parsed.idNumber}. Complete mandatory details to verify identity.`, 'info');
+        showToastRef.current('ID Decoded', `ID #${parsed.idNumber} decoded — identity still needs verification.`, 'info');
       }
 
       stopCameraStream();

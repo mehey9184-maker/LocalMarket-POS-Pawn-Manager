@@ -38,7 +38,9 @@ import {
   Package,
   MapPin,
   Tag,
-  AlertTriangle
+  AlertTriangle,
+  Clock,
+  UserCheck
 } from 'lucide-react';
 
 export type WorkflowStep = 'mode' | 'customer' | 'item' | 'valuation' | 'location' | 'deal' | 'completion';
@@ -80,8 +82,8 @@ export const BuyPawn: React.FC = () => {
   const { user } = useAuth();
   const { addItem, inventory } = useInventory();
   const { createLoan } = useLoans();
-  const { customers, addCustomer } = useCustomers();
-  const { sellers, addSeller, addSellerTransaction } = useSellers();
+  const { customers, addCustomer, updateCustomer } = useCustomers();
+  const { sellers, addSeller, updateSeller, addSellerTransaction } = useSellers();
   const { addSapsEntry } = useSaps();
 
   // Basket for multi-item seller batches
@@ -112,7 +114,7 @@ export const BuyPawn: React.FC = () => {
       if (match) {
         setSelectedIdentity(match);
         setIsCreatingIdentity(false);
-        showToast('Seller Identified', `Matched existing seller: ${match.fullName}`, 'success');
+        showToast('Previous Seller Found', `Matched existing seller by ID #${scannedIdClean}: ${match.fullName}`, 'info');
         return;
       }
     } else if (txType === 'pawn') {
@@ -120,7 +122,7 @@ export const BuyPawn: React.FC = () => {
       if (match) {
         setSelectedIdentity(match);
         setIsCreatingIdentity(false);
-        showToast('Client Identified', `Matched existing client: ${match.fullName}`, 'success');
+        showToast('Previous Customer Found', `Matched existing customer by ID #${scannedIdClean}: ${match.fullName}`, 'info');
         return;
       }
     }
@@ -133,7 +135,7 @@ export const BuyPawn: React.FC = () => {
       idType: 'RSA Smart ID',
       fullName: '', // NEVER FABRICATE A NAME
     }));
-    showToast('ID Barcode Decoded', `Captured ID #${capturedRsaIdScan.idNumber}. Enter full name and contact details.`, 'info');
+    showToast('ID Decoded', `ID #${capturedRsaIdScan.idNumber} decoded — identity still needs verification.`, 'info');
   }, [capturedRsaIdScan, step, txType, customers, sellers, showToast]);
 
   // Item Details State (Common to all flows)
@@ -368,7 +370,11 @@ export const BuyPawn: React.FC = () => {
   const selectIdentity = (identity: Customer | Seller) => {
     setSelectedIdentity(identity);
     setIsCreatingIdentity(false);
-    showToast(`${txType === 'buy' ? 'Seller' : 'Customer'} Selected`, identity.fullName, 'success');
+    showToast(
+      `Previous ${txType === 'buy' ? 'Seller' : 'Customer'} Found`,
+      `Matched record: ${identity.fullName} (${identity.verified ? 'Verified' : 'Verification pending'})`,
+      'info'
+    );
   };
 
   const handleCreateIdentity = async () => {
@@ -384,7 +390,7 @@ export const BuyPawn: React.FC = () => {
         idType: newIdentity.idType,
         mobile: newIdentity.mobile.trim(),
         address: newIdentity.address.trim(),
-        verified: true
+        verified: false
       });
       const created: Seller = {
         id,
@@ -394,7 +400,7 @@ export const BuyPawn: React.FC = () => {
         mobile: newIdentity.mobile.trim(),
         address: newIdentity.address.trim(),
         createdAt: new Date().toISOString(),
-        verified: true
+        verified: false
       };
       setSelectedIdentity(created);
     } else {
@@ -405,7 +411,7 @@ export const BuyPawn: React.FC = () => {
         idType: newIdentity.idType,
         mobile: newIdentity.mobile.trim(),
         address: newIdentity.address.trim(),
-        verified: true
+        verified: false
       });
       const created: Customer = {
         id,
@@ -415,13 +421,26 @@ export const BuyPawn: React.FC = () => {
         mobile: newIdentity.mobile.trim(),
         address: newIdentity.address.trim(),
         createdAt: new Date().toISOString(),
-        verified: true
+        verified: false
       };
       setSelectedIdentity(created);
     }
 
     setIsCreatingIdentity(false);
-    showToast(`${txType === 'buy' ? 'Seller' : 'Customer'} Created`, newIdentity.fullName, 'success');
+    showToast(`${txType === 'buy' ? 'Seller' : 'Customer'} Saved`, `${newIdentity.fullName} (Verification pending)`, 'info');
+  };
+
+  const handleExplicitVerifyIdentity = async () => {
+    if (!selectedIdentity) return;
+    if (txType === 'buy') {
+      await updateSeller(selectedIdentity.id, { verified: true });
+      setSelectedIdentity(prev => prev ? ({ ...prev, verified: true }) : null);
+      showToast('Identity Verified', `Seller ${selectedIdentity.fullName} verified against physical ID document.`, 'success');
+    } else {
+      await updateCustomer(selectedIdentity.id, { verified: true });
+      setSelectedIdentity(prev => prev ? ({ ...prev, verified: true }) : null);
+      showToast('Identity Verified', `Customer ${selectedIdentity.fullName} verified against physical ID document.`, 'success');
+    }
   };
 
   // 1. FINALISE EXISTING STOCK (No Seller, No Customer, No SAPS Form 21, No Pawn Loan)
@@ -550,7 +569,7 @@ export const BuyPawn: React.FC = () => {
           imageUrl: bItem.imageUrl,
           specs: [bItem.brand, bItem.model].filter(Boolean).join(' • ') || undefined,
           sourceType: 'seller',
-          sourceStatus: 'verified',
+          sourceStatus: seller.verified ? 'verified' : 'pending',
           sourceNote: `Purchased from ${seller.fullName} (${seller.idNumber})`,
           internalNote: bItem.internalNote || undefined
         });
@@ -585,7 +604,7 @@ export const BuyPawn: React.FC = () => {
           considerationPaid: bItem.agreedOffer,
           officerName: user?.user_metadata?.full_name || 'System Operator',
           policeStationRef: shopProfile.saps_dealer_license,
-          verificationStatus: 'VERIFIED',
+          verificationStatus: seller.verified ? 'VERIFIED' : 'PENDING',
           barcodeRef: sku
         });
       }
@@ -598,7 +617,7 @@ export const BuyPawn: React.FC = () => {
         totalApprovedPayout: totalPayout,
         paymentStatus: 'Paid',
         status: 'Acquired',
-        complianceStatus: 'VERIFIED',
+        complianceStatus: seller.verified ? 'VERIFIED' : 'PENDING',
         timestamp: new Date().toISOString(),
         items: transactionItems,
         sapsRef: transactionNumber
@@ -639,7 +658,7 @@ export const BuyPawn: React.FC = () => {
         imageUrl: itemData.imageUrl,
         specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
         sourceType: 'pawn',
-        sourceStatus: 'verified',
+        sourceStatus: pCustomer.verified ? 'verified' : 'pending',
         sourceNote: `Pawned by ${pCustomer.fullName} under Ticket ${ticketNumber}`,
         internalNote: itemData.internalNote || undefined
       });
@@ -694,7 +713,7 @@ export const BuyPawn: React.FC = () => {
         considerationPaid: agreedOffer,
         officerName: user?.user_metadata?.full_name || 'System Operator',
         policeStationRef: shopProfile.saps_dealer_license,
-        verificationStatus: 'VERIFIED',
+        verificationStatus: pCustomer.verified ? 'VERIFIED' : 'PENDING',
         barcodeRef: sku
       });
 
@@ -1091,37 +1110,54 @@ export const BuyPawn: React.FC = () => {
 
                     <button
                       onClick={handleCreateIdentity}
-                      className="w-full py-3 bg-[#C85A32] text-white rounded-xl font-semibold text-xs hover:bg-[#A94725] transition shadow-xs"
+                      className="w-full py-3 bg-[#C85A32] text-white rounded-xl font-semibold text-xs hover:bg-[#A94725] transition shadow-xs flex items-center justify-center gap-2"
                     >
-                      Save & Verify Identity
+                      <UserCheck className="w-4 h-4" />
+                      <span>Save Identity</span>
                     </button>
+                    <p className="text-[11px] text-gray-500 text-center">
+                      Status on save: Verification pending
+                    </p>
                   </div>
                 )}
 
                 {/* SELECTED IDENTITY DISPLAY */}
                 {selectedIdentity && (
                   <div className="space-y-4">
-                    <div className="p-5 rounded-2xl bg-white border-2 border-emerald-500/40 shadow-xs flex items-center justify-between">
+                    <div className={`p-5 rounded-2xl bg-white border-2 ${selectedIdentity.verified ? 'border-emerald-500/40' : 'border-amber-400/50'} shadow-xs flex items-center justify-between`}>
                       <div className="flex items-center gap-3.5">
-                        <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                          <CheckCircle2 className="w-6 h-6" />
+                        <div className={`w-11 h-11 rounded-xl ${selectedIdentity.verified ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'} flex items-center justify-center font-bold`}>
+                          {selectedIdentity.verified ? <CheckCircle2 className="w-6 h-6" /> : <Clock className="w-6 h-6" />}
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded">
-                              Verified {txType === 'buy' ? 'Seller' : 'Customer'}
+                            <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded ${selectedIdentity.verified ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50'}`}>
+                              {selectedIdentity.verified ? `Verified ${txType === 'buy' ? 'Seller' : 'Customer'}` : `Verification Pending · ${txType === 'buy' ? 'Seller' : 'Customer'}`}
                             </span>
                           </div>
                           <h4 className="text-base font-bold text-gray-900 mt-0.5">{selectedIdentity.fullName}</h4>
                           <p className="text-xs text-gray-500 font-mono">{selectedIdentity.idNumber} · {selectedIdentity.mobile}</p>
                         </div>
                       </div>
-                      <button
-                        onClick={() => setSelectedIdentity(null)}
-                        className="text-xs text-gray-500 hover:text-gray-900 font-semibold"
-                      >
-                        Change
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {!selectedIdentity.verified && (
+                          <button
+                            type="button"
+                            onClick={handleExplicitVerifyIdentity}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs flex items-center gap-1.5 transition"
+                            title="Verify against physical South African ID document or card"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            <span>Verify Physical ID</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setSelectedIdentity(null)}
+                          className="text-xs text-gray-500 hover:text-gray-900 font-semibold px-2 py-1.5"
+                        >
+                          Change
+                        </button>
+                      </div>
                     </div>
 
                     {txType === 'buy' && (
@@ -1727,7 +1763,12 @@ export const BuyPawn: React.FC = () => {
                       </div>
                       <div className="flex justify-between py-1.5">
                         <span className="text-gray-500">{txType === 'buy' ? 'Seller' : 'Customer'}</span>
-                        <span className="font-semibold text-gray-900">{selectedIdentity?.fullName}</span>
+                        <div className="text-right">
+                          <span className="font-semibold text-gray-900">{selectedIdentity?.fullName}</span>
+                          <span className={`block text-[10px] font-semibold ${selectedIdentity?.verified ? 'text-emerald-600' : 'text-amber-600'}`}>
+                            {selectedIdentity?.verified ? 'Verified' : 'Verification pending'}
+                          </span>
+                        </div>
                       </div>
                       <div className="flex justify-between py-1.5">
                         <span className="text-gray-500">ID Number</span>

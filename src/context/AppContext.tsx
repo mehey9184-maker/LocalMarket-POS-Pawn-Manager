@@ -476,7 +476,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           address: data.customer.address,
           dob: data.customer.dob,
           gender: data.customer.gender,
-          verified: data.customer.verified ?? true
+          verified: data.customer.verified ?? false
         });
       }
 
@@ -553,7 +553,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         considerationPaid: data.agreedOffer,
         officerName: currentUserProfile?.full_name || 'Intake Officer',
         policeStationRef: 'STN-JHB-01',
-        verificationStatus: 'VERIFIED',
+        verificationStatus: data.customer.verified ? 'VERIFIED' : 'PENDING',
         barcodeRef: sku
       });
 
@@ -569,7 +569,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           idType: data.customer.idType,
           mobile: data.customer.mobile,
           address: data.customer.address,
-          verified: data.customer.verified ?? true
+          verified: data.customer.verified ?? false
         });
       }
 
@@ -605,7 +605,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         considerationPaid: data.agreedOffer,
         officerName: currentUserProfile?.full_name || 'Intake Officer',
         policeStationRef: 'STN-JHB-01',
-        verificationStatus: 'VERIFIED',
+        verificationStatus: data.customer.verified ? 'VERIFIED' : 'PENDING',
         barcodeRef: sku
       });
 
@@ -619,7 +619,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         totalApprovedPayout: data.agreedOffer,
         paymentStatus: 'Paid',
         status: 'Acquired',
-        complianceStatus: 'VERIFIED',
+        complianceStatus: data.customer.verified ? 'VERIFIED' : 'PENDING',
         items: [{
           id: crypto.randomUUID(),
           sellerTransactionId: '', // Will be set by addSellerTransaction

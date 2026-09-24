@@ -2,6 +2,7 @@ import { runMarketIntelligenceTests } from './marketIntelligence.test';
 import { runRsaIdScannerTests } from './rsaIdScanner.test';
 import { runExternalProviderManagerTests } from './externalProviderManager.test';
 import { runStabilityAndScannerTests } from './stabilityAndScanner.test';
+import { runIdentityVerificationIntegrityTests } from './identityVerificationIntegrity.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -11,6 +12,7 @@ export async function runAllTests() {
   runMarketIntelligenceTests();
   await runExternalProviderManagerTests();
   await runStabilityAndScannerTests();
+  await runIdentityVerificationIntegrityTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');
