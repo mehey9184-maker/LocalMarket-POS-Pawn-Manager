@@ -481,3 +481,593 @@ When requirements change, update this document first or as part of the same chan
 
 When the chat history is unavailable, the repository plus this document should be enough to reconstruct the product intent, core workflows, roles, UX principles, and architecture direction.
 
+41. INTELLIGENT SOUTH AFRICAN-AWARE ASSISTANCE
+
+---
+
+LocalMarket should behave like a helpful coworker: recognize common inputs, reduce unnecessary typing, notice likely mistakes, and guide the worker to the next useful action without taking control away from them.
+
+The goal is not to add "AI" for appearance. Intelligent behavior is valuable only when it removes work, prevents mistakes, or helps the worker finish the task faster.
+
+41.1 SOUTH AFRICAN FORMATS
+
+Where applicable, LocalMarket should recognize and normalize South African conventions for:
+
+* Mobile phone numbers
+* Landline phone numbers
+* South African ID numbers
+* Serial numbers
+* IMEI numbers
+* Retail/barcode identifiers
+* Common contact formats
+* Other structured identifiers commonly used by South African shops
+
+Equivalent phone formats should be recognized as the same underlying number where appropriate.
+
+Example:
+
+067 205 4752
+0672054752
++27 67 205 4752
++27672054752
+
+These should be recognized as the same phone number for matching purposes when they represent the same number.
+
+Store a normalized representation for matching while keeping a sensible human-readable display format.
+
+Do not make the worker manually convert numbers between formats unless necessary.
+
+41.2 VALIDATION STATES
+
+Validation should distinguish between:
+
+* Valid
+* Suspicious
+* Clearly invalid
+* Already known / duplicate
+* Unable to verify
+
+A structurally valid number must not automatically be described as belonging to a real person.
+
+For example, LocalMarket may determine that a phone number is structurally valid, but it must not claim that the number belongs to a particular person unless an appropriate verification source actually confirms this.
+
+"Fake number" detection should mean that the value appears impossible, malformed, suspicious, duplicated, or unsuitable for the current business operation.
+
+Never invent verification results.
+
+41.3 SOUTH AFRICAN ID VALIDATION
+
+South African ID numbers must be validated using appropriate structural rules and checksum validation.
+
+Validation should happen consistently whether the ID is:
+
+* Typed manually
+* Pasted
+* Scanned
+* Retrieved from an existing record
+* Entered during Buy From Person
+* Entered during Pawn
+
+A scanner must never bypass validation.
+
+If an ID is invalid, LocalMarket should explain the problem in simple human language and take the worker directly to the ID field.
+
+Do not simply display a generic:
+
+"Validation failed."
+
+Instead provide useful guidance such as:
+
+"That ID number doesn't appear to be valid. Please check the number."
+
+The exact technical validation reason may be available to managers/developers but should not clutter the normal cashier experience.
+
+41.4 BARCODE AND SCANNER INTELLIGENCE
+
+LocalMarket should recognize barcode input contextually.
+
+The worker should not have to repeatedly tell the system:
+
+"Now I am scanning a barcode."
+
+The workflow should already know what type of identifier is expected.
+
+Examples:
+
+Sell:
+Scan item/SKU -> find item -> add to cart.
+
+Inventory:
+Scan SKU/item tag -> open item.
+
+Add Stock:
+Scan serial/IMEI/barcode where applicable -> populate the relevant field.
+
+If a barcode cannot be read or cannot be found:
+
+* Do not pretend it was successfully scanned.
+* Do not create a fake item.
+* Offer the next useful action.
+* Allow manual search or entry where permitted.
+
+Scanner failures should be recoverable without forcing the worker to restart the entire workflow.
+
+42. SUGGESTIONS WITHOUT FORCING
+
+---
+
+LocalMarket should provide intelligent suggestions when the worker types item information.
+
+Possible suggestions include:
+
+* Spelling corrections
+* Product name corrections
+* Brand suggestions
+* Category suggestions
+* Model suggestions
+* Common terminology
+* Formatting corrections
+* Previously used shop terminology
+
+Example:
+
+Worker enters:
+
+"samsng galaxy s24"
+
+LocalMarket may show:
+
+"Did you mean Samsung Galaxy S24?"
+
+The worker can:
+
+* Accept the suggestion
+* Ignore the suggestion
+* Continue using the original text
+
+The system must never silently replace deliberate user input merely because it thinks another value is better.
+
+The worker remains in control unless a specific business, security, compliance, or data-integrity rule requires validation before completion.
+
+42.1 SUGGESTIONS SHOULD BE QUIET
+
+Suggestions should assist rather than interrupt.
+
+Avoid:
+
+* Repeated popup messages
+* Tutorial walls
+* Constant correction dialogs
+* Blocking the worker for harmless spelling mistakes
+* Forcing category selection when the system can reasonably infer it
+
+Prefer:
+
+* Inline suggestions
+* Small contextual prompts
+* One-click acceptance
+* Remembering accepted terminology
+* Suggestions that disappear naturally when ignored
+
+The worker should feel helped, not corrected by a teacher.
+
+43. ERROR GUIDANCE — TAKE THE USER TO THE PROBLEM
+
+---
+
+An error notification by itself is not sufficient when the application knows exactly where the problem is.
+
+When validation finds an error, LocalMarket should:
+
+1. Identify the exact field, item, section, or step containing the problem.
+2. Move focus to that location when practical.
+3. Scroll the relevant field into view when necessary.
+4. Clearly explain what needs attention.
+5. Preserve all other information already entered.
+6. Allow the worker to fix the problem immediately.
+7. Revalidate the corrected value.
+8. Continue to the next unresolved problem if more errors remain.
+
+The worker should never have to hunt through a long form to discover what caused the error.
+
+43.1 MULTIPLE ERRORS
+
+When multiple problems exist, LocalMarket should guide the worker through them sequentially.
+
+Example:
+
+"There are 3 things to fix."
+
+1 of 3 — ID number
+2 of 3 — Purchase price
+3 of 3 — Item photo
+
+The system should take the worker directly to the first unresolved problem.
+
+After it is corrected, move to the next unresolved problem.
+
+After all problems are corrected, return the worker naturally to the completion action.
+
+Do not repeatedly show the same error after it has been corrected.
+
+43.2 PRESERVE USER WORK
+
+Validation must not destroy the worker's existing input.
+
+If an item form contains:
+
+* Item name
+* Brand
+* Model
+* Serial number
+* Purchase price
+* Retail price
+* Notes
+* Photos
+
+and only the purchase price is invalid, the system must preserve everything else.
+
+Never make the worker start the entire form again because one field is wrong.
+
+43.3 ERROR LANGUAGE
+
+Normal workers should receive human language rather than database or programming terminology.
+
+Avoid:
+
+"NULL constraint violation."
+
+Prefer:
+
+"Please enter the purchase price."
+
+Avoid:
+
+"PGRST303."
+
+Prefer:
+
+"Your session needs to reconnect. Your work is still here."
+
+Avoid:
+
+"Invalid UUID."
+
+Prefer:
+
+"We couldn't recognize that record. Please check the selected person."
+
+44. WORK CONTINUITY / RESUMABLE DRAFTS
+
+---
+
+LocalMarket must preserve useful in-progress work across ordinary interruptions.
+
+The experience should resemble a messaging application that remembers an unfinished conversation.
+
+If the worker is interrupted, LocalMarket should remember what they were doing and allow them to continue without re-entering everything.
+
+Interruptions include:
+
+* Browser refresh
+* Application restart
+* PC power loss
+* Temporary application crash
+* Internet loss
+* Terminal lock
+* Staff account switch
+* Closing and reopening the application
+* Temporary navigation away from a workflow
+
+44.1 EXAMPLES
+
+If the worker was adding:
+
+"Samsung Galaxy S24"
+
+and the application closes, the next time they return LocalMarket may show:
+
+"Welcome back. You were adding a Samsung Galaxy S24."
+
+Buttons:
+
+[Continue]
+
+[Start something else]
+
+If the worker was halfway through a Buy From Person transaction:
+
+"Welcome back. You have an unfinished stock purchase."
+
+[Continue]
+
+[Discard]
+
+If the worker was halfway through a Pawn transaction:
+
+"Welcome back. You have an unfinished pawn transaction."
+
+[Continue]
+
+[Discard]
+
+44.2 DRAFT STATE
+
+A resumable draft may contain:
+
+* Current workflow
+* Current step
+* Item information already entered
+* Selected seller/customer
+* Scanned identifiers
+* Proposed price
+* Retail price
+* Condition
+* Location
+* Notes
+* Validation state
+* Photo references where safely supported
+* Last meaningful screen
+* Last meaningful action
+* Timestamp of last activity
+
+The draft should be stored locally using the offline-first architecture where safe and appropriate.
+
+44.3 DRAFTS ARE NOT TRANSACTIONS
+
+This distinction is critical.
+
+An unfinished draft is NOT a completed business transaction.
+
+Saving a draft must not:
+
+* Complete a sale
+* Pay a seller
+* Create a completed pawn loan
+* Release a pawn
+* Mark an item permanently sold
+* Create a final financial transaction
+* Create compliance records that imply the transaction actually occurred
+* Generate a false transaction history
+
+Final business effects occur only when the actual completion workflow succeeds.
+
+44.4 SENSITIVE INFORMATION
+
+Resumable work must respect security and privacy.
+
+If another employee switches accounts, the new employee must not automatically receive access to sensitive unfinished information belonging to the previous employee.
+
+Sensitive drafts should be associated with the appropriate shop/user/session context.
+
+The system may require the original worker to re-authenticate before continuing sensitive work.
+
+Never expose another customer's private information merely because the previous employee left an unfinished workflow open.
+
+44.5 OFFLINE DRAFTS
+
+Draft continuity must work offline.
+
+If the internet disappears while the worker is halfway through a workflow:
+
+* Keep the work locally.
+* Clearly show that LocalMarket is offline.
+* Do not discard the draft.
+* Do not require internet merely to preserve the draft.
+* Sync appropriate completed data later when connectivity returns.
+
+The worker should never have to remember what they typed just because the internet went down.
+
+45. CURRENT WORK CONTEXT
+
+---
+
+LocalMarket should remember the worker's current context, not only completed database records.
+
+Useful context includes:
+
+* What the worker was doing
+* Which item they were working on
+* Which customer/seller they selected
+* Which workflow they were in
+* What step they reached
+* What needs attention
+* Whether the workflow is complete
+* Whether information is waiting for synchronization
+
+45.1 CONTEXTUAL RETURN
+
+When the worker returns to LocalMarket, the system should prefer useful continuity over starting from a blank screen.
+
+For example:
+
+"Welcome back."
+
+"You were adding Samsung Galaxy S24."
+
+"2 things still need attention."
+
+[Continue]
+
+This should feel natural and calm.
+
+Do not force a long explanation of what happened.
+
+46. OFFLINE-FIRST HUMAN EXPERIENCE
+
+---
+
+Offline operation is a core product requirement.
+
+Workers should know when LocalMarket is offline, but the application should not unnecessarily stop normal permitted work.
+
+Example:
+
+"Working offline — changes will sync automatically when you're back online."
+
+The application should handle synchronization automatically.
+
+Workers should not be expected to understand:
+
+* Sync queues
+* UUID reconciliation
+* RPCs
+* JWT refresh
+* Database conflicts
+* Retry logic
+* IndexedDB
+* Supabase
+* Background synchronization
+
+These are system responsibilities.
+
+46.1 HONEST OFFLINE STATUS
+
+LocalMarket must never claim:
+
+"Synced"
+
+unless the server actually accepted the relevant change.
+
+Use clear states such as:
+
+* Saved on this computer
+* Waiting to sync
+* Syncing
+* Synced
+* Needs attention
+
+When a real conflict occurs, explain what the worker needs to do rather than exposing technical synchronization details.
+
+47. ASSISTANT-LIKE UX PRINCIPLES
+
+---
+
+LocalMarket should feel like a helpful coworker.
+
+The guiding principle is:
+
+"Don't make the worker operate the software. Make the software assist the worker."
+
+LocalMarket should:
+
+* Remember what the worker was doing.
+* Recognize common South African input formats.
+* Reduce unnecessary typing.
+* Recognize identifiers where possible.
+* Detect likely mistakes.
+* Suggest corrections without forcing them.
+* Move the worker directly to errors.
+* Preserve entered information.
+* Preserve unfinished work after interruptions.
+* Work offline.
+* Explain offline state clearly.
+* Hide database complexity.
+* Hide unnecessary legal complexity.
+* Prevent mistakes before they become transactions.
+* Use the simplest useful next action.
+* Never invent missing facts.
+* Never pretend verification succeeded.
+* Never pretend synchronization succeeded.
+* Never bypass authorization or compliance rules.
+
+47.1 THE TARGET FEELING
+
+The target feeling for a normal shop worker is:
+
+"I know what to do."
+
+and ideally:
+
+"Thank God this app makes this easier."
+
+The worker should feel that LocalMarket is helping them complete their real job faster rather than giving them another job of operating complicated software.
+
+48. INTELLIGENT WORKFLOW DECISION RULE
+
+---
+
+Before adding a new workflow step, AI Studio/developers should ask:
+
+1. Does the worker actually need to provide this information?
+2. Can LocalMarket determine it automatically?
+3. Can LocalMarket remember it from previous work?
+4. Can the system recognize the input without asking the worker to select a mode?
+5. Can the system use South African formatting and conventions?
+6. Can a suggestion replace unnecessary typing without forcing a correction?
+7. If something is wrong, can the application take the worker directly to it?
+8. Can the worker's existing work survive interruption?
+9. Can the workflow continue safely offline?
+10. Does the worker understand what is happening?
+11. Is the worker protected from creating an accidental or invalid transaction?
+12. Does the feature genuinely save time?
+
+If a step does not provide meaningful value, remove it.
+
+The default question should be:
+
+"How can LocalMarket do this work for the worker?"
+
+49. DEVELOPMENT ACCEPTANCE RULES FOR INTELLIGENT UX
+
+---
+
+Any new intelligent-assistance feature should be tested against the following:
+
+Input recognition:
+
+* Normal South African inputs are recognized.
+* Equivalent formats are matched correctly.
+* Invalid inputs are rejected appropriately.
+* Suspicious inputs receive useful warnings.
+* The system does not claim verification it did not perform.
+
+Suggestions:
+
+* Suggestions are optional.
+* Original input is preserved until the worker accepts a correction.
+* Suggestions do not interrupt normal work unnecessarily.
+
+Errors:
+
+* The exact problem is identified.
+* Focus/navigation moves to the problem.
+* Existing valid input is preserved.
+* Multiple errors can be corrected sequentially.
+* Completion cannot occur while blocking errors remain.
+
+Continuity:
+
+* Refresh does not unnecessarily destroy work.
+* Application restart does not unnecessarily destroy work.
+* Power loss does not unnecessarily destroy work.
+* Network loss does not destroy drafts.
+* Staff switching does not expose another employee's sensitive draft.
+* Drafts cannot accidentally become completed transactions.
+
+Offline:
+
+* Worker knows they are offline.
+* Permitted work continues.
+* Local work is preserved.
+* Synchronization is automatic where possible.
+* The UI never falsely claims server synchronization.
+
+Security:
+
+* Role permissions remain enforced.
+* Shop isolation remains enforced.
+* Server authority remains authoritative.
+* Sensitive information remains protected.
+* Compliance workflows cannot be bypassed by intelligent assistance.
+
+Performance:
+
+* Intelligent assistance must make the worker faster.
+* Do not introduce unnecessary network requests for simple local validation.
+* Frequently used validation and suggestions should work offline where practical.
+* Do not make a cashier wait for an AI service to perform something that can be determined locally.
+
+The purpose of intelligent assistance is not to make LocalMarket look sophisticated.
+
+The purpose is to make the shop worker's day easier.
