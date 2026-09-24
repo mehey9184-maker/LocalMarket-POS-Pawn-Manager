@@ -1,10 +1,9 @@
 -- ============================================================================
--- PRODUCTION-COMPATIBLE RECONCILED RPCs (20260924120000)
--- Reconciles complete_buy_acquisition, complete_pawn_intake, request_refund,
--- and approve_refund with the actual production database schema.
+-- PRODUCTION HARDENING: BUY, PAWN, SAPS & REFUND INTEGRITY (20260924200000)
+-- Reflects already-applied production hardening in Supabase.
 -- ============================================================================
 
--- 1. PRODUCTION-COMPATIBLE ATOMIC BUY ACQUISITION RPC
+-- 1. HARDENED ATOMIC BUY ACQUISITION RPC
 CREATE OR REPLACE FUNCTION public.complete_buy_acquisition(
     p_transaction_id UUID,
     p_transaction_number TEXT,
@@ -53,6 +52,7 @@ DECLARE
     v_first_item_id UUID := NULL;
     v_first_item_sku TEXT := NULL;
     v_first_item_title TEXT := NULL;
+    v_saps_verification_status TEXT;
     v_cast_condition item_condition;
     v_cast_status item_status;
 BEGIN
@@ -83,7 +83,7 @@ BEGIN
         RAISE EXCEPTION 'Cannot perform acquisition for a different shop branch.';
     END IF;
 
-    -- 3. Verify Seller exists and belongs to shop context
+    -- 3. Verify Seller
     SELECT * INTO v_seller 
     FROM public.sellers 
     WHERE id = p_seller_id;
@@ -95,6 +95,9 @@ BEGIN
     IF v_seller.shop_id IS NOT NULL AND COALESCE(v_caller_profile.role, '') != 'admin' AND v_seller.shop_id IS DISTINCT FROM v_effective_shop_id THEN
         RAISE EXCEPTION 'Seller belongs to a different shop.';
     END IF;
+
+    -- Conditional SAPS verification based on seller verified state
+    v_saps_verification_status := CASE WHEN COALESCE(v_seller.verified, false) THEN 'VERIFIED' ELSE 'PENDING' END;
 
     -- 4. Idempotency Check
     SELECT id INTO v_existing_tx
@@ -172,7 +175,7 @@ BEGIN
             v_cast_status := 'Retail Floor'::item_status;
         END;
 
-        -- Insert or update shop_items
+        -- Insert or update shop_items (NO created_at column)
         INSERT INTO public.shop_items (
             id,
             shop_id,
@@ -217,11 +220,10 @@ BEGIN
             v_image_url,
             v_specs,
             'seller',
-            'verified',
+            LOWER(v_saps_verification_status),
             'Purchased from ' || v_seller.full_name || ' (' || v_seller.id_number || ')',
             v_internal_note,
             auth.uid(),
-            now(),
             now(),
             now()
         )
@@ -231,7 +233,7 @@ BEGIN
             status = EXCLUDED.status,
             updated_at = now();
 
-        -- Insert child item using ACTUAL seller_transaction_items schema
+        -- Insert seller_transaction_items
         INSERT INTO public.seller_transaction_items (
             id,
             shop_id,
@@ -252,7 +254,7 @@ BEGIN
             now()
         );
 
-        -- Insert SAPS register entry
+        -- Insert SAPS register entry with conditional verification status
         v_saps_id := COALESCE((v_item_elem->>'saps_entry_id')::UUID, gen_random_uuid());
         v_saps_entry_no := COALESCE(v_item_elem->>'saps_entry_number', 'SAPS-' || SUBSTRING(v_saps_id::text, 1, 8));
 
@@ -295,14 +297,14 @@ BEGIN
             v_amount_paid,
             p_officer_name,
             p_police_station_ref,
-            'VERIFIED',
+            v_saps_verification_status,
             now(),
             now()
         )
         ON CONFLICT (entry_number) DO NOTHING;
     END LOOP;
 
-    -- 7. Insert Parent Seller Transaction using ACTUAL seller_transactions schema
+    -- 7. Insert Parent Seller Transaction
     INSERT INTO public.seller_transactions (
         id,
         shop_id,
@@ -352,7 +354,8 @@ BEGIN
             'transaction_id', p_transaction_id,
             'seller_id', p_seller_id,
             'items_count', jsonb_array_length(p_items),
-            'total_amount', p_total_amount
+            'total_amount', p_total_amount,
+            'verification_status', v_saps_verification_status
         ),
         'info'
     );
@@ -368,7 +371,7 @@ REVOKE ALL ON FUNCTION public.complete_buy_acquisition(uuid, text, uuid, jsonb, 
 GRANT EXECUTE ON FUNCTION public.complete_buy_acquisition(uuid, text, uuid, jsonb, numeric, text, text, text, text, text, text, text, uuid, jsonb) TO authenticated, service_role;
 
 
--- 2. PRODUCTION-COMPATIBLE ATOMIC PAWN INTAKE RPC
+-- 2. HARDENED ATOMIC PAWN INTAKE RPC
 CREATE OR REPLACE FUNCTION public.complete_pawn_intake(
     p_loan_id UUID,
     p_ticket_number TEXT,
@@ -417,6 +420,7 @@ DECLARE
     v_saps_entry_no TEXT;
     v_dup_item RECORD;
     v_item_serial TEXT;
+    v_saps_verification_status TEXT;
     v_cast_condition item_condition;
     v_cast_item_status item_status;
 BEGIN
@@ -459,6 +463,9 @@ BEGIN
     IF v_customer.shop_id IS NOT NULL AND COALESCE(v_caller_profile.role, '') != 'admin' AND v_customer.shop_id IS DISTINCT FROM v_effective_shop_id THEN
         RAISE EXCEPTION 'Customer belongs to a different shop.';
     END IF;
+
+    -- Conditional SAPS verification status based on customer verified state
+    v_saps_verification_status := CASE WHEN COALESCE(v_customer.verified, false) THEN 'VERIFIED' ELSE 'PENDING' END;
 
     -- 4. Idempotency Check
     SELECT id INTO v_existing_loan
@@ -504,7 +511,7 @@ BEGIN
         v_cast_item_status := 'Vault Hold'::item_status;
     END;
 
-    -- 6. Insert / Update shop_items
+    -- 6. Insert / Update shop_items (NO created_at column)
     INSERT INTO public.shop_items (
         id,
         shop_id,
@@ -551,7 +558,6 @@ BEGIN
         'active',
         p_internal_note,
         auth.uid(),
-        now(),
         now(),
         now()
     )
@@ -667,7 +673,7 @@ BEGIN
         p_principal,
         p_officer_name,
         p_police_station_ref,
-        'VERIFIED',
+        v_saps_verification_status,
         now(),
         now()
     )
@@ -688,7 +694,8 @@ BEGIN
             'loan_id', p_loan_id,
             'ticket_number', p_ticket_number,
             'customer_id', p_customer_id,
-            'principal', p_principal
+            'principal', p_principal,
+            'verification_status', v_saps_verification_status
         ),
         'info'
     );
@@ -704,7 +711,7 @@ REVOKE ALL ON FUNCTION public.complete_pawn_intake(uuid, text, uuid, uuid, text,
 GRANT EXECUTE ON FUNCTION public.complete_pawn_intake(uuid, text, uuid, uuid, text, text, text, text, text, text, text, text, text, text, text, numeric, numeric, numeric, numeric, numeric, numeric, date, date, integer, text, text, text, text, uuid, text, jsonb, uuid) TO authenticated, service_role;
 
 
--- 3. PRODUCTION-COMPATIBLE REQUEST REFUND RPC
+-- 3. HARDENED REQUEST REFUND RPC WITH CUMULATIVE QUANTITY & AMOUNT VALIDATION
 CREATE OR REPLACE FUNCTION public.request_refund(
     p_receipt_number TEXT,
     p_item_id UUID,
@@ -724,6 +731,14 @@ DECLARE
     v_item RECORD;
     v_refund_id UUID;
     v_existing_pending RECORD;
+    v_cart_elem JSONB;
+    v_cart_item_id UUID;
+    v_sold_quantity INT := 0;
+    v_sold_price NUMERIC(12,2) := 0.00;
+    v_sold_total_amount NUMERIC(12,2) := 0.00;
+    v_found_in_sale BOOLEAN := false;
+    v_prior_refunded_qty INT := 0;
+    v_prior_refunded_amt NUMERIC(12,2) := 0.00;
 BEGIN
     IF auth.uid() IS NULL THEN
         RAISE EXCEPTION 'Authentication required.';
@@ -746,7 +761,7 @@ BEGIN
         RAISE EXCEPTION 'Refund amount cannot be negative.';
     END IF;
 
-    -- Verify sale receipt
+    -- Verify sale receipt exists in current shop
     SELECT * INTO v_sale
     FROM public.sales
     WHERE receipt_number = p_receipt_number AND shop_id = v_user_shop_id;
@@ -755,7 +770,11 @@ BEGIN
         RAISE EXCEPTION 'Receipt % not found in current branch.', p_receipt_number;
     END IF;
 
-    -- Verify item
+    IF COALESCE(v_sale.status, 'Completed') != 'Completed' THEN
+        RAISE EXCEPTION 'Sale receipt % is not in Completed status.', p_receipt_number;
+    END IF;
+
+    -- Verify item exists in shop inventory
     SELECT * INTO v_item
     FROM public.shop_items
     WHERE id = p_item_id AND shop_id = v_user_shop_id;
@@ -768,7 +787,64 @@ BEGIN
         RAISE EXCEPTION 'Item "%" is not currently recorded as Sold.', v_item.title;
     END IF;
 
-    -- Check for existing pending refund
+    -- Extract sold item quantity and price from v_sale.items JSONB
+    FOR v_cart_elem IN SELECT * FROM jsonb_array_elements(v_sale.items) LOOP
+        v_cart_item_id := (v_cart_elem->'item'->>'id')::UUID;
+        IF v_cart_item_id IS NULL THEN
+            v_cart_item_id := (v_cart_elem->>'id')::UUID;
+        END IF;
+
+        IF v_cart_item_id = p_item_id THEN
+            v_found_in_sale := true;
+            v_sold_quantity := COALESCE((v_cart_elem->>'quantity')::INTEGER, 1);
+            v_sold_price := COALESCE(
+                (v_cart_elem->>'overridePrice')::NUMERIC,
+                (v_cart_elem->'item'->>'retailPrice')::NUMERIC,
+                (v_cart_elem->>'retailPrice')::NUMERIC,
+                0.00
+            );
+            EXIT;
+        END IF;
+    END LOOP;
+
+    IF NOT v_found_in_sale THEN
+        RAISE EXCEPTION 'Item % was not part of sale receipt %.', p_item_id, p_receipt_number;
+    END IF;
+
+    v_sold_total_amount := v_sold_price * v_sold_quantity;
+
+    -- Validate quantity and amount
+    IF p_quantity > v_sold_quantity THEN
+        RAISE EXCEPTION 'Requested refund quantity (%) exceeds quantity sold (%).', p_quantity, v_sold_quantity;
+    END IF;
+
+    IF p_refund_amount > v_sold_total_amount THEN
+        RAISE EXCEPTION 'Requested refund amount (R%) exceeds sold item total (R%).', p_refund_amount, v_sold_total_amount;
+    END IF;
+
+    -- Calculate cumulative previous refunds for this receipt and item
+    SELECT 
+        COALESCE(SUM(quantity), 0),
+        COALESCE(SUM(refund_amount), 0)
+    INTO 
+        v_prior_refunded_qty,
+        v_prior_refunded_amt
+    FROM public.refund_requests
+    WHERE receipt_number = p_receipt_number 
+      AND item_id = p_item_id 
+      AND status IN ('Pending Approval', 'Approved');
+
+    IF (v_prior_refunded_qty + p_quantity) > v_sold_quantity THEN
+        RAISE EXCEPTION 'Cumulative refund quantity (%) exceeds original quantity sold (%).', 
+            (v_prior_refunded_qty + p_quantity), v_sold_quantity;
+    END IF;
+
+    IF (v_prior_refunded_amt + p_refund_amount) > v_sold_total_amount THEN
+        RAISE EXCEPTION 'Cumulative refund amount (R%) exceeds original item total (R%).', 
+            (v_prior_refunded_amt + p_refund_amount), v_sold_total_amount;
+    END IF;
+
+    -- Block duplicate pending refund
     SELECT id INTO v_existing_pending
     FROM public.refund_requests
     WHERE receipt_number = p_receipt_number AND item_id = p_item_id AND status = 'Pending Approval'
@@ -848,7 +924,7 @@ REVOKE ALL ON FUNCTION public.request_refund(text, uuid, integer, numeric, text)
 GRANT EXECUTE ON FUNCTION public.request_refund(text, uuid, integer, numeric, text) TO authenticated, service_role;
 
 
--- 4. PRODUCTION-COMPATIBLE APPROVE REFUND RPC
+-- 4. HARDENED APPROVE REFUND RPC WITH SELF-APPROVAL PROHIBITION & SOLD STATE REQUIREMENT
 CREATE OR REPLACE FUNCTION public.approve_refund(
     p_refund_id UUID,
     p_approved BOOLEAN,
@@ -891,9 +967,9 @@ BEGIN
         RAISE EXCEPTION 'Refund request is already %.', v_req.status;
     END IF;
 
-    -- Self-approval prohibition
+    -- Prohibition of self-approval
     IF v_req.requested_by = auth.uid() THEN
-        RAISE EXCEPTION 'Self-approval is not permitted. Manager or Owner approval required.';
+        RAISE EXCEPTION 'Self-approval is prohibited. Manager or Owner approval required.';
     END IF;
 
     IF p_approved THEN
@@ -902,13 +978,21 @@ BEGIN
         WHERE id = v_req.item_id AND shop_id = v_user_shop_id
         FOR UPDATE;
 
-        IF v_item.id IS NOT NULL THEN
-            UPDATE public.shop_items
-            SET status = 'Retail Floor'::item_status,
-                updated_at = now()
-            WHERE id = v_req.item_id;
+        IF v_item.id IS NULL THEN
+            RAISE EXCEPTION 'Inventory item not found.';
         END IF;
 
+        IF v_item.status != 'Sold' THEN
+            RAISE EXCEPTION 'Item "%" is not currently in Sold status (Current: %). Cannot approve refund.', v_item.title, v_item.status;
+        END IF;
+
+        -- Restore item to Retail Floor
+        UPDATE public.shop_items
+        SET status = 'Retail Floor'::item_status,
+            updated_at = now()
+        WHERE id = v_req.item_id;
+
+        -- Mark refund request as Approved
         UPDATE public.refund_requests
         SET status = 'Approved',
             approved_by = auth.uid(),
@@ -916,6 +1000,7 @@ BEGIN
             updated_at = now()
         WHERE id = p_refund_id;
 
+        -- Audit log (original sale in public.sales remains completely immutable)
         INSERT INTO public.system_logs (
             shop_id,
             actor_id,
@@ -944,6 +1029,7 @@ BEGIN
             'item_restored', true
         );
     ELSE
+        -- Rejected
         UPDATE public.refund_requests
         SET status = 'Rejected',
             approved_by = auth.uid(),

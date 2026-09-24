@@ -376,10 +376,16 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return { success: false, error: res.error || 'Server rejected refund request.' };
       }
 
-      // Save in Dexie on success
-      await db.refundRequests.put(refundRecord);
+      // TASK 1: Authoritative server refund ID becomes the local record ID
+      const authoritativeId = res.refundId || refundId;
+      const finalRefundRecord: RefundRequest = {
+        ...refundRecord,
+        id: authoritativeId
+      };
+
+      await db.refundRequests.put(finalRefundRecord);
       await refreshRemoteRefunds();
-      return { success: true, refundId: res.refundId || refundId };
+      return { success: true, refundId: authoritativeId };
     } else {
       // Offline mode
       await db.refundRequests.put(refundRecord);
@@ -429,28 +435,57 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!res.success) {
         return { success: false, error: res.error || 'Refund approval was rejected by backend server.' };
       }
-    }
 
-    // Update local Dexie state
-    await db.transaction('rw', db.refundRequests, db.inventory, async () => {
-      await db.refundRequests.update(req.id, {
-        status: newStatus,
-        approvedBy: user?.id,
-        approvedByName: approverName,
-        rejectionReason: !params.approved ? params.note : undefined,
-        updatedAt: new Date().toISOString()
+      // Update local Dexie state on success
+      await db.transaction('rw', db.refundRequests, db.inventory, async () => {
+        await db.refundRequests.update(req.id, {
+          status: newStatus,
+          approvedBy: user?.id,
+          approvedByName: approverName,
+          rejectionReason: !params.approved ? params.note : undefined,
+          updatedAt: new Date().toISOString()
+        });
+
+        if (params.approved) {
+          await db.inventory.update(req.itemId, {
+            status: 'Retail Floor'
+          });
+        }
       });
 
-      if (params.approved) {
-        // Restore item back to Retail Floor
-        await db.inventory.update(req.itemId, {
-          status: 'Retail Floor'
+      await refreshRemoteRefunds();
+      return { success: true };
+    } else {
+      // TASK 3: Offline mode - update local Dexie state AND queue durable sync action for approval
+      await db.transaction('rw', db.refundRequests, db.inventory, async () => {
+        await db.refundRequests.update(req.id, {
+          status: newStatus,
+          approvedBy: user?.id,
+          approvedByName: approverName,
+          rejectionReason: !params.approved ? params.note : undefined,
+          updatedAt: new Date().toISOString()
         });
-      }
-    });
 
-    await refreshRemoteRefunds();
-    return { success: true };
+        if (params.approved) {
+          await db.inventory.update(req.itemId, {
+            status: 'Retail Floor'
+          });
+        }
+      });
+
+      await queueSyncAction(
+        'refund_approval',
+        params.refundId,
+        params.approved ? 'approve' : 'reject',
+        {
+          refundId: params.refundId,
+          approved: params.approved,
+          note: params.note
+        }
+      );
+
+      return { success: true };
+    }
   };
 
   const recordSale = async (saleData: Omit<SaleTransaction, 'id'>) => {

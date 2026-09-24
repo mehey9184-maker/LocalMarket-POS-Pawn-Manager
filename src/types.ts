@@ -216,9 +216,9 @@ export interface BusinessRules {
 
 export interface SyncLog {
   id?: number;
-  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules' | 'sellers' | 'sellerTransactions' | 'sellerReversals' | 'refunds' | 'shopProfile' | 'buyAcquisition' | 'pawnIntake';
+  entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules' | 'sellers' | 'sellerTransactions' | 'sellerReversals' | 'refunds' | 'refund_approval' | 'shopProfile' | 'buyAcquisition' | 'pawnIntake';
   entityId: string;
-  action: 'create' | 'update' | 'delete';
+  action: 'create' | 'update' | 'delete' | 'approve' | 'reject';
   payload: any;
   status: 'pending' | 'syncing' | 'failed' | 'completed';
   error?: string;

@@ -209,8 +209,20 @@ export const SyncService = {
           break;
         }
 
+        case 'refund_approval':
         case 'refunds': {
-          if (log.action === 'create') {
+          if (log.action === 'approve' || log.action === 'reject') {
+            const isApproved = log.action === 'approve' || log.payload?.approved === true;
+            const approvalRes = await refundsApi.approveRefund({
+              refundId: log.payload?.refundId || log.entityId,
+              approved: isApproved,
+              note: log.payload?.note
+            });
+
+            if (!approvalRes.success) {
+              throw new Error(approvalRes.error || 'Server rejected offline refund approval/rejection');
+            }
+          } else if (log.action === 'create') {
             const refundRes = await refundsApi.requestRefund({
               receiptNumber: log.payload.receiptNumber,
               itemId: log.payload.itemId,
@@ -218,8 +230,35 @@ export const SyncService = {
               refundAmount: log.payload.refundAmount,
               reason: log.payload.reason
             });
+
             if (!refundRes.success) {
               throw new Error(refundRes.error || 'Server rejected offline refund request');
+            }
+
+            // TASK 2: Reconcile server-returned refundId with local Dexie record
+            if (refundRes.refundId && refundRes.refundId !== log.entityId) {
+              const oldId = log.entityId;
+              const serverId = refundRes.refundId;
+
+              const localReq = await db.refundRequests.get(oldId);
+              if (localReq) {
+                await db.refundRequests.delete(oldId);
+                await db.refundRequests.put({
+                  ...localReq,
+                  id: serverId
+                });
+              }
+
+              // Update any subsequent pending sync logs referencing oldId
+              const pendingLogs = await db.syncLogs.where('entityId').equals(oldId).toArray();
+              for (const pLog of pendingLogs) {
+                if (pLog.id && pLog.id !== log.id) {
+                  await db.syncLogs.update(pLog.id, {
+                    entityId: serverId,
+                    payload: pLog.payload ? { ...pLog.payload, refundId: serverId } : pLog.payload
+                  });
+                }
+              }
             }
           }
           break;
