@@ -220,35 +220,29 @@ export const AuthPage: React.FC = () => {
               )}
             </form>
 
-            <div className="mt-6 pt-5 border-t border-[#282727]/60 text-center">
-              <p className="text-xs text-[#a58b83]">
+            <div className="mt-6 pt-5 border-t border-gray-100 text-center">
+              <p className="text-xs text-gray-500">
                 Staff operator accounts are managed by authorized store owners and managers.
               </p>
             </div>
           </div>
 
-          <div className="mt-6 flex items-center justify-center gap-6 text-[11px] text-[#a58b83]/80 font-mono">
-            <span className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[#4edea3] text-sm">lock</span>
-              Encrypted Session
-            </span>
+          <div className="mt-6 flex items-center justify-center gap-6 text-[11px] text-gray-400">
+            <span>Encrypted Session</span>
             <span>•</span>
-            <span className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[#4edea3] text-sm">cloud_done</span>
-              Multi-Branch Sync
-            </span>
+            <span>Multi-Branch Sync</span>
           </div>
         </div>
       </main>
 
-      <footer className="w-full border-t border-[#282727]/30 py-5">
+      <footer className="w-full border-t border-gray-100 py-5">
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
-          <div className="flex items-center gap-2 text-[11px] font-mono text-[#a58b83]">
+          <div className="flex items-center gap-2 text-[11px] text-gray-500">
             <span>NCR & Second-Hand Goods Workflow Ready</span>
             <span>•</span>
             <span>SAPS Form 21 Register Support</span>
           </div>
-          <p className="text-[11px] text-[#a58b83]">
+          <p className="text-[11px] text-gray-500">
             © {new Date().getFullYear()} LocalMarket POS.
           </p>
         </div>
