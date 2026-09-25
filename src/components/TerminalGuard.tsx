@@ -66,7 +66,7 @@ export const TerminalGuard: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <>
       {isOfflineRevalidation && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-center text-xs text-amber-300 flex items-center justify-center gap-2">
+        <div className="bg-amber-100 border-b border-amber-200 px-4 py-2 text-center text-xs text-amber-900 flex items-center justify-center gap-2 font-medium">
           <WifiOff className="w-3.5 h-3.5" />
           <span>You’re offline — you can keep working. Changes will sync when connection returns.</span>
         </div>

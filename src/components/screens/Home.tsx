@@ -24,7 +24,7 @@ import {
 
 export const Home: React.FC = () => {
   const { setActiveTab, shopProfile } = useApp();
-  const { user, hasPermission } = useAuth();
+  const { user, hasPermission, isAtLeastSeniorCashier } = useAuth();
   const { inventory } = useInventory();
   const { loans } = useLoans();
   const { salesHistory } = useSales();
@@ -189,135 +189,141 @@ export const Home: React.FC = () => {
               </div>
 
               {/* Approval & Pipeline */}
-              <div className="p-6 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                    <User className="w-5 h-5" />
+              {isAtLeastSeniorCashier && (
+                <div className="p-6 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full">
+                      Management
+                    </span>
                   </div>
-                  <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full">
-                    Management
-                  </span>
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-gray-900">Approval Pipeline</h3>
-                </div>
-                <div className="space-y-2 text-xs">
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200/60">
-                    <span className="font-medium text-gray-700">Pending Forfeitures</span>
-                    <span className="font-bold text-gray-900 font-mono">{pendingApproval.length}</span>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">Approval Pipeline</h3>
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200/60">
-                    <span className="font-medium text-gray-700">Ready for Retail</span>
-                    <span className="font-bold text-gray-900 font-mono">{readyForRetail.length}</span>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200/60">
+                      <span className="font-medium text-gray-700">Pending Forfeitures</span>
+                      <span className="font-bold text-gray-900 font-mono">{pendingApproval.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200/60">
+                      <span className="font-medium text-gray-700">Ready for Retail</span>
+                      <span className="font-bold text-gray-900 font-mono">{readyForRetail.length}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Vault At-a-Glance Interaction - QUIETED */}
-            <div className="p-6 rounded-2xl bg-white border border-gray-200 shadow-xs relative overflow-hidden">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 flex items-center justify-center">
-                    <Lock className="w-5 h-5" />
+            {isAtLeastSeniorCashier && (
+              <div className="p-6 rounded-2xl bg-white border border-gray-200 shadow-xs relative overflow-hidden">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 flex items-center justify-center">
+                      <Lock className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-900">Vault Summary</h3>
+                      <p className="text-[10px] text-gray-500 font-mono">Pledge Security & Forfeiture Control</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-900">Vault Summary</h3>
-                    <p className="text-[10px] text-gray-500 font-mono">Pledge Security & Forfeiture Control</p>
-                  </div>
+                  <button 
+                    onClick={() => setActiveTab('vault')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-white text-[10px] font-bold uppercase tracking-widest transition"
+                  >
+                    Enter Vault
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
                 </div>
-                <button 
-                  onClick={() => setActiveTab('vault')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-white text-[10px] font-bold uppercase tracking-widest transition"
-                >
-                  Enter Vault
-                  <ChevronRight className="w-3 h-3" />
-                </button>
-              </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
-                  <span className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Normal</span>
-                  <p className="text-xl font-black text-gray-900 font-mono">{activeLoans.length - expiringSoon.length - overdueLoans.length}</p>
-                </div>
-                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
-                  <span className="text-[9px] font-bold text-amber-600 uppercase block mb-1">Due Soon</span>
-                  <p className="text-xl font-black text-amber-700 font-mono">{expiringSoon.filter(l => l.expiryDate > today).length}</p>
-                </div>
-                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
-                  <span className="text-[9px] font-bold text-orange-600 uppercase block mb-1">Due Today</span>
-                  <p className="text-xl font-black text-orange-700 font-mono">{expiringSoon.filter(l => l.expiryDate === today).length}</p>
-                </div>
-                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
-                  <span className="text-[9px] font-bold text-red-600 uppercase block mb-1">Overdue</span>
-                  <p className="text-xl font-black text-red-700 font-mono">{overdueLoans.length}</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
+                    <span className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Normal</span>
+                    <p className="text-xl font-black text-gray-900 font-mono">{activeLoans.length - expiringSoon.length - overdueLoans.length}</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
+                    <span className="text-[9px] font-bold text-amber-600 uppercase block mb-1">Due Soon</span>
+                    <p className="text-xl font-black text-amber-700 font-mono">{expiringSoon.filter(l => l.expiryDate > today).length}</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
+                    <span className="text-[9px] font-bold text-orange-600 uppercase block mb-1">Due Today</span>
+                    <p className="text-xl font-black text-orange-700 font-mono">{expiringSoon.filter(l => l.expiryDate === today).length}</p>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
+                    <span className="text-[9px] font-bold text-red-600 uppercase block mb-1">Overdue</span>
+                    <p className="text-xl font-black text-red-700 font-mono">{overdueLoans.length}</p>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* 4. TODAY'S BUSINESS SUMMARY (RIGHT) */}
-          <aside className="space-y-4">
-            <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Performance</h2>
-            
-            <div className="rounded-2xl bg-white border border-gray-200 shadow-xs overflow-hidden">
-              <div className="p-6 space-y-5">
-                <div>
-                  <p className="text-xs font-medium text-gray-500">Net Retail Revenue</p>
-                  <p className="text-3xl font-bold text-gray-900 font-mono mt-0.5">
-                    R {todayTotals.salesValue.toLocaleString()}
-                  </p>
-                </div>
-
-                <div className="h-px bg-gray-100" />
-
-                <div className="space-y-3.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                        <TrendingUp className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-gray-900">Retail Sales</p>
-                      </div>
-                    </div>
-                    <span className="font-bold text-gray-900 font-mono text-sm">{todayTotals.sales}</span>
+          {isAtLeastSeniorCashier && (
+            <aside className="space-y-4">
+              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Performance</h2>
+              
+              <div className="rounded-2xl bg-white border border-gray-200 shadow-xs overflow-hidden">
+                <div className="p-6 space-y-5">
+                  <div>
+                    <p className="text-xs font-medium text-gray-500">Net Retail Revenue</p>
+                    <p className="text-3xl font-bold text-gray-900 font-mono mt-0.5">
+                      R {todayTotals.salesValue.toLocaleString()}
+                    </p>
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-orange-50 text-[#C85A32] flex items-center justify-center">
-                        <ArrowRightLeft className="w-4 h-4" />
+                  <div className="h-px bg-gray-100" />
+
+                  <div className="space-y-3.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                          <TrendingUp className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900">Retail Sales</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-semibold text-gray-900">Stock Inflow</p>
-                      </div>
+                      <span className="font-bold text-gray-900 font-mono text-sm">{todayTotals.sales}</span>
                     </div>
-                    <span className="font-bold text-gray-900 font-mono text-sm">{todayTotals.buys}</span>
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-orange-50 text-[#C85A32] flex items-center justify-center">
+                          <ArrowRightLeft className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900">Stock Inflow</p>
+                        </div>
+                      </div>
+                      <span className="font-bold text-gray-900 font-mono text-sm">{todayTotals.buys}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                          <Lock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900">Pawn Pledges</p>
+                        </div>
+                      </div>
+                      <span className="font-bold text-gray-900 font-mono text-sm">{todayTotals.pawns}</span>
+                    </div>
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                        <Lock className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-gray-900">Pawn Pledges</p>
-                      </div>
-                    </div>
-                    <span className="font-bold text-gray-900 font-mono text-sm">{todayTotals.pawns}</span>
+                  <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-200/60 space-y-1">
+                    <span className="text-[11px] font-medium text-gray-500">Cash Payouts</span>
+                    <p className="text-lg font-bold text-gray-900 font-mono">
+                      R {todayTotals.payouts.toLocaleString()}
+                    </p>
                   </div>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-200/60 space-y-1">
-                  <span className="text-[11px] font-medium text-gray-500">Cash Payouts</span>
-                  <p className="text-lg font-bold text-gray-900 font-mono">
-                    R {todayTotals.payouts.toLocaleString()}
-                  </p>
                 </div>
               </div>
-            </div>
-          </aside>
+            </aside>
+          )}
         </div>
       </div>
     </div>

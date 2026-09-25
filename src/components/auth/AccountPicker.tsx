@@ -10,7 +10,8 @@ export const AccountPicker: React.FC = () => {
     users, 
     profile: currentProfile, 
     isAccountPickerOpen, 
-    setIsAccountPickerOpen
+    setIsAccountPickerOpen,
+    logout
   } = useAuth();
 
   const { showToast } = useApp();
@@ -202,8 +203,15 @@ export const AccountPicker: React.FC = () => {
             </div>
 
             <button
+              onClick={() => { setIsAccountPickerOpen(false); logout(); }}
+              className="mt-6 text-xs text-red-600 hover:text-red-700 font-semibold uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
+            >
+              Sign Out / Start Over
+            </button>
+
+            <button
               onClick={() => setIsAccountPickerOpen(false)}
-              className="mt-12 text-sm text-gray-500 hover:text-gray-900 transition-colors"
+              className="mt-6 text-sm text-gray-500 hover:text-gray-900 transition-colors"
             >
               Cancel and return to terminal
             </button>

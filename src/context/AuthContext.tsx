@@ -251,7 +251,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     
     // Standard Cashier defaults
-    const cashierDefaults: (keyof Permissions)[] = ['sales'];
+    const cashierDefaults: (keyof Permissions)[] = ['sales', 'inventory', 'pawn', 'sellerAcquisitions'];
     return cashierDefaults.includes(permission);
   };
 
