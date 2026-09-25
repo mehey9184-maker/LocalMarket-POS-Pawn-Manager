@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto';
 import { runMarketIntelligenceTests } from './marketIntelligence.test';
 import { runRsaIdScannerTests } from './rsaIdScanner.test';
 import { runExternalProviderManagerTests } from './externalProviderManager.test';

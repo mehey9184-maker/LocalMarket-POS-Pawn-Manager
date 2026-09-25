@@ -336,9 +336,11 @@ export const SyncService = {
    */
   async processAllPendingSync(
     shopId?: string,
-    onProgress?: (current: number, total: number, entity: string) => void
+    onProgress?: (current: number, total: number, entity: string) => void,
+    trickleDelayMs = 120
   ): Promise<{ processed: number; successful: number; failed: number }> {
-    if (!isSupabaseConfigured() || !navigator.onLine) {
+    const isOnline = typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean' ? navigator.onLine : true;
+    if (!isSupabaseConfigured() || !isOnline) {
       return { processed: 0, successful: 0, failed: 0 };
     }
 
@@ -371,8 +373,10 @@ export const SyncService = {
         failed++;
       }
 
-      // Trickle delay: 120ms between sync actions to avoid rate limits
-      await new Promise(resolve => setTimeout(resolve, 120));
+      // Trickle delay: 120ms default between sync actions to avoid rate limits
+      if (trickleDelayMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, trickleDelayMs));
+      }
     }
 
     return { processed: total, successful, failed };
