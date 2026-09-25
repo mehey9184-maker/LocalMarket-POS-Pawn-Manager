@@ -708,6 +708,131 @@ export async function runOfflineQueueSyncTests() {
     assert(allLogsCount === 1, `Test 10: Total log count should remain exactly 1, got ${allLogsCount}`);
     console.log('[PASS] Regression Test 10: Duplicate SyncLog operations prevention verified');
 
+    // ---------------------------------------------------------
+    // Regression State-Machine Test A — Synthetic entity ID status transition
+    // ---------------------------------------------------------
+    console.log('[StateMachine Test A] Verifying synthetic entity ID does not remain stuck in syncing...');
+    await db.syncLogs.clear();
+    await db.syncLogs.add({
+      id: 11111,
+      entityType: 'customers',
+      entityId: 'CUST-005', // Synthetic!
+      action: 'create',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+      payload: {}
+    });
+
+    await SyncService.processAllPendingSync(crypto.randomUUID(), undefined, 0);
+    const logA = await db.syncLogs.get(11111);
+    assert(logA?.status === 'failed', `Test A: Expected status 'failed', got '${logA?.status}'`);
+    assert(logA?.error?.includes('DETERMINISTIC_PERMANENT') === true, 'Test A: Expected DETERMINISTIC_PERMANENT error');
+    console.log('[PASS] StateMachine Test A: Synthetic entity ID successfully failed and not stuck in syncing');
+
+    // ---------------------------------------------------------
+    // Regression State-Machine Test B — Nested synthetic customer ID
+    // ---------------------------------------------------------
+    console.log('[StateMachine Test B] Verifying nested synthetic customer ID is failed and not stuck in syncing...');
+    await db.syncLogs.clear();
+    await db.syncLogs.add({
+      id: 22222,
+      entityType: 'pawnIntake',
+      entityId: crypto.randomUUID(),
+      action: 'create',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+      payload: {
+        loanId: crypto.randomUUID(),
+        ticketNumber: 'TKT-TEST-99',
+        customerId: 'CUST-005', // Synthetic nested customer ID!
+        principal: 500
+      }
+    });
+
+    await SyncService.processAllPendingSync(crypto.randomUUID(), undefined, 0);
+    const logB = await db.syncLogs.get(22222);
+    assert(logB?.status === 'failed', `Test B: Expected status 'failed', got '${logB?.status}'`);
+    assert(logB?.error?.includes('DETERMINISTIC_PERMANENT') === true, 'Test B: Expected DETERMINISTIC_PERMANENT error');
+    console.log('[PASS] StateMachine Test B: Nested synthetic ID correctly failed and not stuck in syncing');
+
+    // ---------------------------------------------------------
+    // Regression State-Machine Test C — Missing shop context
+    // ---------------------------------------------------------
+    console.log('[StateMachine Test C] Verifying missing shop context is failed and not stuck in syncing...');
+    await db.syncLogs.clear();
+    const sellerUuid = crypto.randomUUID();
+    await db.syncLogs.add({
+      id: 33333,
+      entityType: 'sellers',
+      entityId: sellerUuid,
+      action: 'create',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+      payload: { id: sellerUuid, fullName: 'Seller Test No Shop', idNumber: '950202 5012 08 5', mobile: '+27 72 999 0000' }
+    });
+
+    await SyncService.processAllPendingSync(undefined, undefined, 0);
+    const logC = await db.syncLogs.get(33333);
+    assert(logC?.status === 'failed', `Test C: Expected status 'failed', got '${logC?.status}'`);
+    assert(logC?.error?.includes('DETERMINISTIC_RECOVERABLE') === true, 'Test C: Expected DETERMINISTIC_RECOVERABLE error');
+    console.log('[PASS] StateMachine Test C: Missing shop context successfully failed and not stuck in syncing');
+
+    // ---------------------------------------------------------
+    // Regression State-Machine Test D — Transient failure retryability
+    // ---------------------------------------------------------
+    console.log('[StateMachine Test D] Verifying transient failure remains retryable and can later complete...');
+    await db.syncLogs.clear();
+    const transCustId = crypto.randomUUID();
+    await db.syncLogs.add({
+      id: 44444,
+      entityType: 'customers',
+      entityId: transCustId,
+      action: 'create',
+      status: 'failed',
+      error: '503 Service Unavailable (Transient Error)',
+      createdAt: new Date().toISOString(),
+      retryCount: 1,
+      payload: { id: transCustId, fullName: 'Transient Retry SM Test', idNumber: '890203 5012 08 3', mobile: '+27 82 222 3333' }
+    });
+
+    await attachMockFetchAndSession(() => new Response(JSON.stringify({ error: 'Still failing' }), { status: 500 }));
+    await SyncService.processAllPendingSync(crypto.randomUUID(), undefined, 0);
+    const logD1 = await db.syncLogs.get(44444);
+    assert(logD1?.status === 'failed', `Test D: Expected status 'failed' after second fail, got '${logD1?.status}'`);
+    assert(logD1?.retryCount === 2, `Test D: Expected retryCount 2, got ${logD1?.retryCount}`);
+
+    await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    await SyncService.processAllPendingSync(crypto.randomUUID(), undefined, 0);
+    const logD2 = await db.syncLogs.get(44444);
+    assert(logD2?.status === 'completed', `Test D: Expected status 'completed', got '${logD2?.status}'`);
+    console.log('[PASS] StateMachine Test D: Transient failure successfully retried and completed');
+
+    // ---------------------------------------------------------
+    // Regression State-Machine Test E — Standard success completion
+    // ---------------------------------------------------------
+    console.log('[StateMachine Test E] Verifying successful sync becomes completed...');
+    await db.syncLogs.clear();
+    const successCustId = crypto.randomUUID();
+    await db.syncLogs.add({
+      id: 55555,
+      entityType: 'customers',
+      entityId: successCustId,
+      action: 'create',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+      payload: { id: successCustId, fullName: 'Success Test', idNumber: '910303 5012 08 2', mobile: '+27 83 222 4444' }
+    });
+
+    await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    await SyncService.processAllPendingSync(crypto.randomUUID(), undefined, 0);
+    const logE = await db.syncLogs.get(55555);
+    assert(logE?.status === 'completed', `Test E: Expected status 'completed', got '${logE?.status}'`);
+    console.log('[PASS] StateMachine Test E: Standard success correctly transitioned to completed');
+
   } finally {
     globalThis.fetch = originalFetch;
   }

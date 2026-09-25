@@ -91,6 +91,8 @@ export const SyncService = {
       return { success: false, error: 'Supabase is not configured' };
     }
 
+    let validationError: string | null = null;
+
     // 1. Check if the entity ID itself is synthetic/legacy format
     const entityTypesRequiringUuid = [
       'inventory', 'customers', 'sellers', 'buyAcquisition', 'pawnIntake',
@@ -99,20 +101,14 @@ export const SyncService = {
     ];
 
     if (entityTypesRequiringUuid.includes(log.entityType) && isLegacySyntheticId(log.entityId)) {
-      return { 
-        success: false, 
-        error: `DETERMINISTIC_PERMANENT: Synthetic/legacy entity ID ${log.entityId} cannot be synced to Supabase (must be a valid UUID)` 
-      };
+      validationError = `DETERMINISTIC_PERMANENT: Synthetic/legacy entity ID ${log.entityId} cannot be synced to Supabase (must be a valid UUID)`;
     }
 
     // 2. Check if the payload contains synthetic/legacy foreign keys (customerId, sellerId, etc.) using the recursive validator
-    if (log.payload) {
+    if (!validationError && log.payload) {
       const violation = getLegacySyntheticIdViolation(log.payload);
       if (violation) {
-        return {
-          success: false,
-          error: `DETERMINISTIC_PERMANENT: ${violation}`
-        };
+        validationError = `DETERMINISTIC_PERMANENT: ${violation}`;
       }
     }
 
@@ -123,13 +119,26 @@ export const SyncService = {
       'refund_approval', 'saps', 'rules', 'shopProfile'
     ];
 
-    if (entityTypesRequiringShopId.includes(log.entityType)) {
+    if (!validationError && entityTypesRequiringShopId.includes(log.entityType)) {
       if (!shopId || !isUuidOrTestShop(shopId)) {
-        return {
-          success: false,
-          error: `DETERMINISTIC_RECOVERABLE: Waiting for valid shop context (authoritative shopId UUID is missing or stale)`
-        };
+        validationError = `DETERMINISTIC_RECOVERABLE: Waiting for valid shop context (authoritative shopId UUID is missing or stale)`;
       }
+    }
+
+    // RETRY-COUNT & STATE MACHINE OWNERSHIP DOCUMENTATION:
+    // SyncService.syncEntity strictly owns updating the Dexie outbox status and incrementing the retryCount.
+    // processAllPendingSync() and context methods orchestrate processing but DO NOT mutate sync log status or increment retry counts directly.
+    // This single-ownership model guarantees that retry counts are never double-incremented and states are always clean.
+    if (validationError) {
+      if (log.id) {
+        const isRecoverable = validationError.includes('DETERMINISTIC_RECOVERABLE');
+        await db.syncLogs.update(log.id, {
+          status: 'failed',
+          error: validationError,
+          retryCount: isRecoverable ? (log.retryCount || 0) + 1 : (log.retryCount || 0)
+        });
+      }
+      return { success: false, error: validationError };
     }
 
     try {

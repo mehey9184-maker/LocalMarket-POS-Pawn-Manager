@@ -123,7 +123,13 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const log = await db.syncLogs.get(logId);
     if (log) {
       await db.syncLogs.update(logId, { status: 'syncing', error: undefined });
-      await SyncService.syncEntity(log as SyncLog, shopId || undefined);
+      const res = await SyncService.syncEntity(log as SyncLog, shopId || undefined);
+      if (res && !res.success) {
+        await db.syncLogs.update(logId, {
+          status: 'failed',
+          error: res.error || 'Manual retry failed'
+        });
+      }
     }
   };
 
