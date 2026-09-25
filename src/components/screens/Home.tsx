@@ -24,7 +24,7 @@ import {
 
 export const Home: React.FC = () => {
   const { setActiveTab, shopProfile } = useApp();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const { inventory } = useInventory();
   const { loans } = useLoans();
   const { salesHistory } = useSales();
@@ -84,64 +84,72 @@ export const Home: React.FC = () => {
         {/* 2. MAIN QUICK ACTIONS: REFINED CARDS */}
         <section className="grid grid-cols-1 md:grid-cols-4 gap-5">
           {/* ACTION 1: SELL ITEM */}
-          <button 
-            onClick={() => setActiveTab('sell')}
-            className="group p-6 rounded-2xl bg-white border border-gray-200 hover:border-[#C85A32] hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3.5 cursor-pointer"
-          >
-            <div className="w-14 h-14 rounded-2xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
-              <ShoppingBag className="w-7 h-7" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
-                Sell
-              </h2>
-            </div>
-          </button>
+          {hasPermission('sales') && (
+            <button 
+              onClick={() => setActiveTab('sell')}
+              className="group p-6 rounded-2xl bg-white border border-gray-200 hover:border-[#C85A32] hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3.5 cursor-pointer"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
+                <ShoppingBag className="w-7 h-7" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
+                  Sell
+                </h2>
+              </div>
+            </button>
+          )}
 
           {/* ACTION 2: ADD STOCK / BUY */}
-          <button 
-            onClick={() => setActiveTab('buy-pawn')}
-            className="group p-6 rounded-2xl bg-white border border-gray-200 hover:border-[#C85A32] hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3.5 cursor-pointer"
-          >
-            <div className="w-14 h-14 rounded-2xl bg-orange-50 text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
-              <Package className="w-7 h-7" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
-                Add Stock
-              </h2>
-            </div>
-          </button>
+          {hasPermission('sellerAcquisitions') && (
+            <button 
+              onClick={() => setActiveTab('buy-pawn')}
+              className="group p-6 rounded-2xl bg-white border border-gray-200 hover:border-[#C85A32] hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3.5 cursor-pointer"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-orange-50 text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Package className="w-7 h-7" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
+                  Add Stock
+                </h2>
+              </div>
+            </button>
+          )}
 
-          {/* ACTION 3: PAWN COLLATERAL */}
-          <button 
-            onClick={() => setActiveTab('buy-pawn')}
-            className="group p-6 rounded-2xl bg-white border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3.5 cursor-pointer"
-          >
-            <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <Lock className="w-7 h-7" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
-                Pawn
-              </h2>
-            </div>
-          </button>
+          {/* ACTION 3: FIND CUSTOMER */}
+          {hasPermission('pawn') && (
+            <button 
+              onClick={() => setActiveTab('customers')}
+              className="group p-6 rounded-2xl bg-white border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3.5 cursor-pointer"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <User className="w-7 h-7" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
+                  Find Customer
+                </h2>
+              </div>
+            </button>
+          )}
           
           {/* ACTION 4: INVENTORY */}
-          <button 
-            onClick={() => setActiveTab('inventory')}
-            className="group p-6 rounded-2xl bg-white border border-gray-200 hover:border-gray-500 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3.5 cursor-pointer"
-          >
-            <div className="w-14 h-14 rounded-2xl bg-gray-100 text-gray-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <Search className="w-7 h-7" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 group-hover:text-gray-900 transition-colors">
-                Find Item
-              </h2>
-            </div>
-          </button>
+          {hasPermission('inventory') && (
+            <button 
+              onClick={() => setActiveTab('inventory')}
+              className="group p-6 rounded-2xl bg-white border border-gray-200 hover:border-gray-500 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3.5 cursor-pointer"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-gray-100 text-gray-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Search className="w-7 h-7" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 group-hover:text-gray-900 transition-colors">
+                  Find Item
+                </h2>
+              </div>
+            </button>
+          )}
         </section>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
