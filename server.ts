@@ -3,7 +3,6 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import crypto from "crypto";
-import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 import { MarketPricingEngine } from "./src/services/MarketPricingEngine";
@@ -1365,6 +1364,7 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
   // When running as a standalone dev or production server, handle frontend routing
   if (!options.isServerless) {
     if (process.env.NODE_ENV !== "production" && !process.env.ELECTRON_APP) {
+      const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",
