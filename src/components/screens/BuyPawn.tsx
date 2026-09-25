@@ -348,6 +348,8 @@ export const BuyPawn: React.FC = () => {
     if (step === 'item') {
       if (!itemData.title.trim()) {
         showToast('Title Required', 'Please enter an item description or title', 'amber');
+        const titleEl = document.getElementById('item-title-input');
+        if (titleEl) focusAndScrollErrorField(titleEl);
         return;
       }
 
@@ -386,12 +388,16 @@ export const BuyPawn: React.FC = () => {
         const retailVal = parseFloat(retailPriceInput);
         if (isNaN(retailVal) || retailVal <= 0) {
           showToast('Invalid Price', 'Please enter a valid retail selling price', 'amber');
+          const pEl = document.getElementById('valuation-retail-price-input');
+          if (pEl) focusAndScrollErrorField(pEl);
           return;
         }
         setStep('location');
       } else {
         if (agreedOffer <= 0) {
           showToast('Invalid Offer', 'Please specify a negotiated offer amount', 'amber');
+          const oEl = document.getElementById('valuation-agreed-offer-input');
+          if (oEl) focusAndScrollErrorField(oEl);
           return;
         }
         setStep('deal');
@@ -437,8 +443,15 @@ export const BuyPawn: React.FC = () => {
   };
 
   const handleCreateIdentity = async () => {
-    if (!newIdentity.fullName.trim() || !newIdentity.idNumber.trim()) {
-      showToast('Validation Error', 'Full name and ID number are required', 'error');
+    if (!newIdentity.fullName.trim()) {
+      showToast('Validation Error', 'Full legal name is required.', 'error');
+      const nameEl = document.getElementById('new-identity-name-input');
+      if (nameEl) focusAndScrollErrorField(nameEl);
+      return;
+    }
+
+    if (!newIdentity.idNumber.trim()) {
+      showToast('Validation Error', 'ID or Passport number is required.', 'error');
       const idEl = document.getElementById('new-identity-id-input');
       if (idEl) focusAndScrollErrorField(idEl);
       return;
@@ -1380,6 +1393,7 @@ export const BuyPawn: React.FC = () => {
                       <div className="sm:col-span-2 space-y-1">
                         <label className="text-xs font-medium text-gray-600">Full Legal Name</label>
                         <input
+                          id="new-identity-name-input"
                           type="text"
                           placeholder="e.g. Siyabonga Mthembu"
                           value={newIdentity.fullName}
@@ -1403,6 +1417,7 @@ export const BuyPawn: React.FC = () => {
                       <div className="space-y-1">
                         <label className="text-xs font-medium text-gray-600">Physical Residential Address</label>
                         <input
+                          id="new-identity-address-input"
                           type="text"
                           placeholder="e.g. 1428 Zone 4, Soweto"
                           value={newIdentity.address}
@@ -1530,6 +1545,7 @@ export const BuyPawn: React.FC = () => {
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-gray-700">Item Description / Title *</label>
                         <input
+                          id="item-title-input"
                           type="text"
                           placeholder="e.g. Samsung Galaxy S23 256GB - Phantom Black"
                           value={itemData.title}
@@ -1791,6 +1807,7 @@ export const BuyPawn: React.FC = () => {
                         <div className="relative">
                           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-[#C85A32]">R</span>
                           <input
+                            id="valuation-retail-price-input"
                             type="number"
                             value={retailPriceInput}
                             onChange={e => setRetailPriceInput(e.target.value)}
@@ -1885,6 +1902,7 @@ export const BuyPawn: React.FC = () => {
                         <div className="relative">
                           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-[#C85A32]">R</span>
                           <input
+                            id="valuation-agreed-offer-input"
                             type="number"
                             value={agreedOffer}
                             onChange={e => {
