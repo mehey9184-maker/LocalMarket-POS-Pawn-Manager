@@ -117,13 +117,13 @@ export async function runApiRoutingAndResilienceTests() {
     assert(relativeUrl === '/api/staff/provision', `Expected relative URL '/api/staff/provision', got: ${relativeUrl}`);
 
     // Test with runtime LAN base URL configuration
-    (window as any).__LOCALMARKET_API_BASE_URL__ = 'http://192.168.1.50:3000/';
+    (globalThis as any).__LOCALMARKET_API_BASE_URL__ = 'http://192.168.1.50:3000/';
     const lanUrl = resolveApiUrl('/api/staff/provision');
     assert(
       lanUrl === 'http://192.168.1.50:3000/api/staff/provision',
       `Expected normalized LAN URL 'http://192.168.1.50:3000/api/staff/provision', got: ${lanUrl}`
     );
-    delete (window as any).__LOCALMARKET_API_BASE_URL__;
+    delete (globalThis as any).__LOCALMARKET_API_BASE_URL__;
     console.log('  ✔ API Base URL resolution and trailing slash normalization verified');
 
   } finally {

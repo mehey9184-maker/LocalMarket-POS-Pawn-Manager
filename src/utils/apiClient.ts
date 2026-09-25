@@ -29,11 +29,12 @@ export function getApiBaseUrl(): string {
     return envBaseUrl.trim().replace(/\/+$/, '');
   }
 
-  // 2. Check runtime window configuration (for dynamic LAN configuration)
-  if (typeof window !== 'undefined' && (window as any).__LOCALMARKET_API_BASE_URL__) {
-    const winBaseUrl = (window as any).__LOCALMARKET_API_BASE_URL__;
-    if (typeof winBaseUrl === 'string' && winBaseUrl.trim() !== '') {
-      return winBaseUrl.trim().replace(/\/+$/, '');
+  // 2. Check runtime global/window configuration (for dynamic LAN configuration)
+  const globalTarget = typeof window !== 'undefined' ? window : globalThis;
+  if (globalTarget && (globalTarget as any).__LOCALMARKET_API_BASE_URL__) {
+    const customBaseUrl = (globalTarget as any).__LOCALMARKET_API_BASE_URL__;
+    if (typeof customBaseUrl === 'string' && customBaseUrl.trim() !== '') {
+      return customBaseUrl.trim().replace(/\/+$/, '');
     }
   }
 
