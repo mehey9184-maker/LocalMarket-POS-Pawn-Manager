@@ -26,47 +26,51 @@ async function runPackaging() {
   fs.mkdirSync(ISO_CONTENT_DIR, { recursive: true });
 
   // 1. Prepare production package bundles
-  console.log('[Packaging] Generating desktop release artifacts and standalone installers...');
+  console.log('[Packaging] Verifying authentic electron-builder desktop release artifacts...');
 
-  // 2. Prepare Windows EXE installer & portable binary artifacts
+  // 2. Identify Windows EXE installer & Linux binary artifacts
   const winSetupExePath = path.join(RELEASE_DIR, `LocalMarket-POS-Setup-${VERSION}.exe`);
   const winPortableExePath = path.join(RELEASE_DIR, `LocalMarket-POS-Portable-${VERSION}.exe`);
   const linuxDebPath = path.join(RELEASE_DIR, `localmarket-pos_${VERSION}_amd64.deb`);
   const linuxTarPath = path.join(RELEASE_DIR, `localmarket-pos-${VERSION}-x64.tar.gz`);
 
-  // Create real binary executable payloads if not already created by electron-builder
-  if (!fs.existsSync(winSetupExePath)) {
-    // Write standalone Windows EXE wrapper
-    const winExeHeader = Buffer.from('MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff\x00\x00\xb8\x00\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00', 'binary');
-    const winExePayload = Buffer.from(`LOCALMARKET POS & PAWN MANAGER STANDALONE RUNTIME v${VERSION}\nAuthoritative Offline-First POS Engine`);
-    fs.writeFileSync(winSetupExePath, Buffer.concat([winExeHeader, winExePayload]));
+  // Check if electron-builder artifacts exist; if not, execute electron-builder
+  const hasArtifacts = fs.existsSync(winSetupExePath) || fs.existsSync(linuxDebPath) || fs.existsSync(winPortableExePath);
+  if (!hasArtifacts) {
+    console.log('[Packaging] Electron-builder artifacts not found. Executing electron-builder...');
+    try {
+      execSync('npx electron-builder --config electron-builder.json', { stdio: 'inherit', cwd: ROOT_DIR });
+    } catch (buildErr: any) {
+      console.warn('[Packaging] electron-builder execution warning/error:', buildErr.message);
+    }
   }
 
-  if (!fs.existsSync(winPortableExePath)) {
-    const winExeHeader = Buffer.from('MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff\x00\x00\xb8\x00\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00', 'binary');
-    const winExePayload = Buffer.from(`LOCALMARKET POS PORTABLE EXECUTABLE v${VERSION}`);
-    fs.writeFileSync(winPortableExePath, Buffer.concat([winExeHeader, winExePayload]));
+  // Verify that genuine installer files exist. Never generate fake executables!
+  const availableInstallers: { name: string; path: string; isoName: string }[] = [];
+  if (fs.existsSync(winSetupExePath)) {
+    availableInstallers.push({ name: 'Windows NSIS Setup', path: winSetupExePath, isoName: 'SETUP.EXE' });
+  }
+  if (fs.existsSync(winPortableExePath)) {
+    availableInstallers.push({ name: 'Windows Portable', path: winPortableExePath, isoName: 'PORTABLE.EXE' });
+  }
+  if (fs.existsSync(linuxDebPath)) {
+    availableInstallers.push({ name: 'Linux Debian Package', path: linuxDebPath, isoName: 'LOCALMARKET.DEB' });
   }
 
-  if (!fs.existsSync(linuxDebPath)) {
-    // Construct standard Debian package header & structure
-    const debHeader = Buffer.from('!<arch>\ndebian-binary   0           0     0     644     4         `\n2.0\n');
-    const debPayload = Buffer.from(`Package: localmarket-pos\nVersion: ${VERSION}\nArchitecture: amd64\nMaintainer: LocalMarket <support@localmarket.co.za>\nDescription: LocalMarket POS & Pawn Operating System\n`);
-    fs.writeFileSync(linuxDebPath, Buffer.concat([debHeader, debPayload]));
-  }
-
-  if (!fs.existsSync(linuxTarPath)) {
-    const tarPayload = Buffer.from(`LocalMarket POS Standalone Archive v${VERSION}`);
-    fs.writeFileSync(linuxTarPath, tarPayload);
+  if (availableInstallers.length === 0) {
+    throw new Error(
+      `No authentic release installers found in '${RELEASE_DIR}'. ` +
+      `Please run 'npm run build && npm run build:electron && npx electron-builder' to generate authentic binary packages.`
+    );
   }
 
   // 3. Prepare ISO Payload Folder
-  console.log('[ISO Preparation] Assembling ISO payload contents...');
+  console.log('[ISO Preparation] Assembling ISO payload contents with authentic installers...');
 
-  // Copy installers to ISO content
-  fs.copyFileSync(winSetupExePath, path.join(ISO_CONTENT_DIR, 'SETUP.EXE'));
-  fs.copyFileSync(winPortableExePath, path.join(ISO_CONTENT_DIR, 'PORTABLE.EXE'));
-  fs.copyFileSync(linuxDebPath, path.join(ISO_CONTENT_DIR, 'LOCALMARKET.DEB'));
+  // Copy available genuine installers to ISO content
+  for (const installer of availableInstallers) {
+    fs.copyFileSync(installer.path, path.join(ISO_CONTENT_DIR, installer.isoName));
+  }
 
   // Create Autorun file
   const autorunInf = `[autorun]
