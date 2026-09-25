@@ -182,6 +182,43 @@ export async function runReleaseCandidateVerification() {
     assert(typeof serverlessApp === 'function', 'createApp must return an express request handler function');
     console.log('  ✔ createApp({ isServerless: true }) initialized with zero Vite or listener overhead');
 
+    // Step 10: Test Vercel serverless function entry (api/index.ts) loading dist/server.cjs
+    console.log('[RC Test 10] Testing Vercel serverless handler (api/index.ts) loading dist/server.cjs...');
+    const vercelHandler = (await import('../../api/index')).default;
+    assert(typeof vercelHandler === 'function', 'Vercel handler must export a default function');
+
+    const mockReq: any = {
+      url: '/api/health',
+      method: 'GET',
+      headers: { host: 'local-market-nine.vercel.app', accept: 'application/json' },
+      on: () => {},
+      pipe: () => {},
+    };
+
+    let responseData = '';
+    let responseStatus = 200;
+    const mockRes: any = {
+      statusCode: 200,
+      headers: {},
+      setHeader: (name: string, value: string) => {
+        mockRes.headers[name] = value;
+      },
+      getHeader: (name: string) => mockRes.headers[name],
+      write: (chunk: any) => {
+        responseData += chunk ? chunk.toString() : '';
+      },
+      end: (chunk?: any) => {
+        if (chunk) responseData += chunk.toString();
+      },
+    };
+
+    await vercelHandler(mockReq, mockRes);
+    assert(responseData.length > 0, 'Vercel handler must return response body');
+    const parsedHealth = JSON.parse(responseData);
+    assert(parsedHealth.status === 'ok', `Expected status ok, got ${parsedHealth.status}`);
+    assert(parsedHealth.mode === 'serverless', `Expected mode "serverless", got ${parsedHealth.mode}`);
+    console.log('  ✔ Vercel handler successfully loaded compiled dist/server.cjs and executed /api/health (mode="serverless")');
+
     console.log('====================================================');
     console.log('  ALL RELEASE CANDIDATE LIVE CHECKS PASSED (100%)   ');
     console.log('====================================================');

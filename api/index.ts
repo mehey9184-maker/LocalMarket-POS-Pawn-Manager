@@ -1,13 +1,64 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { createApp } from "../server";
+import { createRequire } from "module";
+import { fileURLToPath } from "url";
+import path from "path";
+import fs from "fs";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const require = createRequire(import.meta.url);
 
 let cachedApp: any = null;
 let appInitPromise: Promise<any> | null = null;
 
+function loadCreateApp(): (options?: { isServerless?: boolean }) => Promise<any> {
+  const candidatePaths = [
+    path.join(process.cwd(), "dist", "server.cjs"),
+    path.join(__dirname, "../dist/server.cjs"),
+    path.join(__dirname, "dist/server.cjs"),
+    path.join(__dirname, "server.cjs"),
+    path.join(process.cwd(), "server.cjs"),
+    path.resolve("./dist/server.cjs"),
+    path.resolve("../dist/server.cjs"),
+  ];
+
+  for (const candidate of candidatePaths) {
+    try {
+      if (candidate && fs.existsSync(candidate)) {
+        const serverMod = require(candidate);
+        if (typeof serverMod.createApp === "function") {
+          return serverMod.createApp;
+        }
+        if (serverMod.default && typeof serverMod.default.createApp === "function") {
+          return serverMod.default.createApp;
+        }
+      }
+    } catch {
+      // Continue to next candidate
+    }
+  }
+
+  // Fallback to direct require attempt
+  try {
+    const serverMod = require("../dist/server.cjs");
+    if (typeof serverMod.createApp === "function") {
+      return serverMod.createApp;
+    }
+    if (serverMod.default && typeof serverMod.default.createApp === "function") {
+      return serverMod.default.createApp;
+    }
+  } catch (err: any) {
+    console.error("Direct require('../dist/server.cjs') failed:", err);
+  }
+
+  throw new Error("Unable to locate or load createApp from compiled backend bundle (dist/server.cjs)");
+}
+
 async function getApp() {
   if (cachedApp) return cachedApp;
   if (!appInitPromise) {
-    appInitPromise = createApp({ isServerless: true }).then((app) => {
+    const createApp = loadCreateApp();
+    appInitPromise = createApp({ isServerless: true }).then((app: any) => {
       cachedApp = app;
       return app;
     });
@@ -57,4 +108,5 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
   }
 }
+
 
