@@ -185,8 +185,12 @@ export const saveSupabaseCredentials = (url: string, anonKey: string): void => {
   if (typeof window !== 'undefined') {
     localStorage.setItem('lm_supabase_url', url.trim());
     localStorage.setItem('lm_supabase_anon_key', anonKey.trim());
-    clientInstance = null; // Clear cached instance so next call re-creates with new credentials
   }
+  if (typeof process !== 'undefined' && process.env) {
+    process.env.VITE_SUPABASE_URL = url.trim();
+    process.env.VITE_SUPABASE_ANON_KEY = anonKey.trim();
+  }
+  clientInstance = null; // Clear cached instance so next call re-creates with new credentials
 };
 
 export const clearSupabaseCredentials = (): void => {

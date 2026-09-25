@@ -365,33 +365,52 @@ export const shopItemsApi = {
     const supabase = getSupabase();
     if (!supabase) return [];
 
-    let query = supabase.from('shop_items').select('*');
+    const buildQuery = () => {
+      let query = supabase.from('shop_items').select('*');
 
-    if (options?.shopId) {
-      query = query.eq('shop_id', options.shopId);
-    }
-    if (options?.sinceTimestamp) {
-      query = query.gt('updated_at', options.sinceTimestamp);
-    }
-    if (options?.category && options.category !== 'All') {
-      query = query.eq('category', options.category);
-    }
-    if (options?.status && options.status !== 'All') {
-      query = query.eq('status', options.status as any);
-    }
-    if (options?.search) {
-      query = query.or(`title.ilike.%${options.search}%,sku.ilike.%${options.search}%,serial_or_imei.ilike.%${options.search}%`);
+      if (options?.shopId) {
+        query = query.eq('shop_id', options.shopId);
+      }
+      if (options?.sinceTimestamp) {
+        query = query.gt('updated_at', options.sinceTimestamp);
+      }
+      if (options?.category && options.category !== 'All') {
+        query = query.eq('category', options.category);
+      }
+      if (options?.status && options.status !== 'All') {
+        query = query.eq('status', options.status as any);
+      }
+      if (options?.search) {
+        query = query.or(`title.ilike.%${options.search}%,sku.ilike.%${options.search}%,serial_or_imei.ilike.%${options.search}%`);
+      }
+
+      return query.order('added_at', { ascending: false });
+    };
+
+    if (options?.limit !== undefined) {
+      const { data, error } = await buildQuery().limit(options.limit);
+      if (error) throw error;
+      return data || [];
     }
 
-    query = query.order('added_at', { ascending: false });
+    const pageSize = 1000;
+    const allRows: ShopItemRow[] = [];
+    let offset = 0;
 
-    // Controlled query safety cap (default 2500 items per request unless explicitly specified)
-    const effectiveLimit = options?.limit ?? 2500;
-    query = query.limit(effectiveLimit);
+    while (true) {
+      const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+      if (error) throw error;
 
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+      const rows = data || [];
+      allRows.push(...rows);
+
+      if (rows.length < pageSize) {
+        break;
+      }
+      offset += pageSize;
+    }
+
+    return allRows;
   },
 
   async getItemBySku(sku: string): Promise<ShopItemRow | null> {
@@ -569,7 +588,10 @@ export const customersApi = {
     limit?: number;
     sinceTimestamp?: string;
   }): Promise<CustomerRow[]> {
-    return await withAuthRecovery(async (supabase) => {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+
+    const buildQuery = () => {
       let query = supabase.from('customers').select('*');
 
       if (options?.shopId) query = query.eq('shop_id', options.shopId);
@@ -578,13 +600,31 @@ export const customersApi = {
         query = query.or(`full_name.ilike.%${options.search}%,id_number.ilike.%${options.search}%,mobile.ilike.%${options.search}%`);
       }
 
-      query = query.order('full_name', { ascending: true });
-      if (options?.limit) query = query.limit(options.limit);
+      return query.order('full_name', { ascending: true });
+    };
 
-      const { data, error } = await query;
+    if (options?.limit !== undefined) {
+      const { data, error } = await buildQuery().limit(options.limit);
       if (error) throw error;
       return data || [];
-    });
+    }
+
+    const pageSize = 1000;
+    const allRows: CustomerRow[] = [];
+    let offset = 0;
+
+    while (true) {
+      const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+      if (error) throw error;
+
+      const rows = data || [];
+      allRows.push(...rows);
+
+      if (rows.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    return allRows;
   },
 
   async getCustomerById(id: string): Promise<CustomerRow | null> {
@@ -671,7 +711,10 @@ export const sellersApi = {
     limit?: number;
     sinceTimestamp?: string;
   }): Promise<SellerRow[]> {
-    return await withAuthRecovery(async (supabase) => {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+
+    const buildQuery = () => {
       let query = supabase.from('sellers').select('*');
 
       if (options?.shopId) query = query.eq('shop_id', options.shopId);
@@ -680,13 +723,31 @@ export const sellersApi = {
         query = query.or(`full_name.ilike.%${options.search}%,id_number.ilike.%${options.search}%,mobile.ilike.%${options.search}%`);
       }
 
-      query = query.order('created_at', { ascending: false });
-      if (options?.limit) query = query.limit(options.limit);
+      return query.order('created_at', { ascending: false });
+    };
 
-      const { data, error } = await query;
+    if (options?.limit !== undefined) {
+      const { data, error } = await buildQuery().limit(options.limit);
       if (error) throw error;
       return data || [];
-    });
+    }
+
+    const pageSize = 1000;
+    const allRows: SellerRow[] = [];
+    let offset = 0;
+
+    while (true) {
+      const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+      if (error) throw error;
+
+      const rows = data || [];
+      allRows.push(...rows);
+
+      if (rows.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    return allRows;
   },
 
   async getSellerById(id: string): Promise<SellerRow | null> {
@@ -783,18 +844,38 @@ export const sellerTransactionsApi = {
     const supabase = getSupabase();
     if (!supabase) return [];
 
-    let query = supabase.from('seller_transactions').select('*');
+    const buildQuery = () => {
+      let query = supabase.from('seller_transactions').select('*');
 
-    if (options?.shopId) query = query.eq('shop_id', options.shopId);
-    if (options?.sellerId) query = query.eq('seller_id', options.sellerId);
-    if (options?.sinceTimestamp) query = query.gt('created_at', options.sinceTimestamp);
+      if (options?.shopId) query = query.eq('shop_id', options.shopId);
+      if (options?.sellerId) query = query.eq('seller_id', options.sellerId);
+      if (options?.sinceTimestamp) query = query.gt('created_at', options.sinceTimestamp);
 
-    query = query.order('timestamp', { ascending: false });
-    if (options?.limit) query = query.limit(options.limit);
+      return query.order('timestamp', { ascending: false });
+    };
 
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+    if (options?.limit !== undefined) {
+      const { data, error } = await buildQuery().limit(options.limit);
+      if (error) throw error;
+      return data || [];
+    }
+
+    const pageSize = 1000;
+    const allRows: SellerTransactionRow[] = [];
+    let offset = 0;
+
+    while (true) {
+      const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+      if (error) throw error;
+
+      const rows = data || [];
+      allRows.push(...rows);
+
+      if (rows.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    return allRows;
   },
 
   async getTransactionsBySellerId(sellerId: string): Promise<SellerTransactionRow[]> {
@@ -1021,7 +1102,10 @@ export const pawnLoansApi = {
     limit?: number;
     sinceTimestamp?: string;
   }): Promise<PawnLoanRow[]> {
-    return await withAuthRecovery(async (supabase) => {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+
+    const buildQuery = () => {
       let query = supabase.from('pawn_loans').select('*');
 
       if (options?.shopId) query = query.eq('shop_id', options.shopId);
@@ -1029,13 +1113,31 @@ export const pawnLoansApi = {
       if (options?.status && options.status !== 'All') query = query.eq('status', options.status as any);
       if (options?.sinceTimestamp) query = query.gt('updated_at', options.sinceTimestamp);
 
-      query = query.order('expiry_date', { ascending: true });
-      if (options?.limit) query = query.limit(options.limit);
+      return query.order('expiry_date', { ascending: true });
+    };
 
-      const { data, error } = await query;
+    if (options?.limit !== undefined) {
+      const { data, error } = await buildQuery().limit(options.limit);
       if (error) throw error;
       return data || [];
-    });
+    }
+
+    const pageSize = 1000;
+    const allRows: PawnLoanRow[] = [];
+    let offset = 0;
+
+    while (true) {
+      const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+      if (error) throw error;
+
+      const rows = data || [];
+      allRows.push(...rows);
+
+      if (rows.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    return allRows;
   },
 
   async getLoanByTicket(ticketNumber: string): Promise<PawnLoanRow | null> {
@@ -1222,19 +1324,40 @@ export const salesApi = {
     limit?: number;
     sinceTimestamp?: string;
   }): Promise<SaleRow[]> {
-    return await withAuthRecovery(async (supabase) => {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+
+    const buildQuery = () => {
       let query = supabase.from('sales').select('*');
 
       if (options?.shopId) query = query.eq('shop_id', options.shopId);
       if (options?.sinceTimestamp) query = query.gt('created_at', options.sinceTimestamp);
 
-      query = query.order('timestamp', { ascending: false });
-      if (options?.limit) query = query.limit(options.limit);
+      return query.order('timestamp', { ascending: false });
+    };
 
-      const { data, error } = await query;
+    if (options?.limit !== undefined) {
+      const { data, error } = await buildQuery().limit(options.limit);
       if (error) throw error;
       return data || [];
-    });
+    }
+
+    const pageSize = 1000;
+    const allRows: SaleRow[] = [];
+    let offset = 0;
+
+    while (true) {
+      const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+      if (error) throw error;
+
+      const rows = data || [];
+      allRows.push(...rows);
+
+      if (rows.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    return allRows;
   },
 
   async getSaleByReceiptNumber(receiptNumber: string): Promise<SaleRow | null> {
@@ -1554,19 +1677,40 @@ export const sapsApi = {
     limit?: number;
     sinceTimestamp?: string;
   }): Promise<SapsEntryRow[]> {
-    return await withAuthRecovery(async (supabase) => {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+
+    const buildQuery = () => {
       let query = supabase.from('saps_entries').select('*');
 
       if (options?.shopId) query = query.eq('shop_id', options.shopId);
       if (options?.sinceTimestamp) query = query.gt('created_at', options.sinceTimestamp);
 
-      query = query.order('timestamp', { ascending: false });
-      if (options?.limit) query = query.limit(options.limit);
+      return query.order('timestamp', { ascending: false });
+    };
 
-      const { data, error } = await query;
+    if (options?.limit !== undefined) {
+      const { data, error } = await buildQuery().limit(options.limit);
       if (error) throw error;
       return data || [];
-    });
+    }
+
+    const pageSize = 1000;
+    const allRows: SapsEntryRow[] = [];
+    let offset = 0;
+
+    while (true) {
+      const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+      if (error) throw error;
+
+      const rows = data || [];
+      allRows.push(...rows);
+
+      if (rows.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    return allRows;
   },
 
   async getEntryByNumber(entryNumber: string): Promise<SapsEntryRow | null> {
