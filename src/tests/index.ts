@@ -12,6 +12,7 @@ import { runResumableWorkTests } from './resumableWork.test';
 import { runPrintingTests } from './printingFoundation.test';
 import { runStaffSecurityFinalizationTests } from './staffSecurityFinalization.test';
 import { runApiRoutingAndResilienceTests } from './apiRoutingAndResilience.test';
+import { runTerminalPinLockoutTests } from './terminalPinLockout.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -27,6 +28,7 @@ export async function runAllTests() {
   await runV1DefectRepairPassTests();
   runStaffSecurityFinalizationTests();
   await runApiRoutingAndResilienceTests();
+  await runTerminalPinLockoutTests();
   await runTerminalSessionTests();
   runIntelligentAssistanceTests();
   await runResumableWorkTests();

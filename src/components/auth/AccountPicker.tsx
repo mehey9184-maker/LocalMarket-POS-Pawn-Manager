@@ -1,15 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { authApi } from '../../services/supabaseApi';
 import { ProfileRow } from '../../types/supabase';
-import { Loader2, ArrowLeft, Key, User, ShieldCheck } from 'lucide-react';
+import { Loader2, ArrowLeft, Key, ShieldCheck, Lock } from 'lucide-react';
 
 export const AccountPicker: React.FC = () => {
   const { 
     users, 
     profile: currentProfile, 
-    logout, 
     isAccountPickerOpen, 
     setIsAccountPickerOpen
   } = useAuth();
@@ -20,8 +19,17 @@ export const AccountPicker: React.FC = () => {
   const [pin, setPin] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
 
   if (!isAccountPickerOpen) return null;
+
+  // Format seconds as MM:SS
+  const formatTime = (totalSeconds: number): string => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
   const handleSelectStaff = (staff: ProfileRow) => {
     if (staff.id === currentProfile?.id) {
@@ -31,13 +39,68 @@ export const AccountPicker: React.FC = () => {
     setSelectedStaff(staff);
     setPin('');
     setError(null);
+
+    // Restore any existing session lockout timestamp for this staff
+    try {
+      const savedLockout = sessionStorage.getItem(`pin_lockout_${staff.id}`);
+      if (savedLockout) {
+        const until = parseInt(savedLockout, 10);
+        const now = Date.now();
+        if (until > now) {
+          setLockoutUntil(until);
+          setRemainingSeconds(Math.ceil((until - now) / 1000));
+        } else {
+          sessionStorage.removeItem(`pin_lockout_${staff.id}`);
+          setLockoutUntil(null);
+          setRemainingSeconds(0);
+        }
+      } else {
+        setLockoutUntil(null);
+        setRemainingSeconds(0);
+      }
+    } catch {
+      setLockoutUntil(null);
+      setRemainingSeconds(0);
+    }
   };
 
   const handleBack = () => {
     setSelectedStaff(null);
     setPin('');
     setError(null);
+    setLockoutUntil(null);
+    setRemainingSeconds(0);
   };
+
+  // Timer effect that counts down once per second and cleans up on unmount or zero
+  useEffect(() => {
+    if (!lockoutUntil) {
+      setRemainingSeconds(0);
+      return;
+    }
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const diff = Math.max(0, Math.ceil((lockoutUntil - now) / 1000));
+      setRemainingSeconds(diff);
+
+      if (diff <= 0) {
+        setLockoutUntil(null);
+        setError(null);
+        if (selectedStaff) {
+          try {
+            sessionStorage.removeItem(`pin_lockout_${selectedStaff.id}`);
+          } catch {}
+        }
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutUntil, selectedStaff]);
+
+  const isLocked = remainingSeconds > 0;
 
   const getRoleLabel = (role: string) => {
     switch (role) {
@@ -50,7 +113,7 @@ export const AccountPicker: React.FC = () => {
   };
 
   const handleLogin = async () => {
-    if (!selectedStaff || pin.length !== 6) return;
+    if (!selectedStaff || isLocked || isAuthenticating || pin.length !== 6) return;
 
     setIsAuthenticating(true);
     setError(null);
@@ -59,7 +122,18 @@ export const AccountPicker: React.FC = () => {
       const res = await authApi.loginWithPin(selectedStaff.cashier_code, pin);
       
       if (!res.success) {
-        setError(res.error || 'Authentication failed');
+        if (res.locked) {
+          const seconds = res.remainingSeconds || 900;
+          const until = Date.now() + seconds * 1000;
+          setLockoutUntil(until);
+          setRemainingSeconds(seconds);
+          try {
+            sessionStorage.setItem(`pin_lockout_${selectedStaff.id}`, String(until));
+          } catch {}
+          setError(res.error || 'Too many failed attempts.');
+        } else {
+          setError(res.error || 'Invalid PIN.');
+        }
         return;
       }
 
@@ -67,8 +141,10 @@ export const AccountPicker: React.FC = () => {
       setIsAccountPickerOpen(false);
       setSelectedStaff(null);
       setPin('');
+      setLockoutUntil(null);
+      setRemainingSeconds(0);
     } catch (err: any) {
-      setError(err.message || 'Connection error');
+      setError(err.message || 'Connection error during authentication');
     } finally {
       setIsAuthenticating(false);
     }
@@ -136,13 +212,13 @@ export const AccountPicker: React.FC = () => {
           <div className="max-w-md mx-auto bg-[#181717] border border-[#282727] rounded-3xl p-8 shadow-2xl animate-in zoom-in-95 duration-200">
             <button
               onClick={handleBack}
-              className="flex items-center gap-2 text-sm text-[#a58b83] hover:text-[#e5e2e1] transition-colors mb-8 group"
+              className="flex items-center gap-2 text-sm text-[#a58b83] hover:text-[#e5e2e1] transition-colors mb-8 group cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
               <span>Back to staff list</span>
             </button>
 
-            <div className="flex flex-col items-center text-center mb-10">
+            <div className="flex flex-col items-center text-center mb-8">
               <div className="w-20 h-20 rounded-full bg-[#1f1e1e] border-2 border-[#282727] flex items-center justify-center mb-4 overflow-hidden shadow-xl">
                 {selectedStaff.avatar_url ? (
                   <img src={selectedStaff.avatar_url} alt={selectedStaff.full_name} className="w-full h-full object-cover" />
@@ -155,20 +231,55 @@ export const AccountPicker: React.FC = () => {
             </div>
 
             <div className="space-y-6">
+              {/* LOCKOUT DISPLAY BANNER */}
+              {isLocked && (
+                <div
+                  role="alert"
+                  aria-live="polite"
+                  className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-5 text-center space-y-3 animate-in fade-in zoom-in-95 duration-200"
+                >
+                  <div className="w-10 h-10 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-amber-200">Too many failed attempts</h4>
+                    <p className="text-xs text-amber-400/80 mt-0.5">
+                      Account temporarily locked for security
+                    </p>
+                  </div>
+                  <div className="pt-1">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#a58b83] block mb-1">
+                      Try again in
+                    </span>
+                    <div className="inline-block bg-[#1f1e1e] border border-amber-500/30 rounded-xl px-5 py-1.5 font-mono text-2xl font-bold tracking-wider text-amber-400 shadow-inner">
+                      {formatTime(remainingSeconds)}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* PIN INPUT */}
               <div className="relative">
-                <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#a58b83]" />
+                <Key className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${isLocked ? 'text-[#a58b83]/30' : 'text-[#a58b83]'}`} />
                 <input
                   type="password"
+                  disabled={isLocked || isAuthenticating}
                   value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/\D/g, '').substring(0, 6))}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                  placeholder="6-Digit PIN"
-                  autoFocus
-                  className="w-full h-14 bg-[#1f1e1e] border border-[#282727] rounded-xl pl-12 pr-4 text-center text-2xl tracking-[0.5em] font-mono text-[#e5e2e1] focus:border-[#c85a32] focus:ring-1 focus:ring-[#c85a32] outline-none transition-all placeholder:text-[#a58b83]/30 placeholder:tracking-normal placeholder:text-sm"
+                  onChange={(e) => !isLocked && setPin(e.target.value.replace(/\D/g, '').substring(0, 6))}
+                  onKeyDown={(e) => e.key === 'Enter' && !isLocked && handleLogin()}
+                  placeholder={isLocked ? '••••••' : '6-Digit PIN'}
+                  autoFocus={!isLocked}
+                  aria-label="6-Digit Terminal PIN"
+                  className={`w-full h-14 border rounded-xl pl-12 pr-4 text-center text-2xl tracking-[0.5em] font-mono transition-all outline-none ${
+                    isLocked
+                      ? 'bg-[#141414] border-[#222222] text-[#a58b83]/40 cursor-not-allowed opacity-60 placeholder:text-[#a58b83]/20'
+                      : 'bg-[#1f1e1e] border-[#282727] text-[#e5e2e1] focus:border-[#c85a32] focus:ring-1 focus:ring-[#c85a32] placeholder:text-[#a58b83]/30 placeholder:tracking-normal placeholder:text-sm'
+                  }`}
                 />
               </div>
 
-              {error && (
+              {/* STANDARD NON-LOCKOUT ERROR */}
+              {!isLocked && error && (
                 <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3 animate-shake">
                   <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5">
                     <span className="text-[10px] font-bold text-white">!</span>
@@ -177,13 +288,24 @@ export const AccountPicker: React.FC = () => {
                 </div>
               )}
 
+              {/* AUTHORIZE BUTTON */}
               <button
                 onClick={handleLogin}
-                disabled={isAuthenticating || pin.length !== 6}
-                className="w-full h-14 bg-[#c85a32] hover:bg-[#b84e27] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl flex items-center justify-center gap-3 shadow-lg shadow-[#c85a32]/20 transition-all active:scale-[0.98]"
+                disabled={isLocked || isAuthenticating || pin.length !== 6}
+                aria-disabled={isLocked || isAuthenticating || pin.length !== 6}
+                className={`w-full h-14 font-bold rounded-xl flex items-center justify-center gap-3 shadow-lg transition-all ${
+                  isLocked
+                    ? 'bg-[#1e1e1e] border border-[#2e2e2e] text-[#a58b83]/40 cursor-not-allowed opacity-60 shadow-none'
+                    : 'bg-[#c85a32] hover:bg-[#b84e27] disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-[#c85a32]/20 active:scale-[0.98] cursor-pointer'
+                }`}
               >
                 {isAuthenticating ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
+                ) : isLocked ? (
+                  <>
+                    <Lock className="w-5 h-5 text-amber-400/70" />
+                    <span>Locked ({formatTime(remainingSeconds)})</span>
+                  </>
                 ) : (
                   <>
                     <ShieldCheck className="w-5 h-5" />
@@ -197,7 +319,11 @@ export const AccountPicker: React.FC = () => {
                   <div
                     key={i}
                     className={`w-3 h-3 rounded-full border transition-all duration-200 ${
-                      i < pin.length ? 'bg-[#c85a32] border-[#c85a32] scale-110' : 'bg-transparent border-[#282727]'
+                      isLocked
+                        ? 'bg-transparent border-[#222222]'
+                        : i < pin.length
+                        ? 'bg-[#c85a32] border-[#c85a32] scale-110'
+                        : 'bg-transparent border-[#282727]'
                     }`}
                   ></div>
                 ))}

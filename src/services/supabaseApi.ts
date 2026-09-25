@@ -153,22 +153,31 @@ export const authApi = {
     };
   },
 
-  async loginWithPin(cashierCode: string, pin: string): Promise<{ success: boolean; error?: string }> {
+  async loginWithPin(cashierCode: string, pin: string): Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }> {
     try {
-      const result = await apiPost<{ success: boolean; session?: any; error?: string }>(
+      const result = await apiPost<{ success: boolean; locked?: boolean; remainingSeconds?: number; session?: any; error?: string }>(
         '/api/auth/login-with-pin',
         { cashierCode, pin }
       );
 
       if (!result.ok || !result.data?.success) {
-        return { success: false, error: result.error || result.data?.error || 'Authentication failed' };
+        return {
+          success: false,
+          locked: result.data?.locked,
+          remainingSeconds: result.data?.remainingSeconds,
+          error: result.data?.error || result.error || 'Authentication failed'
+        };
       }
 
       const supabase = getSupabase();
-      if (!supabase) throw new Error('Supabase not configured');
-
-      const { error: sessionErr } = await supabase.auth.setSession(result.data.session);
-      if (sessionErr) throw sessionErr;
+      if (supabase && result.data?.session) {
+        try {
+          const { error: sessionErr } = await supabase.auth.setSession(result.data.session);
+          if (sessionErr) console.warn('Supabase setSession warning:', sessionErr);
+        } catch (e) {
+          console.warn('Supabase setSession error:', e);
+        }
+      }
 
       return { success: true };
     } catch (err: any) {

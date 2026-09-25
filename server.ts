@@ -482,10 +482,24 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
 
       if (!lockoutErr && lockoutData) {
         if (lockoutData.locked) {
-          return res.status(429).json({ success: false, error: `Too many failed attempts. Try again in ${lockoutData.remaining_minutes || 15} minutes.` });
+          const remainingMinutes = Number(lockoutData.remaining_minutes) || 15;
+          const remainingSeconds = Number(lockoutData.remaining_seconds) || (remainingMinutes * 60);
+          return res.status(429).json({
+            success: false,
+            locked: true,
+            remainingSeconds,
+            remainingMinutes,
+            error: `Too many failed attempts. Try again in ${remainingMinutes} minutes.`
+          });
         }
         if (lockoutData.attempt_admitted === false) {
-          return res.status(429).json({ success: false, error: "Authentication attempt denied due to account lockout." });
+          return res.status(429).json({
+            success: false,
+            locked: true,
+            remainingSeconds: 900,
+            remainingMinutes: 15,
+            error: "Authentication attempt denied due to account lockout."
+          });
         }
       }
 
@@ -559,10 +573,24 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
 
       if (!lockoutErr && lockoutData) {
         if (lockoutData.locked) {
-          return res.status(429).json({ success: false, error: `Too many failed attempts. Try again in ${lockoutData.remaining_minutes || 15} minutes.` });
+          const remainingMinutes = Number(lockoutData.remaining_minutes) || 15;
+          const remainingSeconds = Number(lockoutData.remaining_seconds) || (remainingMinutes * 60);
+          return res.status(429).json({
+            success: false,
+            locked: true,
+            remainingSeconds,
+            remainingMinutes,
+            error: `Too many failed attempts. Try again in ${remainingMinutes} minutes.`
+          });
         }
         if (lockoutData.attempt_admitted === false) {
-          return res.status(429).json({ success: false, error: "Authentication attempt denied due to account lockout." });
+          return res.status(429).json({
+            success: false,
+            locked: true,
+            remainingSeconds: 900,
+            remainingMinutes: 15,
+            error: "Authentication attempt denied due to account lockout."
+          });
         }
       }
 

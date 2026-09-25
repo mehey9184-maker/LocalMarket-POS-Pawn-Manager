@@ -1,12 +1,15 @@
 import { createClient, SupabaseClient, Session } from '@supabase/supabase-js';
 
-// Read from localStorage (user UI entry) first, then fallback to Vite environment variables
+// Read from localStorage (user UI entry) first, then fallback to Vite/Node environment variables
 export const getActiveSupabaseUrl = (): string => {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem('lm_supabase_url');
     if (saved && saved.trim()) return saved.trim();
   }
-  return (import.meta.env.VITE_SUPABASE_URL || '').trim();
+  const envUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_URL) || 
+                 (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) || 
+                 '';
+  return envUrl.trim();
 };
 
 export const getActiveSupabaseAnonKey = (): string => {
@@ -14,7 +17,10 @@ export const getActiveSupabaseAnonKey = (): string => {
     const saved = localStorage.getItem('lm_supabase_anon_key');
     if (saved && saved.trim()) return saved.trim();
   }
-  return (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+  const envKey = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_ANON_KEY) || 
+                 (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_ANON_KEY) || 
+                 '';
+  return envKey.trim();
 };
 
 export const isSupabaseConfigured = (): boolean => {
