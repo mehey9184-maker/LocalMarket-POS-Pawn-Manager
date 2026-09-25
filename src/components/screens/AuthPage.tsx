@@ -14,9 +14,10 @@ export const AuthPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+  const loginHint = sessionStorage.getItem('lm_login_hint') || '';
 
   // Form State
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(loginHint);
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
 
@@ -75,6 +76,7 @@ export const AuthPage: React.FC = () => {
         if (error) throw error;
 
         showToast('Operator Verified', 'Welcome to LocalMarket POS Terminal', 'success');
+        sessionStorage.removeItem('lm_login_hint');
         // Redirection logic is handled in App.tsx based on profile state
       }
     } catch (err: any) {

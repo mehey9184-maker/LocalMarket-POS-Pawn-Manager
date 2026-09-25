@@ -37,6 +37,17 @@ export const AccountPicker: React.FC = () => {
       setIsAccountPickerOpen(false);
       return;
     }
+
+    if (staff.role === 'owner') {
+      // Owner selection ends current staff session and returns to login flow
+      if (staff.email) {
+        sessionStorage.setItem('lm_login_hint', staff.email);
+      }
+      setIsAccountPickerOpen(false);
+      logout();
+      return;
+    }
+
     setSelectedStaff(staff);
     setPin('');
     setError(null);
@@ -169,7 +180,7 @@ export const AccountPicker: React.FC = () => {
             <p className="text-gray-500 mb-12">Who is using this terminal?</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {users.filter(u => u.is_active && u.role !== 'admin' && u.role !== 'owner').map((staff) => (
+              {users.filter(u => u.is_active && u.role !== 'admin').map((staff) => (
                 <button
                   key={staff.id}
                   onClick={() => handleSelectStaff(staff)}

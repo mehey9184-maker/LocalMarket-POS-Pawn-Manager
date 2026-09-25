@@ -8,6 +8,7 @@ export const ShopSetup: React.FC = () => {
   const { showToast, setActiveTab } = useApp();
   const { refreshProfile } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [showOptional, setShowOptional] = useState(false);
 
   // Form State
   const [shopName, setShopName] = useState('');
@@ -21,31 +22,35 @@ export const ShopSetup: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!shopName.trim()) {
+      showToast('Required Field', 'Please enter your shop name.', 'amber');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const newShop = await shopProfilesApi.createShopProfile({
-        shop_name: shopName,
-        shop_code: shopCode.toUpperCase() || shopName.slice(0, 3).toUpperCase(),
-        phone,
-        email,
-        address,
-        city,
-        province,
-        postal_code: postalCode,
-        currency: 'ZAR', // Default for now
-        is_active: true,
-        metadata: {}
+      const res = await shopProfilesApi.initializeNewShop({
+        shop_name: shopName.trim(),
+        shop_code: shopCode.trim().toUpperCase() || undefined,
+        phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
+        address: address.trim() || undefined,
+        city: city.trim() || undefined,
+        province: province.trim() || undefined,
+        postal_code: postalCode.trim() || undefined
       });
 
-      if (newShop) {
-        showToast('Shop Created', 'Your shop has been set up successfully.', 'success');
+      if (res.success) {
+        showToast('Shop Initialized', 'Your shop has been set up successfully.', 'success');
         await refreshProfile();
-        setActiveTab('home');
+        // The App.tsx useEffect will handle redirection to home once shop_id is detected in profile
+      } else {
+        throw new Error(res.error || 'Failed to initialize shop');
       }
     } catch (err: any) {
       console.error('[ShopSetup] Error:', err);
-      showToast('Setup Failed', err.message || 'Failed to create shop profile', 'error');
+      showToast('Setup Failed', err.message || 'Could not create shop profile', 'error');
     } finally {
       setLoading(false);
     }
@@ -53,160 +58,136 @@ export const ShopSetup: React.FC = () => {
 
   return (
     <div className="flex-1 min-h-screen bg-[#F5F6F8] flex flex-col items-center justify-center px-4 py-12">
-      <div className="w-full max-w-2xl animate-in fade-in slide-in-from-bottom-4 duration-700">
-        <div className="bg-white border border-gray-200 rounded-2xl p-8 sm:p-10 shadow-sm">
+      <div className="w-full max-w-xl animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="bg-white border border-gray-200 rounded-3xl p-8 sm:p-12 shadow-sm">
           
-          <div className="flex flex-col items-center text-center mb-8">
-            <div className="w-16 h-16 bg-[#FDF0EA] rounded-full flex items-center justify-center mb-4">
-              <Store className="w-8 h-8 text-[#c85a32]" />
+          <div className="flex flex-col items-center text-center mb-10">
+            <div className="w-20 h-20 bg-[#FDF0EA] rounded-[2rem] flex items-center justify-center mb-6">
+              <Store className="w-10 h-10 text-[#c85a32]" />
             </div>
-            <h1 className="font-bold text-2xl text-gray-900 tracking-tight">
-              Set up your shop
+            <h1 className="font-bold text-3xl text-gray-900 tracking-tight">
+              Let's get your shop ready
             </h1>
-            <p className="text-sm text-gray-500 mt-2 max-w-md">
-              Welcome to LocalMarket! Let's get your store details recorded. You can update these later in settings.
+            <p className="text-gray-500 mt-3 max-w-sm leading-relaxed">
+              Just the basics for now. You can add more business and compliance details later in settings.
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {/* Shop Identity */}
-              <div className="space-y-4 sm:col-span-2">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Store Identity</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-medium text-gray-500">Shop Name</label>
-                    <input 
-                      required
-                      type="text"
-                      value={shopName}
-                      onChange={(e) => setShopName(e.target.value)}
-                      placeholder="e.g. Downtown Pawn & Gold"
-                      className="w-full h-11 bg-white border border-gray-300 rounded-lg px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] focus:border-[#c85a32] transition-colors"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-medium text-gray-500">Shop Code (Unique ID)</label>
-                    <input 
-                      required
-                      type="text"
-                      value={shopCode}
-                      onChange={(e) => setShopCode(e.target.value.toUpperCase())}
-                      placeholder="e.g. DT01"
-                      className="w-full h-11 bg-white border border-gray-300 rounded-lg px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] focus:border-[#c85a32] transition-colors"
-                    />
-                  </div>
-                </div>
+          <form onSubmit={handleSubmit} className="space-y-8">
+            <div className="space-y-6">
+              {/* Primary Field */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Shop Name</label>
+                <input 
+                  required
+                  autoFocus
+                  type="text"
+                  value={shopName}
+                  onChange={(e) => setShopName(e.target.value)}
+                  placeholder="e.g. Downtown Pawn & Gold"
+                  className="w-full h-14 bg-[#F9FAFB] border border-gray-200 rounded-2xl px-6 text-lg font-medium focus:outline-none focus:ring-2 focus:ring-[#c85a32]/20 focus:border-[#c85a32] transition-all placeholder:text-gray-300"
+                />
               </div>
 
-              {/* Contact Information */}
-              <div className="space-y-4 sm:col-span-2 pt-4 border-t border-gray-100">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Contact Details</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-medium text-gray-500">Phone Number</label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              {/* Toggle Optional Fields */}
+              <button 
+                type="button"
+                onClick={() => setShowOptional(!showOptional)}
+                className="text-sm font-bold text-[#c85a32] hover:text-[#b84e27] flex items-center gap-2 transition-colors pl-1"
+              >
+                {showOptional ? 'Hide optional details' : 'Add optional details (Code, Phone, Address...)'}
+                <Globe className={`w-4 h-4 transition-transform duration-300 ${showOptional ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showOptional && (
+                <div className="space-y-6 pt-2 animate-in fade-in zoom-in-95 duration-300">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Shop Code</label>
                       <input 
-                        required
+                        type="text"
+                        value={shopCode}
+                        onChange={(e) => setShopCode(e.target.value.toUpperCase())}
+                        placeholder="Auto-generated if empty"
+                        className="w-full h-11 bg-white border border-gray-200 rounded-xl px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Store Phone</label>
+                      <input 
                         type="tel"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         placeholder="011 123 4567"
-                        className="w-full h-11 bg-white border border-gray-300 rounded-lg pl-10 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] focus:border-[#c85a32] transition-colors"
+                        className="w-full h-11 bg-white border border-gray-200 rounded-xl px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all"
                       />
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-medium text-gray-500">Store Email</label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input 
-                        required
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="contact@store.co.za"
-                        className="w-full h-11 bg-white border border-gray-300 rounded-lg pl-10 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] focus:border-[#c85a32] transition-colors"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
 
-              {/* Address */}
-              <div className="space-y-4 sm:col-span-2 pt-4 border-t border-gray-100">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Store Location</h3>
-                <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-medium text-gray-500">Physical Address</label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-                      <textarea 
-                        required
-                        value={address}
-                        onChange={(e) => setAddress(e.target.value)}
-                        placeholder="123 Main Street, Central District"
-                        rows={2}
-                        className="w-full bg-white border border-gray-300 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] focus:border-[#c85a32] transition-colors resize-none"
-                      />
-                    </div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Physical Address</label>
+                    <textarea 
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      placeholder="Street address..."
+                      rows={2}
+                      className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all resize-none"
+                    />
                   </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-medium text-gray-500">City</label>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">City</label>
                       <input 
-                        required
                         type="text"
                         value={city}
                         onChange={(e) => setCity(e.target.value)}
-                        placeholder="Johannesburg"
-                        className="w-full h-11 bg-white border border-gray-300 rounded-lg px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] focus:border-[#c85a32] transition-colors"
+                        className="w-full h-11 bg-white border border-gray-200 rounded-xl px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all"
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-medium text-gray-500">Province</label>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Province</label>
                       <input 
-                        required
                         type="text"
                         value={province}
                         onChange={(e) => setProvince(e.target.value)}
-                        placeholder="Gauteng"
-                        className="w-full h-11 bg-white border border-gray-300 rounded-lg px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] focus:border-[#c85a32] transition-colors"
+                        className="w-full h-11 bg-white border border-gray-200 rounded-xl px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all"
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-medium text-gray-500">Postal Code</label>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Postal</label>
                       <input 
-                        required
                         type="text"
                         value={postalCode}
                         onChange={(e) => setPostalCode(e.target.value)}
-                        placeholder="2000"
-                        className="w-full h-11 bg-white border border-gray-300 rounded-lg px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] focus:border-[#c85a32] transition-colors"
+                        className="w-full h-11 bg-white border border-gray-200 rounded-xl px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all"
                       />
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <button 
               type="submit"
               disabled={loading}
-              className="w-full h-12 bg-[#c85a32] hover:bg-[#b84e27] text-white font-semibold rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50 mt-4 shadow-sm"
+              className="w-full h-14 bg-[#c85a32] hover:bg-[#b84e27] text-white font-bold rounded-2xl flex items-center justify-center gap-3 transition-all disabled:opacity-50 mt-6 shadow-lg shadow-[#c85a32]/10 active:scale-[0.98]"
             >
               {loading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
+                <Loader2 className="w-6 h-6 animate-spin" />
               ) : (
                 <>
                   <CheckCircle2 className="w-5 h-5" />
-                  <span>Complete Setup</span>
+                  <span>Create Shop</span>
                 </>
               )}
             </button>
           </form>
         </div>
+
+        <p className="text-center text-[11px] text-gray-400 mt-8 uppercase tracking-[0.2em]">
+          Secure POS Initialization · Powered by LocalMarket
+        </p>
       </div>
     </div>
   );

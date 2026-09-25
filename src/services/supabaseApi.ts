@@ -285,6 +285,40 @@ export const shopProfilesApi = {
     return data;
   },
 
+  async initializeNewShop(params: {
+    shop_name: string;
+    shop_code?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    city?: string;
+    province?: string;
+    postal_code?: string;
+    metadata?: any;
+  }): Promise<{ success: boolean; shop_id?: string; error?: string }> {
+    const supabase = getSupabase();
+    if (!supabase) throw new Error('Supabase is not configured.');
+
+    try {
+      const { data, error } = await supabase.rpc('initialize_new_shop', {
+        p_shop_name: params.shop_name,
+        p_shop_code: params.shop_code || null,
+        p_phone: params.phone || null,
+        p_email: params.email || null,
+        p_address: params.address || null,
+        p_city: params.city || null,
+        p_province: params.province || null,
+        p_postal_code: params.postal_code || null,
+        p_metadata: params.metadata || {}
+      });
+
+      if (error) throw error;
+      return { success: true, shop_id: data.shop_id };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  },
+
   async updateShopBusinessRulesRpc(rules: BusinessRules, reason?: string): Promise<{ success: boolean; error?: string }> {
     try {
       return await withAuthRecovery(async (supabase) => {
