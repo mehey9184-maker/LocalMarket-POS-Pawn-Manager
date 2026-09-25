@@ -10,6 +10,7 @@ import { runTerminalSessionTests } from './terminalSession.test';
 import { runIntelligentAssistanceTests } from './intelligentAssistance.test';
 import { runResumableWorkTests } from './resumableWork.test';
 import { runPrintingTests } from './printingFoundation.test';
+import { runStaffSecurityFinalizationTests } from './staffSecurityFinalization.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -23,6 +24,7 @@ export async function runAllTests() {
   await runIdentifierAndSourceOfTruthTests();
   await runAtomicBuyAndPawnIntegrityTests();
   await runV1DefectRepairPassTests();
+  runStaffSecurityFinalizationTests();
   await runTerminalSessionTests();
   runIntelligentAssistanceTests();
   await runResumableWorkTests();
@@ -34,5 +36,10 @@ export async function runAllTests() {
 
 // Auto-run if executed directly via node/tsx
 if (typeof process !== 'undefined' && process.argv && process.argv[1] && process.argv[1].includes('tests')) {
-  runAllTests();
+  runAllTests().then(() => {
+    process.exit(0);
+  }).catch((err) => {
+    console.error('Test suite failed:', err);
+    process.exit(1);
+  });
 }

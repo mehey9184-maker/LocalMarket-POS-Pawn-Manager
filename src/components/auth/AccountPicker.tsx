@@ -39,8 +39,18 @@ export const AccountPicker: React.FC = () => {
     setError(null);
   };
 
+  const getRoleLabel = (role: string) => {
+    switch (role) {
+      case 'owner': return 'Owner';
+      case 'manager': return 'Manager';
+      case 'senior_cashier': return 'Senior Cashier';
+      case 'cashier': return 'Cashier';
+      default: return role.replace(/_/g, ' ');
+    }
+  };
+
   const handleLogin = async () => {
-    if (!selectedStaff || pin.length < 4) return;
+    if (!selectedStaff || pin.length !== 6) return;
 
     setIsAuthenticating(true);
     setError(null);
@@ -82,7 +92,7 @@ export const AccountPicker: React.FC = () => {
             <p className="text-[#a58b83] mb-12">Who is using this terminal?</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {users.filter(u => u.is_active).map((staff) => (
+              {users.filter(u => u.is_active && u.role !== 'admin').map((staff) => (
                 <button
                   key={staff.id}
                   onClick={() => handleSelectStaff(staff)}
@@ -102,7 +112,7 @@ export const AccountPicker: React.FC = () => {
                   
                   <div className="text-center">
                     <p className="font-bold text-[#e5e2e1] truncate max-w-[140px]">{staff.full_name}</p>
-                    <p className="text-xs text-[#a58b83] uppercase tracking-widest mt-1 font-mono">{staff.role.replace('_', ' ')}</p>
+                    <p className="text-xs text-[#a58b83] uppercase tracking-widest mt-1 font-mono">{getRoleLabel(staff.role)}</p>
                   </div>
 
                   {staff.id === currentProfile?.id && (

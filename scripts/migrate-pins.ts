@@ -43,9 +43,7 @@ async function run() {
   }
 
   for (const profile of profiles) {
-    console.log(`Checking profile ${profile.full_name} (${profile.id})...`);
     if (profile.pin_code) {
-      console.log(`Migrating PIN for ${profile.full_name}...`);
       const newHash = hashPin(profile.pin_code);
       const { error: updateError } = await supabase
         .from("profiles")
@@ -56,9 +54,29 @@ async function run() {
         .eq("id", profile.id);
 
       if (updateError) {
-        console.error(`Failed to migrate ${profile.full_name}:`, updateError);
+        console.error(`Failed to migrate credentials for ${profile.full_name}:`, updateError.message);
       } else {
-        console.log(`Successfully migrated ${profile.full_name}. pin_code is now NULL.`);
+        // Record secure audit trail without sensitive data
+        try {
+          const { data: profData } = await supabase
+            .from("profiles")
+            .select("shop_id")
+            .eq("id", profile.id)
+            .single();
+
+          if (profData?.shop_id) {
+            await supabase.from("staff_audit_logs").insert({
+              shop_id: profData.shop_id,
+              actor_id: profile.id,
+              target_staff_id: profile.id,
+              event_type: 'PIN_MIGRATED',
+              reason: 'Automatic PBKDF2 hash migration from legacy plaintext credential'
+            });
+          }
+        } catch {
+          // Non-fatal audit log catch
+        }
+        console.log(`[SECURE] Migrated staff credentials for profile id: ${profile.id}. pin_code is NULL, pin_hash is populated.`);
       }
     }
   }

@@ -29,6 +29,7 @@ interface AuthContextType {
   logoutManager: () => void;
   refreshProfile: () => Promise<void>;
   updateStaffProfile: (id: string, updates: Partial<ProfileRow>, reason?: string) => Promise<{ success: boolean; error?: string }>;
+  resetStaffPin: (id: string, newPin: string, reason?: string) => Promise<{ success: boolean; error?: string }>;
   users: ProfileRow[];
   isAccountPickerOpen: boolean;
   setIsAccountPickerOpen: (open: boolean) => void;
@@ -333,6 +334,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return res;
   };
 
+  const resetStaffPin = async (id: string, newPin: string, reason?: string) => {
+    const res = await staffApi.resetStaffPin(id, newPin, reason);
+    if (res.success) {
+      await refreshProfile();
+    }
+    return res;
+  };
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -354,6 +363,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       logoutManager,
       refreshProfile,
       updateStaffProfile,
+      resetStaffPin,
       users,
       isAccountPickerOpen,
       setIsAccountPickerOpen

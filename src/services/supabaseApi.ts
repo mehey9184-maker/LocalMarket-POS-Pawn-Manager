@@ -1504,6 +1504,36 @@ export const staffApi = {
     }
   },
 
+  async resetStaffPin(staffId: string, newPin: string, reason?: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const session = await authApi.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Authentication required');
+
+      const response = await fetch('/api/staff/reset-pin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          targetId: staffId,
+          pin: newPin,
+          reason
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return { success: false, error: data.error || 'Failed to reset staff PIN.' };
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error resetting staff PIN.' };
+    }
+  },
+
   async getStaffAuditLogs(staffId: string): Promise<any[]> {
     return await withAuthRecovery(async (supabase) => {
       const { data, error } = await supabase

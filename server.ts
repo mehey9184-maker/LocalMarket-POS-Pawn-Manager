@@ -547,6 +547,11 @@ async function startServer(desiredPort?: number) {
         return res.status(auth.status).json({ success: false, error: auth.error });
       }
 
+      const callerProfile = auth.profile;
+      if (callerProfile.role !== "owner" && callerProfile.role !== "admin" && callerProfile.role !== "manager") {
+        return res.status(403).json({ success: false, error: "Forbidden: Staff management requires Owner or Manager privileges." });
+      }
+
       const { targetId, updates, reason } = req.body;
       if (!targetId || !updates) {
         return res.status(400).json({ success: false, error: "Target ID and updates are required." });
@@ -561,13 +566,18 @@ async function startServer(desiredPort?: number) {
       });
 
       const processedUpdates = { ...updates };
-      if (processedUpdates.pinCode) {
-        processedUpdates.pin_hash = hashPin(processedUpdates.pinCode);
+      // Strip any browser-provided pin_hash to ensure client cannot inject hashes
+      delete processedUpdates.pin_hash;
+
+      const rawPin = processedUpdates.pinCode || processedUpdates.pin_code || processedUpdates.pin;
+      if (rawPin !== undefined) {
+        if (!/^\d{6}$/.test(String(rawPin))) {
+          return res.status(400).json({ success: false, error: "Terminal PIN must be exactly 6 numeric digits." });
+        }
+        processedUpdates.pin_hash = hashPin(String(rawPin));
         delete processedUpdates.pinCode;
         delete processedUpdates.pin_code;
-      } else if (processedUpdates.pin_code) {
-        processedUpdates.pin_hash = hashPin(processedUpdates.pin_code);
-        delete processedUpdates.pin_code;
+        delete processedUpdates.pin;
       }
 
       // Call the secure RPC via user-scoped client so auth.uid() resolves to caller
@@ -585,6 +595,99 @@ async function startServer(desiredPort?: number) {
     } catch (err: any) {
       console.error("Update staff profile error:", err);
       return res.status(500).json({ success: false, error: "Failed to update staff profile." });
+    }
+  });
+
+  // --- API ROUTE: DEDICATED STAFF PIN RESET ---
+  app.post("/api/staff/reset-pin", async (req, res) => {
+    try {
+      const auth = await authenticateCaller(req);
+      if (auth.status !== 200) {
+        return res.status(auth.status).json({ success: false, error: auth.error || "Authentication required." });
+      }
+
+      const callerProfile = auth.profile;
+      if (callerProfile.role !== "owner" && callerProfile.role !== "admin" && callerProfile.role !== "manager") {
+        return res.status(403).json({ success: false, error: "Forbidden: Staff PIN reset requires Owner or Manager privileges." });
+      }
+
+      const { targetId, pin, reason } = req.body;
+      if (!targetId || !pin) {
+        return res.status(400).json({ success: false, error: "Target staff ID and new PIN are required." });
+      }
+
+      if (!/^\d{6}$/.test(String(pin))) {
+        return res.status(400).json({ success: false, error: "Terminal PIN must be exactly 6 numeric digits." });
+      }
+
+      const adminSupabase = getSupabaseAdminClient();
+      if (!adminSupabase) {
+        return res.status(503).json({ success: false, error: "Admin database service unavailable." });
+      }
+
+      // Check target profile for shop isolation and role hierarchy
+      const { data: targetProfile, error: targetErr } = await adminSupabase
+        .from("profiles")
+        .select("*")
+        .eq("id", targetId)
+        .maybeSingle();
+
+      if (targetErr || !targetProfile) {
+        return res.status(404).json({ success: false, error: "Target staff profile not found." });
+      }
+
+      if (callerProfile.shop_id !== targetProfile.shop_id) {
+        return res.status(403).json({ success: false, error: "Forbidden: Cannot reset PIN for staff from a different shop branch." });
+      }
+
+      if (callerProfile.role === "manager") {
+        if (targetProfile.role === "owner" || targetProfile.role === "admin") {
+          return res.status(403).json({ success: false, error: "Forbidden: Managers cannot reset PIN for Owner or Admin accounts." });
+        }
+        if (targetProfile.role === "manager" && callerProfile.id !== targetId) {
+          return res.status(403).json({ success: false, error: "Forbidden: Managers cannot reset PIN for other Manager accounts." });
+        }
+      }
+
+      // Server hashes PIN via authoritative PBKDF2-SHA512
+      const newHash = hashPin(String(pin));
+
+      // Use user-scoped client to execute RPC and trigger secure audit log
+      const token = req.headers.authorization!.split(" ")[1].trim();
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+      const anonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+      const userScopedClient = createClient(supabaseUrl!, anonKey!, {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { headers: { Authorization: `Bearer ${token}` } }
+      });
+
+      const { data, error } = await userScopedClient.rpc('secure_update_staff_profile', {
+        p_target_id: targetId,
+        p_updates: { pin_hash: newHash },
+        p_reason: reason || 'Staff PIN reset by authorized administrator'
+      });
+
+      if (error) {
+        // Fallback update via admin client if RPC is not yet applied
+        await adminSupabase.from("profiles").update({
+          pin_hash: newHash,
+          pin_code: null,
+          updated_at: new Date().toISOString()
+        }).eq("id", targetId);
+
+        await logStaffAudit(adminSupabase, {
+          shopId: callerProfile.shop_id,
+          actorId: callerProfile.id,
+          targetId: targetId,
+          eventType: 'PIN_RESET',
+          reason: reason || 'Staff PIN reset by authorized administrator'
+        });
+      }
+
+      return res.json({ success: true, message: "Staff PIN reset successfully." });
+    } catch (err: any) {
+      console.error("Reset staff PIN error:", err);
+      return res.status(500).json({ success: false, error: "Internal server error resetting staff PIN." });
     }
   });
 

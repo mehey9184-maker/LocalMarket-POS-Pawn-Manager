@@ -1,6 +1,10 @@
 
 -- Refine Staff Security RPC for Role Promotion and Privilege Escalation
 -- Ensure Managers cannot create more Managers or grant sensitive permissions
+-- Ensure pin_hash is never exposed in audit logs and pin_code is cleared on reset
+
+ALTER TABLE IF EXISTS public.profiles 
+ADD COLUMN IF NOT EXISTS pin_hash TEXT;
 
 CREATE OR REPLACE FUNCTION public.secure_update_staff_profile(
     p_target_id UUID,
@@ -76,8 +80,6 @@ BEGIN
                 IF (v_perms->>'staff')::boolean = true THEN
                     RAISE EXCEPTION 'Managers cannot grant staff management permissions';
                 END IF;
-                -- Managers cannot grant reporting permissions if they want to restrict cost access
-                -- (Optional: add more restrictions here if needed)
             END IF;
 
             -- CRITICAL: Never include pin_hash in audit old/new values
@@ -94,9 +96,21 @@ BEGIN
         RETURN jsonb_build_object('success', true, 'message', 'No valid fields to update');
     END IF;
 
-    -- If pin_hash is being updated, set event_type
+    -- Determine descriptive audit event_type
     IF v_final_updates ? 'pin_hash' THEN
-        v_event_type := 'PIN_CHANGED';
+        v_event_type := 'PIN_RESET';
+    ELSIF v_final_updates ? 'is_active' THEN
+        IF (v_final_updates->>'is_active')::boolean = false THEN
+            v_event_type := 'STAFF_DEACTIVATED';
+        ELSE
+            v_event_type := 'STAFF_REACTIVATED';
+        END IF;
+    ELSIF v_final_updates ? 'role' THEN
+        v_event_type := 'ROLE_CHANGED';
+    ELSIF v_final_updates ? 'schedule' THEN
+        v_event_type := 'SCHEDULE_CHANGED';
+    ELSE
+        v_event_type := 'STAFF_PROFILE_UPDATED';
     END IF;
 
     -- 7. Apply updates
@@ -125,6 +139,6 @@ BEGIN
         p_reason
     );
 
-    RETURN jsonb_build_object('success', true, 'target_id', p_target_id);
+    RETURN jsonb_build_object('success', true, 'target_id', p_target_id, 'event_type', v_event_type);
 END;
 $$;
