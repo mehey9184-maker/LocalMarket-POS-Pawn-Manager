@@ -18,37 +18,33 @@ export function useTerminalSession() {
       return;
     }
 
-    setIsLoading(true);
     try {
       const localSession = await terminalService.getCurrentLocalSession();
 
       if (localSession && localSession.status === 'active') {
-        // Try server heartbeat/revalidation
+        // Render local session immediately so UI never hangs on network latency
+        setSession(localSession);
+        setIsLoading(false);
+
+        // Perform background server heartbeat/revalidation
         try {
           const heartbeatRes = await terminalService.heartbeat(localSession.id);
           if (heartbeatRes.status === 'active') {
-            setSession(localSession);
             setIsOfflineRevalidation(false);
-            return;
           } else if (heartbeatRes.status === 'invalidated' || heartbeatRes.status === 'expired') {
-            // Authoritative invalidation
             const updated = await terminalService.getCurrentLocalSession();
             setSession(updated);
             setIsOfflineRevalidation(false);
-            return;
           } else {
-            // Transient heartbeat error/network failure - enter temporary offline grace state
-            setSession(localSession);
             setIsOfflineRevalidation(true);
-            return;
           }
-        } catch (hbErr) {
-          // Transient network error during heartbeat - keep local session in offline grace state
-          setSession(localSession);
+        } catch {
           setIsOfflineRevalidation(true);
-          return;
         }
+        return;
       }
+
+      setIsLoading(true);
 
       // If local session is invalidated/expired, display it directly
       if (localSession && (localSession.status === 'invalidated' || localSession.status === 'expired')) {

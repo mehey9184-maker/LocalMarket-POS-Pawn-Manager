@@ -385,9 +385,9 @@ export const shopItemsApi = {
 
     query = query.order('added_at', { ascending: false });
 
-    if (options?.limit) {
-      query = query.limit(options.limit);
-    }
+    // Controlled query safety cap (default 2500 items per request unless explicitly specified)
+    const effectiveLimit = options?.limit ?? 2500;
+    query = query.limit(effectiveLimit);
 
     const { data, error } = await query;
     if (error) throw error;
