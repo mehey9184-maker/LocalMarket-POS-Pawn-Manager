@@ -160,35 +160,35 @@ export const AccountPicker: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#121212]/95 backdrop-blur-xl animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white/95 backdrop-blur-sm animate-in fade-in duration-300">
       <div className="w-full max-w-2xl px-6">
         {!selectedStaff ? (
           <div className="text-center">
-            <h1 className="font-headline font-bold text-4xl text-[#e5e2e1] mb-2 tracking-tight">Welcome back</h1>
-            <p className="text-[#a58b83] mb-12">Who is using this terminal?</p>
+            <h1 className="font-headline font-bold text-4xl text-gray-900 mb-2 tracking-tight">Welcome back</h1>
+            <p className="text-gray-500 mb-12">Who is using this terminal?</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {users.filter(u => u.is_active && u.role !== 'admin').map((staff) => (
                 <button
                   key={staff.id}
                   onClick={() => handleSelectStaff(staff)}
-                  className={`group relative bg-[#181717] border border-[#282727] rounded-2xl p-6 flex flex-col items-center gap-4 transition-all hover:border-[#c85a32] hover:bg-[#1f1e1e] hover:shadow-2xl hover:shadow-[#c85a32]/10 ${
+                  className={`group relative bg-white border border-gray-200 rounded-2xl p-6 flex flex-col items-center gap-4 transition-all hover:border-[#c85a32] hover:bg-gray-50 hover:shadow-lg hover:shadow-gray-200/50 ${
                     staff.id === currentProfile?.id ? 'ring-2 ring-[#c85a32] border-transparent' : ''
                   }`}
                 >
-                  <div className="w-16 h-16 rounded-full bg-[#1f1e1e] border-2 border-[#282727] flex items-center justify-center group-hover:border-[#c85a32]/50 transition-colors overflow-hidden">
+                  <div className="w-16 h-16 rounded-full bg-gray-100 border-2 border-gray-200 flex items-center justify-center group-hover:border-[#c85a32]/50 transition-colors overflow-hidden">
                     {staff.avatar_url ? (
                       <img src={staff.avatar_url} alt={staff.full_name} className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-xl font-bold text-[#a58b83] group-hover:text-[#e5e2e1] transition-colors">
+                      <span className="text-xl font-bold text-gray-500 group-hover:text-gray-700 transition-colors">
                         {getInitials(staff.full_name)}
                       </span>
                     )}
                   </div>
                   
                   <div className="text-center">
-                    <p className="font-bold text-[#e5e2e1] truncate max-w-[140px]">{staff.full_name}</p>
-                    <p className="text-xs text-[#a58b83] uppercase tracking-widest mt-1 font-mono">{getRoleLabel(staff.role)}</p>
+                    <p className="font-bold text-gray-900 truncate max-w-[140px]">{staff.full_name}</p>
+                    <p className="text-xs text-gray-500 uppercase tracking-widest mt-1 font-mono">{getRoleLabel(staff.role)}</p>
                   </div>
 
                   {staff.id === currentProfile?.id && (
@@ -203,31 +203,31 @@ export const AccountPicker: React.FC = () => {
 
             <button
               onClick={() => setIsAccountPickerOpen(false)}
-              className="mt-12 text-sm text-[#a58b83] hover:text-[#e5e2e1] transition-colors"
+              className="mt-12 text-sm text-gray-500 hover:text-gray-900 transition-colors"
             >
               Cancel and return to terminal
             </button>
           </div>
         ) : (
-          <div className="max-w-md mx-auto bg-[#181717] border border-[#282727] rounded-3xl p-8 shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="max-w-md mx-auto bg-white border border-gray-200 rounded-3xl p-8 shadow-xl animate-in zoom-in-95 duration-200">
             <button
               onClick={handleBack}
-              className="flex items-center gap-2 text-sm text-[#a58b83] hover:text-[#e5e2e1] transition-colors mb-8 group cursor-pointer"
+              className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors mb-8 group cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
               <span>Back to staff list</span>
             </button>
 
             <div className="flex flex-col items-center text-center mb-8">
-              <div className="w-20 h-20 rounded-full bg-[#1f1e1e] border-2 border-[#282727] flex items-center justify-center mb-4 overflow-hidden shadow-xl">
+              <div className="w-20 h-20 rounded-full bg-gray-100 border-2 border-gray-200 flex items-center justify-center mb-4 overflow-hidden shadow-sm">
                 {selectedStaff.avatar_url ? (
                   <img src={selectedStaff.avatar_url} alt={selectedStaff.full_name} className="w-full h-full object-cover" />
                 ) : (
-                  <span className="text-2xl font-bold text-[#e5e2e1]">{getInitials(selectedStaff.full_name)}</span>
+                  <span className="text-2xl font-bold text-gray-500">{getInitials(selectedStaff.full_name)}</span>
                 )}
               </div>
-              <h2 className="font-headline font-bold text-2xl text-[#e5e2e1] tracking-tight">{selectedStaff.full_name}</h2>
-              <p className="text-sm text-[#a58b83] mt-1">Please enter your 6-digit terminal PIN</p>
+              <h2 className="font-headline font-bold text-2xl text-gray-900 tracking-tight">{selectedStaff.full_name}</h2>
+              <p className="text-sm text-gray-500 mt-1">Please enter your 6-digit terminal PIN</p>
             </div>
 
             <div className="space-y-6">
@@ -236,22 +236,22 @@ export const AccountPicker: React.FC = () => {
                 <div
                   role="alert"
                   aria-live="polite"
-                  className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-5 text-center space-y-3 animate-in fade-in zoom-in-95 duration-200"
+                  className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center space-y-3 animate-in fade-in zoom-in-95 duration-200"
                 >
-                  <div className="w-10 h-10 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
+                  <div className="w-10 h-10 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
                     <Lock className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-amber-200">Too many failed attempts</h4>
-                    <p className="text-xs text-amber-400/80 mt-0.5">
+                    <h4 className="font-bold text-sm text-amber-900">Too many failed attempts</h4>
+                    <p className="text-xs text-amber-700 mt-0.5">
                       Account temporarily locked for security
                     </p>
                   </div>
                   <div className="pt-1">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#a58b83] block mb-1">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">
                       Try again in
                     </span>
-                    <div className="inline-block bg-[#1f1e1e] border border-amber-500/30 rounded-xl px-5 py-1.5 font-mono text-2xl font-bold tracking-wider text-amber-400 shadow-inner">
+                    <div className="inline-block bg-white border border-amber-200 rounded-xl px-5 py-1.5 font-mono text-2xl font-bold tracking-wider text-amber-700 shadow-inner">
                       {formatTime(remainingSeconds)}
                     </div>
                   </div>
@@ -260,7 +260,7 @@ export const AccountPicker: React.FC = () => {
 
               {/* PIN INPUT */}
               <div className="relative">
-                <Key className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${isLocked ? 'text-[#a58b83]/30' : 'text-[#a58b83]'}`} />
+                <Key className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${isLocked ? 'text-gray-300' : 'text-gray-400'}`} />
                 <input
                   type="password"
                   disabled={isLocked || isAuthenticating}
@@ -272,19 +272,19 @@ export const AccountPicker: React.FC = () => {
                   aria-label="6-Digit Terminal PIN"
                   className={`w-full h-14 border rounded-xl pl-12 pr-4 text-center text-2xl tracking-[0.5em] font-mono transition-all outline-none ${
                     isLocked
-                      ? 'bg-[#141414] border-[#222222] text-[#a58b83]/40 cursor-not-allowed opacity-60 placeholder:text-[#a58b83]/20'
-                      : 'bg-[#1f1e1e] border-[#282727] text-[#e5e2e1] focus:border-[#c85a32] focus:ring-1 focus:ring-[#c85a32] placeholder:text-[#a58b83]/30 placeholder:tracking-normal placeholder:text-sm'
+                      ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+                      : 'bg-[#F8F9FA] border-gray-200 text-gray-900 focus:border-[#c85a32] focus:ring-1 focus:ring-[#c85a32] placeholder:text-gray-400'
                   }`}
                 />
               </div>
 
               {/* STANDARD NON-LOCKOUT ERROR */}
               {!isLocked && error && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3 animate-shake">
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 animate-shake">
                   <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5">
                     <span className="text-[10px] font-bold text-white">!</span>
                   </div>
-                  <p className="text-xs text-red-400 font-medium leading-relaxed">{error}</p>
+                  <p className="text-xs text-red-600 font-medium leading-relaxed">{error}</p>
                 </div>
               )}
 
@@ -293,17 +293,17 @@ export const AccountPicker: React.FC = () => {
                 onClick={handleLogin}
                 disabled={isLocked || isAuthenticating || pin.length !== 6}
                 aria-disabled={isLocked || isAuthenticating || pin.length !== 6}
-                className={`w-full h-14 font-bold rounded-xl flex items-center justify-center gap-3 shadow-lg transition-all ${
+                className={`w-full h-14 font-bold rounded-xl flex items-center justify-center gap-3 transition-all ${
                   isLocked
-                    ? 'bg-[#1e1e1e] border border-[#2e2e2e] text-[#a58b83]/40 cursor-not-allowed opacity-60 shadow-none'
-                    : 'bg-[#c85a32] hover:bg-[#b84e27] disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-[#c85a32]/20 active:scale-[0.98] cursor-pointer'
+                    ? 'bg-gray-100 border border-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+                    : 'bg-[#c85a32] hover:bg-[#b84e27] disabled:bg-gray-200 disabled:text-gray-400 text-white shadow-sm active:scale-[0.98] cursor-pointer'
                 }`}
               >
                 {isAuthenticating ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : isLocked ? (
                   <>
-                    <Lock className="w-5 h-5 text-amber-400/70" />
+                    <Lock className="w-5 h-5 text-gray-400" />
                     <span>Locked ({formatTime(remainingSeconds)})</span>
                   </>
                 ) : (
@@ -320,10 +320,10 @@ export const AccountPicker: React.FC = () => {
                     key={i}
                     className={`w-3 h-3 rounded-full border transition-all duration-200 ${
                       isLocked
-                        ? 'bg-transparent border-[#222222]'
+                        ? 'bg-transparent border-gray-200'
                         : i < pin.length
                         ? 'bg-[#c85a32] border-[#c85a32] scale-110'
-                        : 'bg-transparent border-[#282727]'
+                        : 'bg-transparent border-gray-300'
                     }`}
                   ></div>
                 ))}

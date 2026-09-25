@@ -260,27 +260,23 @@ export const Sell: React.FC = () => {
                 <Zap className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-base font-bold text-gray-900 leading-tight">Front Checkout Counter</h2>
-                <p className="text-[11px] text-gray-500">Scan barcode, type SKU, or click items to add</p>
+                <h2 className="text-base font-bold text-gray-900 leading-tight">Sell</h2>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-mono font-semibold">
-                <span className={`w-2 h-2 rounded-full ${isInputFocused ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`} />
-                <span>{isInputFocused ? 'USB barcode scanner ready' : 'Click search to enable USB scanner'}</span>
-              </div>
               <button 
                 onClick={() => setIsScannerModalOpen(true)}
-                className="p-2.5 rounded-xl border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
+                className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition flex items-center gap-2 text-xs font-semibold"
                 title="Open Camera Scanner"
               >
-                <Camera className="w-4 h-4" />
+                <Camera className="w-3.5 h-3.5" />
+                <span>Scanner</span>
               </button>
             </div>
           </div>
 
           <form onSubmit={handleBarcodeSearchSubmit} className="relative">
-            <Barcode className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-[#C85A32]" />
+            <Barcode className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               ref={searchInputRef}
               type="text"
@@ -288,7 +284,7 @@ export const Sell: React.FC = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setIsInputFocused(true)}
               onBlur={() => setIsInputFocused(false)}
-              placeholder="Scan barcode or type SKU / Title..."
+              placeholder="Scan item or search by name / SKU..."
               className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#C85A32] focus:bg-white rounded-xl pl-11 pr-4 py-3 text-sm text-gray-900 font-mono placeholder:text-gray-400 transition-all outline-none"
             />
           </form>
@@ -308,24 +304,14 @@ export const Sell: React.FC = () => {
                     <img src={item.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="" />
                   </div>
                   <div className="flex-1 min-w-0">
+                    <h3 className="text-xs font-semibold text-gray-900 truncate">{item.title}</h3>
                     <p className="text-[10px] font-mono text-gray-400 font-semibold">{item.sku}</p>
-                    <h3 className="text-xs font-semibold text-gray-900 truncate mt-0.5">{item.title}</h3>
-                    <div className="flex items-center gap-1.5 my-2">
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
-                        {item.status}
-                      </span>
-                      {item.acquisitionType && (
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-gray-100 text-gray-600 font-medium">
-                          {item.acquisitionType}
-                        </span>
-                      )}
-                    </div>
                   </div>
-                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-900 font-mono">
+                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between mt-2">
+                    <span className="text-sm font-bold text-gray-900 font-mono">
                       R {item.retailPrice.toLocaleString()}
                     </span>
-                    <Plus className="w-3.5 h-3.5 text-[#C85A32]" />
+                    <Plus className="w-4 h-4 text-[#C85A32]" />
                   </div>
                 </button>
               ))}

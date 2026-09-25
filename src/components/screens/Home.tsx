@@ -18,7 +18,8 @@ import {
   Zap,
   CheckCircle2,
   AlertTriangle,
-  Plus
+  Plus,
+  Search
 } from 'lucide-react';
 
 export const Home: React.FC = () => {
@@ -62,7 +63,7 @@ export const Home: React.FC = () => {
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-gray-900 leading-tight">LocalMarket Operations Hub</h1>
+            <h1 className="text-sm font-bold text-gray-900 leading-tight">Home</h1>
             <p className="text-[11px] text-gray-500">{shopProfile.shop_name}</p>
           </div>
         </div>
@@ -81,7 +82,7 @@ export const Home: React.FC = () => {
       <div className="p-6 lg:p-8 max-w-[1500px] mx-auto space-y-8">
         
         {/* 2. MAIN QUICK ACTIONS: REFINED CARDS */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <section className="grid grid-cols-1 md:grid-cols-4 gap-5">
           {/* ACTION 1: SELL ITEM */}
           <button 
             onClick={() => setActiveTab('sell')}
@@ -92,9 +93,8 @@ export const Home: React.FC = () => {
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
-                Point of Sale
+                Sell
               </h2>
-              <p className="text-gray-500 text-xs mt-0.5">Retail checkout and instant barcode scan</p>
             </div>
           </button>
 
@@ -108,9 +108,8 @@ export const Home: React.FC = () => {
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
-                Add Stock & Intake
+                Add Stock
               </h2>
-              <p className="text-gray-500 text-xs mt-0.5">Existing stock onboarding or seller purchase</p>
             </div>
           </button>
 
@@ -124,9 +123,23 @@ export const Home: React.FC = () => {
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
-                Pawn Pledge Loan
+                Pawn
               </h2>
-              <p className="text-gray-500 text-xs mt-0.5">30-day secured credit advance</p>
+            </div>
+          </button>
+          
+          {/* ACTION 4: INVENTORY */}
+          <button 
+            onClick={() => setActiveTab('inventory')}
+            className="group p-6 rounded-2xl bg-white border border-gray-200 hover:border-gray-500 hover:shadow-md transition-all flex flex-col items-center justify-center text-center gap-3.5 cursor-pointer"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-gray-100 text-gray-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <Search className="w-7 h-7" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 group-hover:text-gray-900 transition-colors">
+                Find Item
+              </h2>
             </div>
           </button>
         </section>
@@ -137,7 +150,7 @@ export const Home: React.FC = () => {
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
                 <Zap className="w-3.5 h-3.5 text-[#C85A32]" />
-                Operational Priorities
+                Recent Activity
               </h2>
             </div>
 
@@ -149,12 +162,11 @@ export const Home: React.FC = () => {
                     <Clock className="w-5 h-5" />
                   </div>
                   <span className="text-[11px] font-bold text-[#C85A32] bg-[#FDF0EA] px-2.5 py-0.5 rounded-full">
-                    Pledge Expirations
+                    Pawn
                   </span>
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-gray-900">Pawn Term Pipeline</h3>
-                  <p className="text-xs text-gray-500">NCR Act 34 Statutory 30-Day Contracts</p>
+                  <h3 className="text-base font-bold text-gray-900">Pawn Loans</h3>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-red-50 p-3.5 rounded-xl border border-red-100">
@@ -163,15 +175,9 @@ export const Home: React.FC = () => {
                   </div>
                   <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-100">
                     <p className="text-2xl font-bold text-amber-700 font-mono">{expiringSoon.length}</p>
-                    <p className="text-[11px] text-amber-600 font-medium mt-0.5">Due in 3 Days</p>
+                    <p className="text-[11px] text-amber-600 font-medium mt-0.5">Due Soon</p>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setActiveTab('customers')}
-                  className="w-full py-2.5 bg-gray-900 text-white rounded-xl text-xs font-semibold hover:bg-gray-800 transition"
-                >
-                  Manage Pawn Ledger
-                </button>
               </div>
 
               {/* Approval & Pipeline */}
@@ -181,12 +187,11 @@ export const Home: React.FC = () => {
                     <User className="w-5 h-5" />
                   </div>
                   <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full">
-                    Stock Flow
+                    Management
                   </span>
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-gray-900">Manager Pipeline</h3>
-                  <p className="text-xs text-gray-500">Vault & floor stock transitions</p>
+                  <h3 className="text-base font-bold text-gray-900">Approval Pipeline</h3>
                 </div>
                 <div className="space-y-2 text-xs">
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200/60">
@@ -194,89 +199,58 @@ export const Home: React.FC = () => {
                     <span className="font-bold text-gray-900 font-mono">{pendingApproval.length}</span>
                   </div>
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200/60">
-                    <span className="font-medium text-gray-700">Ready for Retail Floor</span>
+                    <span className="font-medium text-gray-700">Ready for Retail</span>
                     <span className="font-bold text-gray-900 font-mono">{readyForRetail.length}</span>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setActiveTab('inventory')}
-                  className="w-full py-2.5 bg-[#C85A32] text-white rounded-xl text-xs font-semibold hover:bg-[#A94725] transition"
-                >
-                  View Floor Inventory
-                </button>
               </div>
             </div>
 
-            {/* Vault At-a-Glance Interaction */}
-            <div className="p-6 rounded-2xl bg-[#121212] border border-[#2A2A2A] shadow-2xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 blur-[80px] -mr-32 -mt-32 pointer-events-none" />
-              <div className="flex items-center justify-between mb-6 relative z-10">
+            {/* Vault At-a-Glance Interaction - QUIETED */}
+            <div className="p-6 rounded-2xl bg-white border border-gray-200 shadow-xs relative overflow-hidden">
+              <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center border border-amber-500/20">
+                  <div className="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 flex items-center justify-center">
                     <Lock className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Vault At-a-Glance</h3>
+                    <h3 className="text-sm font-bold text-gray-900">Vault Summary</h3>
                     <p className="text-[10px] text-gray-500 font-mono">Pledge Security & Forfeiture Control</p>
                   </div>
                 </div>
                 <button 
                   onClick={() => setActiveTab('vault')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest transition shadow-lg shadow-amber-900/20"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-white text-[10px] font-bold uppercase tracking-widest transition"
                 >
                   Enter Vault
                   <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 relative z-10">
-                <div className="p-4 rounded-2xl bg-black/40 border border-[#2A2A2A]">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
                   <span className="text-[9px] font-bold text-gray-500 uppercase block mb-1">Normal</span>
-                  <p className="text-xl font-black text-white font-mono">{activeLoans.length - expiringSoon.length - overdueLoans.length}</p>
+                  <p className="text-xl font-black text-gray-900 font-mono">{activeLoans.length - expiringSoon.length - overdueLoans.length}</p>
                 </div>
-                <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-800/30">
-                  <span className="text-[9px] font-bold text-amber-500 uppercase block mb-1">Due Soon</span>
-                  <p className="text-xl font-black text-amber-400 font-mono">{expiringSoon.filter(l => l.expiryDate > today).length}</p>
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
+                  <span className="text-[9px] font-bold text-amber-600 uppercase block mb-1">Due Soon</span>
+                  <p className="text-xl font-black text-amber-700 font-mono">{expiringSoon.filter(l => l.expiryDate > today).length}</p>
                 </div>
-                <div className="p-4 rounded-2xl bg-orange-950/40 border border-orange-800/30">
-                  <span className="text-[9px] font-bold text-orange-500 uppercase block mb-1">Due Today</span>
-                  <p className="text-xl font-black text-orange-400 font-mono">{expiringSoon.filter(l => l.expiryDate === today).length}</p>
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
+                  <span className="text-[9px] font-bold text-orange-600 uppercase block mb-1">Due Today</span>
+                  <p className="text-xl font-black text-orange-700 font-mono">{expiringSoon.filter(l => l.expiryDate === today).length}</p>
                 </div>
-                <div className="p-4 rounded-2xl bg-red-950/40 border border-red-800/30">
-                  <span className="text-[9px] font-bold text-red-500 uppercase block mb-1">Overdue</span>
-                  <p className="text-xl font-black text-red-400 font-mono">{overdueLoans.length}</p>
+                <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
+                  <span className="text-[9px] font-bold text-red-600 uppercase block mb-1">Overdue</span>
+                  <p className="text-xl font-black text-red-700 font-mono">{overdueLoans.length}</p>
                 </div>
-              </div>
-            </div>
-
-            {/* Inventory Health Widget */}
-            <div className="p-6 rounded-2xl bg-white border border-gray-200 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider">Inventory Health & Security</h3>
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              </div>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {[
-                  { label: 'Total In Stock', val: inventory.length, icon: Package, color: 'text-emerald-600' },
-                  { label: 'Active Pawn Collateral', val: activeLoans.length, icon: Lock, color: 'text-blue-600' },
-                  { label: 'Flagged / Restricted', val: inventory.filter(i => i.status === 'Flagged' || i.status === 'Reserved').length, icon: AlertCircle, color: 'text-amber-600' }
-                ].map((stat, i) => (
-                  <div key={i} className="p-4 rounded-xl bg-gray-50 border border-gray-200/60">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <stat.icon className={`w-3.5 h-3.5 ${stat.color}`} />
-                      <span className="text-[11px] font-semibold text-gray-500">{stat.label}</span>
-                    </div>
-                    <p className="text-2xl font-bold text-gray-900 font-mono">{stat.val}</p>
-                  </div>
-                ))}
               </div>
             </div>
           </div>
 
           {/* 4. TODAY'S BUSINESS SUMMARY (RIGHT) */}
           <aside className="space-y-4">
-            <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Today's Performance</h2>
+            <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Performance</h2>
             
             <div className="rounded-2xl bg-white border border-gray-200 shadow-xs overflow-hidden">
               <div className="p-6 space-y-5">
@@ -297,7 +271,6 @@ export const Home: React.FC = () => {
                       </div>
                       <div>
                         <p className="font-semibold text-gray-900">Retail Sales</p>
-                        <p className="text-[10px] text-gray-400">Checkout Sessions</p>
                       </div>
                     </div>
                     <span className="font-bold text-gray-900 font-mono text-sm">{todayTotals.sales}</span>
@@ -310,7 +283,6 @@ export const Home: React.FC = () => {
                       </div>
                       <div>
                         <p className="font-semibold text-gray-900">Stock Inflow</p>
-                        <p className="text-[10px] text-gray-400">Items Added</p>
                       </div>
                     </div>
                     <span className="font-bold text-gray-900 font-mono text-sm">{todayTotals.buys}</span>
@@ -323,7 +295,6 @@ export const Home: React.FC = () => {
                       </div>
                       <div>
                         <p className="font-semibold text-gray-900">Pawn Pledges</p>
-                        <p className="text-[10px] text-gray-400">Pledges Initiated</p>
                       </div>
                     </div>
                     <span className="font-bold text-gray-900 font-mono text-sm">{todayTotals.pawns}</span>
@@ -336,14 +307,6 @@ export const Home: React.FC = () => {
                     R {todayTotals.payouts.toLocaleString()}
                   </p>
                 </div>
-              </div>
-
-              <div className="bg-[#F8F9FA] px-6 py-3.5 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500 font-medium">
-                <span>Compliance Active</span>
-                <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  NCR & SAPS Verified
-                </span>
               </div>
             </div>
           </aside>
