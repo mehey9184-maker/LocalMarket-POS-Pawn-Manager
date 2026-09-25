@@ -16,10 +16,45 @@ async function getApp() {
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  const app = await getApp();
-  // Ensure req.url matches Express route definitions if path was rewritten
-  if (req.url && !req.url.startsWith("/api") && !req.url.startsWith("/uploads")) {
-    req.url = `/api${req.url.startsWith("/") ? "" : "/"}${req.url}`;
+  try {
+    const app = await getApp();
+
+    // Resolve original path from headers if Vercel altered req.url
+    const originalUrl =
+      (req.headers["x-forwarded-uri"] as string) ||
+      (req.headers["x-matched-path"] as string) ||
+      (req.headers["x-original-url"] as string) ||
+      req.url ||
+      "/";
+
+    if (
+      (req.url === "/api" || req.url === "/" || req.url === "") &&
+      originalUrl &&
+      originalUrl !== "/api" &&
+      originalUrl !== "/"
+    ) {
+      req.url = originalUrl;
+    }
+
+    // Ensure req.url matches Express route definitions if path was rewritten without prefix
+    if (req.url && !req.url.startsWith("/api") && !req.url.startsWith("/uploads")) {
+      req.url = `/api${req.url.startsWith("/") ? "" : "/"}${req.url}`;
+    }
+
+    return app(req, res);
+  } catch (err: any) {
+    console.error("Vercel Serverless Function invocation error:", err);
+    if (!res.headersSent) {
+      res.statusCode = 500;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.end(
+        JSON.stringify({
+          success: false,
+          error: "LocalMarket backend serverless function error",
+          message: err?.message || String(err),
+        })
+      );
+    }
   }
-  return app(req, res);
 }
+

@@ -13,8 +13,12 @@ dotenv.config();
 
 // Ensure public upload directories exist for local development fallback
 const UPLOAD_ROOT = path.join(process.cwd(), "public", "uploads");
-if (!fs.existsSync(UPLOAD_ROOT)) {
-  fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
+try {
+  if (!fs.existsSync(UPLOAD_ROOT)) {
+    fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
+  }
+} catch {
+  // Read-only filesystem in serverless environments (e.g. Vercel)
 }
 
 // Server-side Supabase Admin Client helper
@@ -1326,9 +1330,43 @@ async function startServer(desiredPort?: number) {
 
 export { createApp, startServer };
 
-// Standalone execution entry
-if (typeof process !== "undefined" && !process.env.IS_ELECTRON_MAIN) {
-  startServer(Number(process.env.PORT) || 3000).catch(err => {
+// Standalone execution entry: Only auto-start when executed directly as CLI script,
+// and NEVER when imported as a module (e.g. by Vercel serverless function or Electron main).
+function shouldAutoStartServer(): boolean {
+  // Explicitly check serverless environment flags
+  if (
+    process.env.VERCEL ||
+    process.env.VERCEL_ENV ||
+    process.env.NOW_REGION ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.IS_SERVERLESS
+  ) {
+    return false;
+  }
+
+  // Explicitly check Electron main environment
+  if (process.env.IS_ELECTRON_MAIN || process.env.ELECTRON_APP) {
+    return false;
+  }
+
+  // Check if executed directly as entry script
+  if (typeof process !== "undefined" && Array.isArray(process.argv) && process.argv[1]) {
+    const entryFile = path.resolve(process.argv[1]);
+    const baseName = path.basename(entryFile);
+    if (
+      baseName === "server.ts" ||
+      baseName === "server.cjs" ||
+      baseName === "server.js"
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+if (shouldAutoStartServer()) {
+  startServer(Number(process.env.PORT) || 3000).catch((err) => {
     console.error("LocalMarket Server initialization error:", err);
   });
 }
