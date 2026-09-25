@@ -38,8 +38,8 @@ const MainLayout: React.FC = () => {
 
     if (user && isEmailConfirmed && (activeTab === 'landing' || activeTab === 'auth')) {
       setActiveTab('home');
-    } else if (!user && activeTab !== 'landing' && activeTab !== 'auth') {
-      setActiveTab('landing');
+    } else if (!user && activeTab !== 'auth') {
+      setActiveTab('auth');
     }
   }, [user, authLoading, activeTab, setActiveTab]);
 

@@ -16,7 +16,7 @@ export const AuthPage: React.FC = () => {
   // Validation State
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
-  // Connection Test State
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
 
@@ -98,43 +98,24 @@ export const AuthPage: React.FC = () => {
   };
 
   const getInputClass = (error?: string) => {
-    return `w-full h-11 bg-[#1f1e1e] text-[#e5e2e1] placeholder:text-[#a58b83]/50 text-sm rounded-lg pl-10 pr-4 border ${
-      error ? 'border-red-500/50 focus:border-red-500' : 'border-[#282727] focus:border-[#c85a32]'
+    return `w-full h-11 bg-white text-gray-900 placeholder:text-gray-400 text-sm rounded-lg pl-10 pr-4 border ${
+      error ? 'border-red-300 focus:border-red-500' : 'border-gray-300 focus:border-[#c85a32]'
     } focus:ring-1 ${error ? 'focus:ring-red-500' : 'focus:ring-[#c85a32]'} focus:outline-none transition-colors`;
   };
 
   return (
-    <div className="flex-1 min-h-screen bg-[#121212] font-body text-[#e5e2e1] antialiased flex flex-col selection:bg-[#c85a32] selection:text-white">
+    <div className="flex-1 min-h-screen bg-[#F5F6F8] font-sans text-gray-900 antialiased flex flex-col selection:bg-[#FDF0EA] selection:text-[#C85A32]">
       {/* Executive Header */}
-      <header className="w-full h-16 border-b border-[#282727]/40 bg-[#121212]/80 backdrop-blur-md sticky top-0 z-40">
+      <header className="w-full h-16 border-b border-gray-200 bg-white sticky top-0 z-40">
         <div className="max-w-6xl mx-auto h-full px-6 flex items-center justify-between">
-          <button 
-            onClick={() => setActiveTab('landing')}
-            className="flex items-center gap-3 group focus:outline-none"
-          >
-            <img 
-              alt="LocalMarket Logo" 
-              className="h-8 w-auto object-contain transition-transform group-hover:scale-105" 
-              src="https://lh3.googleusercontent.com/aida/AEtjO1UfUiIqabsIZ56CPMQZDDINSLpdT6QSVf0B-x4HcMjJ7PbKy_i1yem7zMzcxE-B3NFGYhcHZZk80VwzUIdvChBRjEwHktu1TMTOe5OBWbir5UPYK4hYX8JdLPVmSJk_ijs2Y64lfbrJhnJ7iubyPSX-zCr7eWK0ZpdTKUFjekNlHKaSjlNDN4T_dfkLorrnQuH7uvl4cC9w6XnNreypS5GNTEbnnCG481DTrFY5hD4EUs5E_rhWM71Ivk"
-            />
-            <div className="flex flex-col text-left">
-              <span className="font-headline font-bold text-base text-[#e5e2e1] tracking-tight leading-tight">LocalMarket POS</span>
-              <span className="font-mono text-[10px] text-[#a58b83] tracking-wider uppercase">Point of Sale & Pawn Management</span>
-            </div>
-          </button>
+          <div className="flex items-center gap-3">
+            <span className="font-bold text-base text-gray-900 tracking-tight leading-tight">LocalMarket POS</span>
+          </div>
 
           <div className="flex items-center gap-4">
-            <button 
-              className="hidden sm:flex items-center gap-1.5 text-xs text-[#a58b83] hover:text-[#e5e2e1] transition-colors font-medium"
-              onClick={() => showToast('Terminal Support', 'Contact store administrator for account provisioning', 'info')}
-            >
-              <span className="material-symbols-outlined text-[18px]">help_outline</span>
-              <span>Terminal Help</span>
-            </button>
-            <div className="h-4 w-px bg-[#282727] hidden sm:block"></div>
-            <div className="flex items-center gap-2 text-xs text-[#a58b83] font-mono">
-              <span className="w-2 h-2 rounded-full bg-[#4edea3]"></span>
-              <span className="hidden md:inline">SYSTEM ONLINE</span>
+            <div className="flex items-center gap-2 text-xs text-gray-500 font-mono">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>SYSTEM ONLINE</span>
             </div>
           </div>
         </div>
@@ -142,26 +123,22 @@ export const AuthPage: React.FC = () => {
 
       {/* Centered Form Container */}
       <main className="flex-1 flex items-center justify-center px-4 py-12 sm:py-16">
-        <div className="w-full max-w-md animate-in fade-in zoom-in duration-500">
-          <div className="bg-[#181717] border border-[#282727]/60 rounded-2xl p-7 sm:p-9 shadow-2xl relative overflow-hidden backdrop-blur-sm">
+        <div className="w-full max-w-md">
+          <div className="bg-white border border-gray-200 rounded-2xl p-7 sm:p-9 shadow-sm relative overflow-hidden">
             
             <div className="flex flex-col items-center text-center mb-7">
-              <div className="w-12 h-12 rounded-xl bg-[#1f1e1e] flex items-center justify-center mb-3 border border-[#282727]">
-                <span className="material-symbols-outlined text-[#c85a32] text-2xl">point_of_sale</span>
-              </div>
-              <h1 className="font-headline font-bold text-2xl text-[#e5e2e1] tracking-tight">
-                Terminal Sign In
+              <h1 className="font-bold text-2xl text-gray-900 tracking-tight">
+                Sign in to your shop terminal
               </h1>
-              <p className="text-sm text-[#a58b83] mt-1">
-                Sign in to your branch terminal. Accounts are provisioned by store management.
+              <p className="text-sm text-gray-500 mt-2">
+                Use your staff credentials to begin your shift.
               </p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="block text-xs font-mono font-medium text-[#a58b83] uppercase tracking-wider">Work Email</label>
+                <label className="block text-xs font-medium text-gray-500">Email</label>
                 <div className="relative">
-                  <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[#a58b83] text-[18px] pointer-events-none">mail</span>
                   <input 
                     required
                     type="email"
@@ -171,96 +148,76 @@ export const AuthPage: React.FC = () => {
                     className={getInputClass(errors.email)}
                   />
                 </div>
-                {errors.email && <p className="text-[10px] text-red-500 font-mono pl-1">{errors.email}</p>}
+                {errors.email && <p className="text-[10px] text-red-500 pl-1">{errors.email}</p>}
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-mono font-medium text-[#a58b83] uppercase tracking-wider">Password or PIN</label>
-                </div>
+                <label className="block text-xs font-medium text-gray-500">Password</label>
                 <div className="relative">
-                  <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[#a58b83] text-[18px] pointer-events-none">lock</span>
                   <input 
                     required
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={handlePasswordChange}
                     placeholder="••••••••"
-                    className={`${getInputClass(errors.password)} font-mono`}
+                    className={getInputClass(errors.password)}
                   />
-                  <button 
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#a58b83] hover:text-[#e5e2e1] transition-colors focus:outline-none"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">
-                      {showPassword ? "visibility_off" : "visibility"}
-                    </span>
-                  </button>
                 </div>
-                {errors.password && <p className="text-[10px] text-red-500 font-mono pl-1">{errors.password}</p>}
+                {errors.password && <p className="text-[10px] text-red-500 pl-1">{errors.password}</p>}
               </div>
 
               <button 
                 type="submit"
                 disabled={loading}
-                className="w-full h-12 mt-2 bg-[#c85a32] hover:bg-[#b84e27] active:scale-[0.99] text-white font-headline font-semibold text-sm rounded-lg flex items-center justify-center gap-2 shadow-lg shadow-[#c85a32]/25 transition-all focus:outline-none disabled:opacity-50"
+                className="w-full h-11 mt-4 bg-[#c85a32] hover:bg-[#b84e27] text-white font-semibold text-sm rounded-lg flex items-center justify-center gap-2 transition-all disabled:opacity-50"
               >
                 {loading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
-                  <>
-                    <span>Sign In to Terminal</span>
-                    <span className="material-symbols-outlined text-base">arrow_forward</span>
-                  </>
+                  <span>Sign In</span>
                 )}
               </button>
 
-              <div className="flex flex-col gap-4 pt-2">
-                <div className="relative py-1 flex items-center justify-center">
-                  <div className="w-full border-t border-[#282727]"></div>
-                  <span className="absolute bg-[#181717] px-3 text-[10px] font-mono uppercase tracking-widest text-[#a58b83]/60">Diagnostics</span>
-                </div>
-
+              <div className="pt-4 text-center">
                 <button 
                   type="button"
-                  onClick={checkConnection}
-                  disabled={testingConnection}
-                  className="w-full h-11 bg-[#1f1e1e] hover:bg-[#282727] text-[#e5e2e1] text-xs font-medium rounded-lg border border-[#282727] flex items-center justify-center gap-2 transition-colors focus:outline-none"
+                  onClick={() => setShowDiagnostics(!showDiagnostics)}
+                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  {testingConnection ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Database className="w-4 h-4 text-[#c85a32]" />
-                      <span>Test Database Connection</span>
-                    </>
-                  )}
+                  {showDiagnostics ? 'Hide Diagnostics' : 'Show Terminal Diagnostics'}
                 </button>
-
-                {testResult && (
-                  <div className={`p-3 rounded-lg border text-[11px] font-medium flex items-start gap-2.5 animate-in fade-in slide-in-from-top-1 ${
-                    testResult.success ? 'bg-green-500/5 border-green-500/20 text-green-400' : 'bg-red-500/5 border-red-500/20 text-red-400'
-                  }`}>
-                    {testResult.success ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />}
-                    <div className="flex flex-col gap-1">
-                      <span>{testResult.message}</span>
-                      {testResult.success && (
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 opacity-80 font-mono text-[9px] mt-1">
-                          <span className="flex items-center gap-1.5">
-                            <span className={`w-1.5 h-1.5 rounded-full ${testResult.hasProfilesTable ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                            Profiles: {testResult.hasProfilesTable ? 'Found' : 'Missing'}
-                          </span>
-                          <span className="flex items-center gap-1.5">
-                            <span className={`w-1.5 h-1.5 rounded-full ${testResult.hasShopItemsTable ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                            Inventory: {testResult.hasShopItemsTable ? 'Found' : 'Missing'}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
+
+              {showDiagnostics && (
+                <div className="space-y-4 pt-2">
+                  <button 
+                    type="button"
+                    onClick={checkConnection}
+                    disabled={testingConnection}
+                    className="w-full h-10 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-medium rounded-lg border border-gray-200 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    {testingConnection ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Database className="w-4 h-4 text-[#c85a32]" />
+                        <span>Test Database Connection</span>
+                      </>
+                    )}
+                  </button>
+
+                  {testResult && (
+                    <div className={`p-3 rounded-lg border text-[11px] font-medium flex items-start gap-2 ${
+                      testResult.success ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+                    }`}>
+                      {testResult.success ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />}
+                      <div>
+                        <span>{testResult.message}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </form>
 
             <div className="mt-6 pt-5 border-t border-[#282727]/60 text-center">
