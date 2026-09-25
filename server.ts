@@ -341,9 +341,8 @@ async function uploadToBackblazeB2(
   }
 }
 
-async function startServer(desiredPort?: number) {
+async function createApp(options: { isServerless?: boolean } = {}): Promise<express.Application> {
   const app = express();
-  const PORT: number = desiredPort ?? (Number(process.env.PORT) || 3000);
 
   // Support image base64 payloads up to 25MB
   app.use(express.json({ limit: "25mb" }));
@@ -351,6 +350,16 @@ async function startServer(desiredPort?: number) {
 
   // Static uploads directory for local persistence / offline fallback
   app.use("/uploads", express.static(UPLOAD_ROOT));
+
+  // --- API ROUTE: HEALTH CHECK ---
+  app.get(["/api/health", "/health"], (req, res) => {
+    res.json({
+      status: "ok",
+      service: "LocalMarket API",
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
+  });
 
   // --- API ROUTE: VERIFY MANAGER PIN ---
   // Authenticates caller session and verifies owner/manager authorization
@@ -1262,26 +1271,35 @@ async function startServer(desiredPort?: number) {
     });
   });
 
-  // Vite middleware for development (disabled in Electron packaged mode)
-  if (process.env.NODE_ENV !== "production" && !process.env.ELECTRON_APP) {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const candidatePaths = [
-      path.join(process.cwd(), "dist"),
-      path.join(__dirname, "../dist"),
-      path.join(__dirname, "dist")
-    ];
-    const distPath = candidatePaths.find(p => fs.existsSync(path.join(p, "index.html"))) || candidatePaths[0];
-    
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+  // When running as a standalone dev or production server, handle frontend routing
+  if (!options.isServerless) {
+    if (process.env.NODE_ENV !== "production" && !process.env.ELECTRON_APP) {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const candidatePaths = [
+        path.join(process.cwd(), "dist"),
+        path.join(__dirname, "../dist"),
+        path.join(__dirname, "dist")
+      ];
+      const distPath = candidatePaths.find(p => fs.existsSync(path.join(p, "index.html"))) || candidatePaths[0];
+      
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
   }
+
+  return app;
+}
+
+async function startServer(desiredPort?: number) {
+  const PORT: number = desiredPort ?? (Number(process.env.PORT) || 3000);
+  const app = await createApp({ isServerless: false });
 
   return new Promise<{ app: express.Application; server: any; port: number }>((resolve, reject) => {
     const server = app.listen(PORT, "0.0.0.0", () => {
@@ -1306,7 +1324,7 @@ async function startServer(desiredPort?: number) {
   });
 }
 
-export { startServer };
+export { createApp, startServer };
 
 // Standalone execution entry
 if (typeof process !== "undefined" && !process.env.IS_ELECTRON_MAIN) {

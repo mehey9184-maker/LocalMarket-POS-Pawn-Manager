@@ -32,7 +32,7 @@ export async function runApiRoutingAndResilienceTests() {
       htmlRes.error === 'LocalMarket backend is not reachable. The app interface is running, but the API server is unavailable.',
       `Expected user-friendly backend unavailable message, got: ${htmlRes.error}`
     );
-    console.log('  â Non-JSON HTML error page safely intercepted without JSON parse exception');
+    console.log('  ✔ Non-JSON HTML error page safely intercepted without JSON parse exception');
 
     // Test 2: Standard JSON 400/401 response from backend
     globalThis.fetch = (async () => {
@@ -52,7 +52,7 @@ export async function runApiRoutingAndResilienceTests() {
       json401Res.error === 'Missing or invalid Authorization header.',
       `Expected JSON error message, got: ${json401Res.error}`
     );
-    console.log('  â Standard JSON API error correctly parsed from backend');
+    console.log('  ✔ Standard JSON API error correctly parsed from backend');
 
     // Test 3: Successful JSON response
     globalThis.fetch = (async () => {
@@ -72,7 +72,7 @@ export async function runApiRoutingAndResilienceTests() {
     );
     assert(successRes.ok, '200 JSON response must be ok');
     assert(successRes.data?.profile?.id === 'prof-123', 'Parsed profile payload must match');
-    console.log('  â Valid API response successfully parsed');
+    console.log('  ✔ Valid API response successfully parsed');
 
     // Test 4: Network failure / disconnected server
     globalThis.fetch = (async () => {
@@ -85,7 +85,24 @@ export async function runApiRoutingAndResilienceTests() {
       netErrRes.error!.includes('Failed to fetch') || netErrRes.error!.includes('not reachable'),
       `Network error should have meaningful message: ${netErrRes.error}`
     );
-    console.log('  â Network drop handled gracefully');
+    console.log('  ✔ Network drop handled gracefully');
+
+    // Test 5: /api/health check payload structure
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({ status: 'ok', service: 'LocalMarket API', timestamp: new Date().toISOString() }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        }
+      );
+    }) as any;
+
+    const healthRes = await apiRequest<{ status: string; service: string }>('/api/health');
+    assert(healthRes.ok, '/api/health response must be ok');
+    assert(healthRes.data?.status === 'ok', '/api/health status must be ok');
+    assert(healthRes.data?.service === 'LocalMarket API', '/api/health service must match');
+    console.log('  ✔ Health check endpoint response verified');
 
   } finally {
     globalThis.fetch = originalFetch;
