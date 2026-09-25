@@ -2,6 +2,10 @@
  * Robust API Client for LocalMarket POS Backend Requests.
  * Safely parses responses, handles non-JSON / HTML / Gateway error responses,
  * and provides clear, user-friendly diagnostics when the API server is unreachable.
+ * 
+ * Supports configurable API base URL via VITE_API_BASE_URL or window.__LOCALMARKET_API_BASE_URL__.
+ * - Empty / unset: Uses relative /api paths (standard local & Electron mode).
+ * - Set: Uses targeted server URL (e.g. http://192.168.1.50:3000) for LAN multi-device mode.
  */
 
 export interface ApiResponse<T = any> {
@@ -16,6 +20,39 @@ const BACKEND_UNAVAILABLE_MESSAGE =
   "LocalMarket backend is not reachable. The app interface is running, but the API server is unavailable.";
 
 /**
+ * Returns the configured API base URL, normalized without trailing slashes.
+ */
+export function getApiBaseUrl(): string {
+  // 1. Check Vite build-time / env-time variable
+  const envBaseUrl = typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL;
+  if (envBaseUrl && typeof envBaseUrl === 'string' && envBaseUrl.trim() !== '') {
+    return envBaseUrl.trim().replace(/\/+$/, '');
+  }
+
+  // 2. Check runtime window configuration (for dynamic LAN configuration)
+  if (typeof window !== 'undefined' && (window as any).__LOCALMARKET_API_BASE_URL__) {
+    const winBaseUrl = (window as any).__LOCALMARKET_API_BASE_URL__;
+    if (typeof winBaseUrl === 'string' && winBaseUrl.trim() !== '') {
+      return winBaseUrl.trim().replace(/\/+$/, '');
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Resolves a relative or absolute API route against the configured API base URL.
+ */
+export function resolveApiUrl(pathOrUrl: string): string {
+  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+    return pathOrUrl;
+  }
+  const baseUrl = getApiBaseUrl();
+  const cleanPath = pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`;
+  return baseUrl ? `${baseUrl}${cleanPath}` : cleanPath;
+}
+
+/**
  * Safely performs an HTTP request to the LocalMarket Express backend.
  * Guarantees that non-JSON responses (HTML 404s, 502/503 proxies, Gateway timeouts)
  * never trigger syntax parsing errors like "Unexpected token <" or "The page cannot be found".
@@ -25,7 +62,9 @@ export async function apiRequest<T = any>(
   init?: RequestInit
 ): Promise<ApiResponse<T>> {
   try {
-    const response = await fetch(input, {
+    const resolvedInput = typeof input === 'string' ? resolveApiUrl(input) : input;
+
+    const response = await fetch(resolvedInput, {
       ...init,
       headers: {
         Accept: 'application/json',
@@ -110,3 +149,4 @@ export async function apiPost<T = any>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 }
+

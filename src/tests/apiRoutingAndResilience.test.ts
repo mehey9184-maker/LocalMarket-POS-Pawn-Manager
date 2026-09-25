@@ -1,8 +1,8 @@
 /**
- * API Routing, Resilience & Non-JSON Interception Tests
+ * API Routing, Resilience, Base URL & Non-JSON Interception Tests
  */
 
-import { apiRequest, apiPost } from '../utils/apiClient';
+import { apiRequest, apiPost, resolveApiUrl, getApiBaseUrl } from '../utils/apiClient';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -13,13 +13,13 @@ function assert(condition: boolean, message: string) {
 export async function runApiRoutingAndResilienceTests() {
   console.log('--- Running API Routing & Resilience Tests ---');
 
-  // Test 1: Non-JSON HTML error interception
+  // Test 1: Non-JSON HTML error interception (e.g. preview fallback or CDN 404/502)
   const originalFetch = globalThis.fetch;
 
   try {
-    // Mock HTML error response (e.g. from preview/CDN error page)
+    // Mock HTML error response
     globalThis.fetch = (async () => {
-      return new Response('The page cannot be found', {
+      return new Response('<!DOCTYPE html><html><head><title>Page not found</title></head><body>The page cannot be found</body></html>', {
         status: 404,
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
@@ -45,14 +45,14 @@ export async function runApiRoutingAndResilienceTests() {
       );
     }) as any;
 
-    const json401Res = await apiPost('/api/staff/provision', {}, 'fake-token');
+    const json401Res = await apiPost('/api/staff/provision', {}, undefined);
     assert(!json401Res.ok, '401 response must not be marked ok');
     assert(json401Res.isJson, 'JSON response must be marked isJson=true');
     assert(
       json401Res.error === 'Missing or invalid Authorization header.',
       `Expected JSON error message, got: ${json401Res.error}`
     );
-    console.log('  ✔ Standard JSON API error correctly parsed from backend');
+    console.log('  ✔ POST /api/staff/provision without Authorization correctly parsed as JSON 401 error');
 
     // Test 3: Successful JSON response
     globalThis.fetch = (async () => {
@@ -87,10 +87,16 @@ export async function runApiRoutingAndResilienceTests() {
     );
     console.log('  ✔ Network drop handled gracefully');
 
-    // Test 5: /api/health check payload structure
+    // Test 5: /api/health check payload structure with mode
     globalThis.fetch = (async () => {
       return new Response(
-        JSON.stringify({ status: 'ok', service: 'LocalMarket API', timestamp: new Date().toISOString() }),
+        JSON.stringify({
+          status: 'ok',
+          service: 'LocalMarket API',
+          mode: 'local-server',
+          timestamp: new Date().toISOString(),
+          uptime: 42.5
+        }),
         {
           status: 200,
           headers: { 'Content-Type': 'application/json; charset=utf-8' },
@@ -98,11 +104,27 @@ export async function runApiRoutingAndResilienceTests() {
       );
     }) as any;
 
-    const healthRes = await apiRequest<{ status: string; service: string }>('/api/health');
+    const healthRes = await apiRequest<{ status: string; service: string; mode: string; uptime: number }>('/api/health');
     assert(healthRes.ok, '/api/health response must be ok');
     assert(healthRes.data?.status === 'ok', '/api/health status must be ok');
     assert(healthRes.data?.service === 'LocalMarket API', '/api/health service must match');
-    console.log('  ✔ Health check endpoint response verified');
+    assert(healthRes.data?.mode === 'local-server', '/api/health mode must be local-server');
+    assert(typeof healthRes.data?.uptime === 'number', '/api/health uptime must be a number');
+    console.log('  ✔ Health check endpoint response verified (status, service, mode, uptime)');
+
+    // Test 6: API URL Resolution (Relative vs LAN Base URL)
+    const relativeUrl = resolveApiUrl('/api/staff/provision');
+    assert(relativeUrl === '/api/staff/provision', `Expected relative URL '/api/staff/provision', got: ${relativeUrl}`);
+
+    // Test with runtime LAN base URL configuration
+    (window as any).__LOCALMARKET_API_BASE_URL__ = 'http://192.168.1.50:3000/';
+    const lanUrl = resolveApiUrl('/api/staff/provision');
+    assert(
+      lanUrl === 'http://192.168.1.50:3000/api/staff/provision',
+      `Expected normalized LAN URL 'http://192.168.1.50:3000/api/staff/provision', got: ${lanUrl}`
+    );
+    delete (window as any).__LOCALMARKET_API_BASE_URL__;
+    console.log('  ✔ API Base URL resolution and trailing slash normalization verified');
 
   } finally {
     globalThis.fetch = originalFetch;
@@ -110,3 +132,4 @@ export async function runApiRoutingAndResilienceTests() {
 
   console.log('--- API Routing & Resilience Tests Passed ---');
 }
+

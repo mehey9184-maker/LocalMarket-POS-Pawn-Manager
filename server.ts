@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import os from "os";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
@@ -19,6 +20,87 @@ try {
   }
 } catch {
   // Read-only filesystem in serverless environments (e.g. Vercel)
+}
+
+/**
+ * Detect local non-loopback IPv4 network interfaces for LAN connectivity.
+ */
+function getLocalIpAddresses(): string[] {
+  try {
+    const interfaces = os.networkInterfaces();
+    const addresses: string[] = [];
+    for (const name of Object.keys(interfaces)) {
+      const netList = interfaces[name];
+      if (!netList) continue;
+      for (const net of netList) {
+        if (net.family === "IPv4" && !net.internal && net.address) {
+          addresses.push(net.address);
+        }
+      }
+    }
+    return addresses;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Configurable CORS Middleware for LAN & Local Client Support.
+ * Allows localhost, LAN IPv4 subnets (192.168.x, 10.x, 172.16-31.x, *.local),
+ * and explicitly configured CORS_ORIGINS without wildcarding authenticated routes.
+ */
+function createCorsMiddleware() {
+  const configuredOrigins = (process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const isAllowedOrigin = (origin: string): boolean => {
+    if (!origin) return true;
+    if (configuredOrigins.includes(origin) || configuredOrigins.includes("*")) {
+      return true;
+    }
+    try {
+      const url = new URL(origin);
+      const host = url.hostname;
+      if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+        return true;
+      }
+      if (
+        /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host) ||
+        /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
+        /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host) ||
+        host.endsWith(".local")
+      ) {
+        return true;
+      }
+    } catch {
+      return false;
+    }
+    return false;
+  };
+
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const origin = req.headers.origin;
+    if (origin && isAllowedOrigin(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+      res.setHeader(
+        "Access-Control-Allow-Methods",
+        "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+      );
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Authorization, Content-Type, Accept, X-Requested-With, X-Shop-Id"
+      );
+    }
+
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+    next();
+  };
 }
 
 // Server-side Supabase Admin Client helper
@@ -348,6 +430,9 @@ async function uploadToBackblazeB2(
 async function createApp(options: { isServerless?: boolean } = {}): Promise<express.Application> {
   const app = express();
 
+  // Configurable CORS support for LAN multi-device access
+  app.use(createCorsMiddleware());
+
   // Support image base64 payloads up to 25MB
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
@@ -356,10 +441,12 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
   app.use("/uploads", express.static(UPLOAD_ROOT));
 
   // --- API ROUTE: HEALTH CHECK ---
+  const mode = options.isServerless ? "serverless" : "local-server";
   app.get(["/api/health", "/health"], (req, res) => {
     res.json({
       status: "ok",
       service: "LocalMarket API",
+      mode,
       timestamp: new Date().toISOString(),
       uptime: process.uptime()
     });
@@ -1301,27 +1388,40 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
   return app;
 }
 
-async function startServer(desiredPort?: number) {
+async function startServer(desiredPort?: number, desiredHost?: string) {
   const PORT: number = desiredPort ?? (Number(process.env.PORT) || 3000);
+  const isElectron = Boolean(process.env.IS_ELECTRON_MAIN || process.env.ELECTRON_APP);
+  const HOST: string = desiredHost ?? (process.env.HOST || (isElectron ? "127.0.0.1" : "0.0.0.0"));
   const app = await createApp({ isServerless: false });
 
-  return new Promise<{ app: express.Application; server: any; port: number }>((resolve, reject) => {
-    const server = app.listen(PORT, "0.0.0.0", () => {
+  return new Promise<{ app: express.Application; server: any; port: number; host: string }>((resolve, reject) => {
+    const server = app.listen(PORT, HOST, () => {
       const actualPort = (server.address() as any)?.port || PORT;
-      console.log(`LocalMarket Server running on http://127.0.0.1:${actualPort}`);
-      resolve({ app, server, port: actualPort });
+      console.log(`LocalMarket Server listening on http://127.0.0.1:${actualPort}`);
+
+      if (HOST === "0.0.0.0") {
+        const lanIps = getLocalIpAddresses();
+        if (lanIps.length > 0) {
+          console.log(`[LocalMarket LAN]`);
+          for (const ip of lanIps) {
+            console.log(`  http://${ip}:${actualPort}`);
+          }
+        }
+      }
+
+      resolve({ app, server, port: actualPort, host: HOST });
     });
 
     server.on("error", (err: any) => {
-      if (err.code === "EADDRINUSE" && process.env.ELECTRON_APP) {
+      if (err.code === "EADDRINUSE" && isElectron) {
         console.warn(`Port ${PORT} in use, binding to ephemeral port for Electron...`);
         const fallback = app.listen(0, "127.0.0.1", () => {
           const actualPort = (fallback.address() as any)?.port;
           console.log(`LocalMarket Server running on fallback http://127.0.0.1:${actualPort}`);
-          resolve({ app, server: fallback, port: actualPort });
+          resolve({ app, server: fallback, port: actualPort, host: "127.0.0.1" });
         });
       } else {
-        console.error(`Server error on port ${PORT}:`, err);
+        console.error(`Server error on ${HOST}:${PORT}:`, err);
         reject(err);
       }
     });
@@ -1366,7 +1466,9 @@ function shouldAutoStartServer(): boolean {
 }
 
 if (shouldAutoStartServer()) {
-  startServer(Number(process.env.PORT) || 3000).catch((err) => {
+  const port = Number(process.env.PORT) || 3000;
+  const host = process.env.HOST || "0.0.0.0";
+  startServer(port, host).catch((err) => {
     console.error("LocalMarket Server initialization error:", err);
   });
 }
