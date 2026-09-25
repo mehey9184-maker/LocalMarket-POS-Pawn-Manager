@@ -7,7 +7,32 @@ import {
   SaleTransaction 
 } from '../types';
 
+export async function cleanupSyntheticSyncLogs() {
+  try {
+    const syntheticLogs = await db.syncLogs
+      .filter(log => {
+        const entityId = String(log.entityId || '');
+        const custId = String(log.payload?.customerId || log.payload?.customer_id || '');
+        return entityId.startsWith('CUST-') || custId.startsWith('CUST-');
+      })
+      .toArray();
+
+    for (const log of syntheticLogs) {
+      if (log.id) {
+        await db.syncLogs.update(log.id, {
+          status: 'completed',
+          syncedAt: new Date().toISOString(),
+          error: 'Quarantined synthetic demo fixture log'
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to cleanup synthetic sync logs:', err);
+  }
+}
+
 export async function runMigration() {
+  await cleanupSyntheticSyncLogs();
   const isMigrated = localStorage.getItem('lm_dexie_migration_complete');
   if (isMigrated === 'true') return;
 

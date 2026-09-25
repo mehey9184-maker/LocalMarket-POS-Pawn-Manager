@@ -301,6 +301,9 @@ export interface SyncStatus {
   isOnline: boolean;
   isSyncing: boolean;
   pendingCount: number;
+  failedCount: number;
+  hasDeterministicError: boolean;
+  hasTransientError: boolean;
   lastSyncTime: string | null;
 }
 

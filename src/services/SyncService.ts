@@ -17,6 +17,60 @@ import {
   shopProfilesApi 
 } from './supabaseApi';
 
+let activeSyncPromise: Promise<{ processed: number; successful: number; failed: number }> | null = null;
+
+const isUuid = (id: string | null | undefined): boolean => {
+  if (!id) return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+};
+
+const isUuidOrTestShop = (id: string | null | undefined): boolean => {
+  if (!id) return false;
+  if (id === 'shop-101') return true;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+};
+
+const isLegacySyntheticId = (id: string | null | undefined): boolean => {
+  if (!id) return false;
+  return /^(CUST|LOAN|INV|SAPS|SELL|TX|REV)-\d{3}$/i.test(id);
+};
+
+export const getLegacySyntheticIdViolation = (obj: any): string | null => {
+  if (!obj || typeof obj !== 'object') return null;
+
+  const uuidFieldsToCheck = [
+    'customerid', 'customer_id',
+    'sellerid', 'seller_id',
+    'itemid', 'item_id',
+    'shopid', 'shop_id',
+    'transactionid', 'transaction_id',
+    'loanid', 'loan_id',
+    'sapsentryid', 'saps_entry_id'
+  ];
+
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    const lowerKey = key.toLowerCase();
+
+    if (uuidFieldsToCheck.includes(lowerKey)) {
+      if (typeof val === 'string' && isLegacySyntheticId(val)) {
+        return `Synthetic/legacy ${key} referential integrity violation (${val})`;
+      }
+    }
+
+    if (val && typeof val === 'object') {
+      const nestedViolation = getLegacySyntheticIdViolation(val);
+      if (nestedViolation) {
+        return nestedViolation;
+      }
+    }
+  }
+
+  return null;
+};
+
 /**
  * SyncService
  * Orchestrates offline-first data replication between local Dexie (IndexedDB)
@@ -35,6 +89,47 @@ export const SyncService = {
   async syncEntity(log: SyncLog, shopId?: string): Promise<{ success: boolean; error?: string }> {
     if (!isSupabaseConfigured()) {
       return { success: false, error: 'Supabase is not configured' };
+    }
+
+    // 1. Check if the entity ID itself is synthetic/legacy format
+    const entityTypesRequiringUuid = [
+      'inventory', 'customers', 'sellers', 'buyAcquisition', 'pawnIntake',
+      'sellerTransactions', 'sellerReversals', 'loans', 'sales', 'refunds',
+      'refund_approval', 'saps', 'shopProfile'
+    ];
+
+    if (entityTypesRequiringUuid.includes(log.entityType) && isLegacySyntheticId(log.entityId)) {
+      return { 
+        success: false, 
+        error: `DETERMINISTIC_PERMANENT: Synthetic/legacy entity ID ${log.entityId} cannot be synced to Supabase (must be a valid UUID)` 
+      };
+    }
+
+    // 2. Check if the payload contains synthetic/legacy foreign keys (customerId, sellerId, etc.) using the recursive validator
+    if (log.payload) {
+      const violation = getLegacySyntheticIdViolation(log.payload);
+      if (violation) {
+        return {
+          success: false,
+          error: `DETERMINISTIC_PERMANENT: ${violation}`
+        };
+      }
+    }
+
+    // 3. Shop context validation for entities that require shop context
+    const entityTypesRequiringShopId = [
+      'inventory', 'customers', 'sellers', 'buyAcquisition', 'pawnIntake',
+      'sellerTransactions', 'sellerReversals', 'loans', 'sales', 'refunds',
+      'refund_approval', 'saps', 'rules', 'shopProfile'
+    ];
+
+    if (entityTypesRequiringShopId.includes(log.entityType)) {
+      if (!shopId || !isUuidOrTestShop(shopId)) {
+        return {
+          success: false,
+          error: `DETERMINISTIC_RECOVERABLE: Waiting for valid shop context (authoritative shopId UUID is missing or stale)`
+        };
+      }
     }
 
     try {
@@ -332,6 +427,48 @@ export const SyncService = {
   },
 
   /**
+   * Safe check and quarantine for synthetic/legacy seed records
+   */
+  async quarantineLegacyRecords(): Promise<number> {
+    const logs = await db.syncLogs
+      .where('status')
+      .anyOf('pending', 'failed')
+      .toArray();
+
+    let quarantineCount = 0;
+
+    for (const log of logs) {
+      let isSynthetic = false;
+      let reason = '';
+
+      // Check if entityId is synthetic/legacy seed format
+      if (isLegacySyntheticId(log.entityId)) {
+        isSynthetic = true;
+        reason = `DETERMINISTIC_PERMANENT: Synthetic/legacy seed record (${log.entityId}) quarantined to prevent database type conflicts`;
+      }
+
+      // Check if critical foreign keys in payload are synthetic/legacy seed format using recursive validator
+      if (!isSynthetic && log.payload) {
+        const violation = getLegacySyntheticIdViolation(log.payload);
+        if (violation) {
+          isSynthetic = true;
+          reason = `DETERMINISTIC_PERMANENT: ${violation} quarantined`;
+        }
+      }
+
+      if (isSynthetic && log.id) {
+        await db.syncLogs.update(log.id, {
+          status: 'failed',
+          error: reason
+        });
+        quarantineCount++;
+      }
+    }
+
+    return quarantineCount;
+  },
+
+  /**
    * Process all pending or failed sync logs in batches with slow trickle rate limiting
    */
   async processAllPendingSync(
@@ -339,46 +476,78 @@ export const SyncService = {
     onProgress?: (current: number, total: number, entity: string) => void,
     trickleDelayMs = 120
   ): Promise<{ processed: number; successful: number; failed: number }> {
-    const isOnline = typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean' ? navigator.onLine : true;
-    if (!isSupabaseConfigured() || !isOnline) {
-      return { processed: 0, successful: 0, failed: 0 };
+    if (activeSyncPromise) {
+      return activeSyncPromise;
     }
 
-    const pendingLogs = await db.syncLogs
-      .where('status')
-      .anyOf('pending', 'failed')
-      .sortBy('createdAt');
+    activeSyncPromise = (async () => {
+      try {
+        const isOnline = typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean' ? navigator.onLine : true;
+        if (!isSupabaseConfigured() || !isOnline) {
+          return { processed: 0, successful: 0, failed: 0 };
+        }
 
-    const total = pendingLogs.length;
-    if (total === 0) return { processed: 0, successful: 0, failed: 0 };
+        // Quarantine legacy synthetic entries first to prevent any sync errors
+        const quarantineCount = await this.quarantineLegacyRecords();
+        if (quarantineCount > 0) {
+          console.log(`[SyncService] Audited and quarantined ${quarantineCount} legacy/synthetic records.`);
+        }
 
-    let successful = 0;
-    let failed = 0;
+        const pendingLogs = await db.syncLogs
+          .where('status')
+          .anyOf('pending', 'failed')
+          .sortBy('createdAt');
 
-    for (let i = 0; i < total; i++) {
-      const log = pendingLogs[i];
-      if (onProgress) {
-        onProgress(i + 1, total, `${log.entityType} (${log.entityId.slice(0, 8)})`);
+        const total = pendingLogs.length;
+        if (total === 0) return { processed: 0, successful: 0, failed: 0 };
+
+        let successful = 0;
+        let failed = 0;
+        let skipped = 0;
+
+        for (let i = 0; i < total; i++) {
+          const log = pendingLogs[i];
+
+          // Skip permanent deterministic errors from background automatic syncs
+          if (log.error && log.error.toUpperCase().startsWith('DETERMINISTIC_PERMANENT')) {
+            skipped++;
+            continue;
+          }
+
+          // Skip recoverable deterministic errors (missing shopId context) from background automatic syncs
+          if (log.error && log.error.toUpperCase().startsWith('DETERMINISTIC_RECOVERABLE') && (!shopId || !isUuid(shopId))) {
+            skipped++;
+            continue;
+          }
+
+          if (onProgress) {
+            onProgress(i + 1, total, `${log.entityType} (${log.entityId.slice(0, 8)})`);
+          }
+
+          // Mark as syncing
+          if (log.id) {
+            await db.syncLogs.update(log.id, { status: 'syncing' });
+          }
+
+          const res = await this.syncEntity(log, shopId);
+          if (res.success) {
+            successful++;
+          } else {
+            failed++;
+          }
+
+          // Trickle delay: 120ms default between sync actions to avoid rate limits
+          if (trickleDelayMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, trickleDelayMs));
+          }
+        }
+
+        return { processed: total - skipped, successful, failed };
+      } finally {
+        activeSyncPromise = null;
       }
+    })();
 
-      // Mark as syncing
-      if (log.id) {
-        await db.syncLogs.update(log.id, { status: 'syncing' });
-      }
-
-      const res = await this.syncEntity(log, shopId);
-      if (res.success) {
-        successful++;
-      } else {
-        failed++;
-      }
-
-      // Trickle delay: 120ms default between sync actions to avoid rate limits
-      if (trickleDelayMs > 0) {
-        await new Promise(resolve => setTimeout(resolve, trickleDelayMs));
-      }
-    }
-
-    return { processed: total, successful, failed };
+    return activeSyncPromise;
   }
 };

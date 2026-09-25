@@ -323,6 +323,391 @@ export async function runOfflineQueueSyncTests() {
 
     console.log('[PASS] Test E: Mid-queue network failure handled gracefully with partial progress preserved and clean recovery on reconnect');
 
+    // ---------------------------------------------------------
+    // Test F — Failed entries automatic retry eligibility on reconnect
+    // ---------------------------------------------------------
+    console.log('[Test F] Verifying failed sync entries are retried when reconnected...');
+    await db.syncLogs.clear();
+    await db.syncLogs.add({
+      entityType: 'sales',
+      entityId: 'sale-failed-1',
+      action: 'create',
+      status: 'failed',
+      createdAt: new Date().toISOString(),
+      retryCount: 1,
+      error: 'Previous network timeout',
+      payload: { id: 'sale-failed-1', receiptNumber: 'REC-FAIL-1', subtotal: 100, vatAmount: 0, total: 100, items: [] }
+    });
+
+    await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+    // Failed entries must be queried and retried by processAllPendingSync
+    const retryFailedResult = await SyncService.processAllPendingSync('shop-101', undefined, 0);
+    assert(retryFailedResult.processed === 1, `Test F: 1 failed log processed (got ${retryFailedResult.processed})`);
+    assert(retryFailedResult.successful === 1, `Test F: Failed log successfully retried (got ${retryFailedResult.successful})`);
+
+    const finalLog = await db.syncLogs.where('entityId').equals('sale-failed-1').first();
+    assert(finalLog?.status === 'completed', 'Test F: Status updated from failed to completed upon retry');
+    console.log('[PASS] Test F: Failed sync entries are eligible and successfully retried on reconnect');
+
+    // ---------------------------------------------------------
+    // Test G — Durable restart / reinitialization
+    // ---------------------------------------------------------
+    console.log('[Test G] Verifying durable restart with partially finished queue...');
+    await db.syncLogs.clear();
+    for (let i = 0; i < 10; i++) {
+      await db.syncLogs.add({
+        entityType: 'customers',
+        entityId: `cust-restart-${i}`,
+        action: 'create',
+        status: i < 5 ? 'completed' : 'pending',
+        createdAt: new Date(baseTime + i * 100).toISOString(),
+        retryCount: 0,
+        payload: { id: `cust-restart-${i}`, name: `Customer ${i}` }
+      });
+    }
+
+    // Process queue (only 5 pending items should be processed)
+    await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const restartResult = await SyncService.processAllPendingSync('shop-101', undefined, 0);
+    assert(restartResult.processed === 5, `Test G: Only 5 pending entries processed (got ${restartResult.processed})`);
+    assert(restartResult.successful === 5, 'Test G: 5 pending entries succeeded');
+
+    const totalCompleted = await db.syncLogs.where('status').equals('completed').count();
+    assert(totalCompleted === 10, `Test G: All 10 entries now completed (got ${totalCompleted})`);
+    console.log('[PASS] Test G: Unfinished work resumes cleanly and completed work is preserved across restarts');
+
+    // ---------------------------------------------------------
+    // Test H — Single-flight protection within active application runtime
+    // ---------------------------------------------------------
+    console.log('[Test H] Verifying single-flight protection for concurrent SyncService.processAllPendingSync calls...');
+    await db.syncLogs.clear();
+    await db.syncLogs.add({
+      entityType: 'sales',
+      entityId: 'sale-concurrent-1',
+      action: 'create',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+      payload: { id: 'sale-concurrent-1', receiptNumber: 'REC-CONC-1', subtotal: 100, vatAmount: 0, total: 100, items: [] }
+    });
+
+    let backendCallCount = 0;
+    await attachMockFetchAndSession(async () => {
+      backendCallCount++;
+      await new Promise(r => setTimeout(r, 20));
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+
+    // Invoke processAllPendingSync twice simultaneously
+    const p1 = SyncService.processAllPendingSync('shop-101', undefined, 10);
+    const p2 = SyncService.processAllPendingSync('shop-101', undefined, 10);
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+
+    assert(r1 === r2, 'Test H: Both callers must receive the exact same active sync promise instance');
+    assert(r1.processed === 1, `Test H: Only 1 log was processed (got ${r1.processed})`);
+    assert(backendCallCount === 1, `Test H: Backend was called exactly once (got ${backendCallCount})`);
+    console.log('[PASS] Test H: Single-flight concurrency guard within active JS runtime verified');
+
+    // ---------------------------------------------------------
+    // Test I — Network flapping resilience
+    // ---------------------------------------------------------
+    console.log('[Test I] Verifying network flapping resilience...');
+    await db.syncLogs.clear();
+    await db.syncLogs.add({
+      entityType: 'sellers',
+      entityId: 'seller-flap-1',
+      action: 'create',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+      payload: { id: 'seller-flap-1', name: 'Flapping Seller' }
+    });
+
+    // Flap 1: Network drop failure
+    await attachMockFetchAndSession(() => new Response(JSON.stringify({ error: 'Offline' }), { status: 503, headers: { 'Content-Type': 'application/json' } }));
+    const flap1 = await SyncService.processAllPendingSync('shop-101', undefined, 0);
+    assert(flap1.failed === 1, 'Test I: Flap 1 failed as expected');
+
+    // Flap 2: Network restored
+    await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const flap2 = await SyncService.processAllPendingSync('shop-101', undefined, 0);
+    assert(flap2.successful === 1, 'Test I: Flap 2 succeeded upon recovery');
+
+    const flapFinalLog = await db.syncLogs.where('entityId').equals('seller-flap-1').first();
+    assert(flapFinalLog?.status === 'completed', 'Test I: Final state is completed with zero data loss');
+    console.log('[PASS] Test I: Network flapping handled without data loss or stuck entries');
+
+    // ---------------------------------------------------------
+    // Regression Test 1 — Synthetic/legacy CUST-005 validation
+    // ---------------------------------------------------------
+    console.log('[Test 1] Verifying synthetic legacy customer CUST-005 is validated and quarantined...');
+    await db.syncLogs.clear();
+    const fakePawnLog: SyncLog = {
+      entityType: 'pawnIntake',
+      entityId: crypto.randomUUID(),
+      action: 'create',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+      payload: {
+        loanId: crypto.randomUUID(),
+        ticketNumber: 'TKT-FAKE-123',
+        customerId: 'CUST-005', // Synthetic!
+        itemId: crypto.randomUUID(),
+        principal: 500
+      }
+    };
+    
+    let backendCalled = false;
+    await attachMockFetchAndSession(() => {
+      backendCalled = true;
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+
+    const res1 = await SyncService.syncEntity(fakePawnLog, crypto.randomUUID());
+    assert(res1.success === false, 'Test 1: Sync must fail for synthetic CUST-005 customerId');
+    assert(res1.error?.includes('DETERMINISTIC_PERMANENT') === true, 'Test 1: Error must be marked as DETERMINISTIC_PERMANENT');
+    assert(backendCalled === false, 'Test 1: Backend must not be invoked for synthetic inputs');
+    console.log('[PASS] Regression Test 1: Synthetic CUST-005 blocked and quarantined cleanly');
+
+    // ---------------------------------------------------------
+    // Regression Test 2 — Valid UUID customer sync succeeds
+    // ---------------------------------------------------------
+    console.log('[Test 2] Verifying valid UUID customer sync remains valid...');
+    await db.syncLogs.clear();
+    const validCustId = crypto.randomUUID();
+    const validCustomerLog: SyncLog = {
+      entityType: 'customers',
+      entityId: validCustId,
+      action: 'create',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+      payload: {
+        id: validCustId,
+        fullName: 'Valid Customer Name',
+        idNumber: '910203 5012 08 3',
+        mobile: '+27 82 000 0000'
+      }
+    };
+
+    const custBackendState = { called: false };
+    await attachMockFetchAndSession(() => {
+      custBackendState.called = true;
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+
+    const res2 = await SyncService.syncEntity(validCustomerLog, crypto.randomUUID());
+    assert(res2.success === true, `Test 2: Valid customer sync should succeed, got error: ${res2.error}`);
+    assert(custBackendState.called === true, 'Test 2: Backend must be invoked for valid customer IDs');
+    console.log('[PASS] Regression Test 2: Valid UUID customer sync verified');
+
+    // ---------------------------------------------------------
+    // Regression Test 3 — Pawn loan with valid customer UUID syncs
+    // ---------------------------------------------------------
+    console.log('[Test 3] Verifying pawn loan with valid customer UUID syncs successfully...');
+    const validPawnLog: SyncLog = {
+      entityType: 'pawnIntake',
+      entityId: crypto.randomUUID(),
+      action: 'create',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+      payload: {
+        loanId: crypto.randomUUID(),
+        ticketNumber: 'TKT-VALID-999',
+        customerId: crypto.randomUUID(), // Valid UUID!
+        itemId: crypto.randomUUID(),
+        principal: 1000
+      }
+    };
+
+    const pawnBackendState = { called: false };
+    await attachMockFetchAndSession(() => {
+      pawnBackendState.called = true;
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+
+    const res3 = await SyncService.syncEntity(validPawnLog, crypto.randomUUID());
+    assert(res3.success === true, `Test 3: Valid pawn loan sync should succeed, got error: ${res3.error}`);
+    assert(pawnBackendState.called === true, 'Test 3: Backend must be invoked for valid pawn loans');
+    console.log('[PASS] Regression Test 3: Pawn loan with valid customer UUID synced successfully');
+
+    // ---------------------------------------------------------
+    // Regression Test 4 — Missing shop context blocks sync
+    // ---------------------------------------------------------
+    console.log('[Test 4] Verifying missing shop context blocks sync without RLS violation...');
+    await db.syncLogs.clear();
+    const sellerId = crypto.randomUUID();
+    const sellerLog: SyncLog = {
+      entityType: 'sellers',
+      entityId: sellerId,
+      action: 'create',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+      payload: {
+        id: sellerId,
+        fullName: 'Sellers RLS Test',
+        idNumber: '861010 5112 08 2',
+        mobile: '+27 83 999 8888'
+      }
+    };
+
+    let sellerBackendCalled = false;
+    await attachMockFetchAndSession(() => {
+      sellerBackendCalled = true;
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+
+    const res4 = await SyncService.syncEntity(sellerLog, undefined); // Missing shopId context!
+    assert(res4.success === false, 'Test 4: Sync must fail when shop context is missing');
+    assert(res4.error?.includes('DETERMINISTIC_RECOVERABLE') === true, 'Test 4: Error must be marked as DETERMINISTIC_RECOVERABLE');
+    assert(sellerBackendCalled === false, 'Test 4: Backend must not be invoked for missing shop contexts');
+    console.log('[PASS] Regression Test 4: Missing shop context blocked safely');
+
+    // ---------------------------------------------------------
+    // Regression Test 5 — Correct shop context inserts row
+    // ---------------------------------------------------------
+    console.log('[Test 5] Verifying correct shop context successfully inserts row...');
+    await attachMockFetchAndSession(() => {
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+
+    const res5 = await SyncService.syncEntity(sellerLog, crypto.randomUUID());
+    assert(res5.success === true, `Test 5: Sync must succeed with correct shop context, got error: ${res5.error}`);
+    console.log('[PASS] Regression Test 5: Correct shop context inserts row safely');
+
+    // ---------------------------------------------------------
+    // Regression Test 6 — SAPS sync preserves correct shopId
+    // ---------------------------------------------------------
+    console.log('[Test 6] Verifying SAPS sync preserves correct authoritative shop scope...');
+    await db.syncLogs.clear();
+    const sapsId = crypto.randomUUID();
+    const sapsLog: SyncLog = {
+      entityType: 'saps',
+      entityId: sapsId,
+      action: 'create',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+      payload: {
+        id: sapsId,
+        entryNumber: 'SAPS-99120',
+        customerName: 'Saps Officer Test',
+        itemDescription: '18ct Gold Ring',
+        considerationPaid: 2500
+      }
+    };
+
+    const sapsShopId = crypto.randomUUID();
+    const res6 = await SyncService.syncEntity(sapsLog, sapsShopId);
+    assert(res6.success === true, `Test 6: SAPS sync must succeed with correct shopId, got error: ${res6.error}`);
+    console.log('[PASS] Regression Test 6: SAPS sync preserves authoritative shop scope');
+
+    // ---------------------------------------------------------
+    // Regression Test 7 — No infinite automatic retry loop
+    // ---------------------------------------------------------
+    console.log('[Test 7] Verifying failed deterministic records are excluded from auto-sync...');
+    await db.syncLogs.clear();
+    // Add a log with permanent deterministic failure
+    await db.syncLogs.add({
+      id: 7771,
+      entityType: 'customers',
+      entityId: 'CUST-005', // Synthetic!
+      action: 'create',
+      status: 'failed',
+      error: 'DETERMINISTIC_PERMANENT: Synthetic record',
+      createdAt: new Date().toISOString(),
+      retryCount: 1,
+      payload: {}
+    });
+
+    // Add another log with recoverable deterministic failure
+    await db.syncLogs.add({
+      id: 7772,
+      entityType: 'sellers',
+      entityId: crypto.randomUUID(),
+      action: 'create',
+      status: 'failed',
+      error: 'DETERMINISTIC_RECOVERABLE: Waiting for shopId context',
+      createdAt: new Date().toISOString(),
+      retryCount: 1,
+      payload: {}
+    });
+
+    const autoSyncRes = await SyncService.processAllPendingSync(undefined, undefined, 0); // Missing shop context
+    assert(autoSyncRes.processed === 0, `Test 7: No logs should be processed in background auto-sync, got ${autoSyncRes.processed}`);
+    assert(autoSyncRes.successful === 0, 'Test 7: Zero successes');
+    assert(autoSyncRes.failed === 0, 'Test 7: Zero attempts/failures');
+    console.log('[PASS] Regression Test 7: Permanent and recoverable deterministic records skipped in auto-sync');
+
+    // ---------------------------------------------------------
+    // Regression Test 8 — Transient failures remain retryable
+    // ---------------------------------------------------------
+    console.log('[Test 8] Verifying transient network failures are retried and successfully recover...');
+    await db.syncLogs.clear();
+    const transientLogId = crypto.randomUUID();
+    await db.syncLogs.add({
+      id: 8881,
+      entityType: 'customers',
+      entityId: transientLogId,
+      action: 'create',
+      status: 'failed',
+      error: '503 Service Unavailable (Transient)',
+      createdAt: new Date().toISOString(),
+      retryCount: 1,
+      payload: { id: transientLogId, fullName: 'Transient Retry Test', idNumber: '951010 5012 08 3', mobile: '+27 82 111 2222' }
+    });
+
+    // Network is now restored and available!
+    await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const transientSyncRes = await SyncService.processAllPendingSync(crypto.randomUUID(), undefined, 0);
+    
+    assert(transientSyncRes.processed === 1, `Test 8: 1 transient failed log should be processed upon reconnect, got ${transientSyncRes.processed}`);
+    assert(transientSyncRes.successful === 1, 'Test 8: Succeeded after reconnect');
+    
+    const updatedTransientLog = await db.syncLogs.get(8881);
+    assert(updatedTransientLog?.status === 'completed', 'Test 8: Status updated to completed');
+    console.log('[PASS] Regression Test 8: Transient failures recovered cleanly after reconnect');
+
+    // ---------------------------------------------------------
+    // Regression Test 9 — Manual retry of failed record
+    // ---------------------------------------------------------
+    console.log('[Test 9] Verifying a corrected failed record can be manually retried...');
+    await db.syncLogs.clear();
+    const manualRetryId = crypto.randomUUID();
+    await db.syncLogs.add({
+      id: 9991,
+      entityType: 'sellers',
+      entityId: manualRetryId,
+      action: 'create',
+      status: 'failed',
+      error: 'DETERMINISTIC_RECOVERABLE: Waiting for valid shop context',
+      createdAt: new Date().toISOString(),
+      retryCount: 1,
+      payload: { id: manualRetryId, fullName: 'Manual Retry Test', idNumber: '920202 5012 08 4', mobile: '+27 83 444 5555' }
+    });
+
+    // Manual retry is invoked with correct shopId context!
+    const retryShopId = crypto.randomUUID();
+    await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    
+    // Mimic manual retry: SyncService.syncEntity is called directly by retryFailedSync
+    const manualRes = await SyncService.syncEntity(await db.syncLogs.get(9991) as SyncLog, retryShopId);
+    assert(manualRes.success === true, `Test 9: Manual retry should succeed, got error: ${manualRes.error}`);
+    console.log('[PASS] Regression Test 9: Manual retry on corrected record successfully executed');
+
+    // ---------------------------------------------------------
+    // Regression Test 10 — No duplicate SyncLog operations
+    // ---------------------------------------------------------
+    console.log('[Test 10] Verifying the queue contains no duplicate SyncLog operations after retry...');
+    const allLogsCount = await db.syncLogs.count();
+    assert(allLogsCount === 1, `Test 10: Total log count should remain exactly 1, got ${allLogsCount}`);
+    console.log('[PASS] Regression Test 10: Duplicate SyncLog operations prevention verified');
+
   } finally {
     globalThis.fetch = originalFetch;
   }

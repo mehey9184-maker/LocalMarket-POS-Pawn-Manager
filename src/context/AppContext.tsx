@@ -115,6 +115,9 @@ interface AppContextType {
   isOnline: boolean;
   isSlowSyncing: boolean;
   pendingSyncCount: number;
+  failedSyncCount?: number;
+  hasDeterministicError?: boolean;
+  hasTransientError?: boolean;
   slowSyncProgress: { current: number; total: number; entityName: string } | null;
   triggerManualSlowSync: () => Promise<void>;
   exportDeviceBackup: () => Promise<void>;
@@ -624,6 +627,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isOnline: syncStatus.isOnline,
         isSlowSyncing: syncStatus.isSyncing,
         pendingSyncCount: syncStatus.pendingCount,
+        failedSyncCount: syncStatus.failedCount,
+        hasDeterministicError: syncStatus.hasDeterministicError,
+        hasTransientError: syncStatus.hasTransientError,
         slowSyncProgress: null,
         triggerManualSlowSync: async () => {
           await triggerSync();

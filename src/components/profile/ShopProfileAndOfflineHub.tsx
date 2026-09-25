@@ -34,6 +34,9 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
     isOnline,
     isSlowSyncing,
     pendingSyncCount,
+    failedSyncCount = 0,
+    hasDeterministicError = false,
+    hasTransientError = false,
     slowSyncProgress,
     triggerManualSlowSync,
     exportDeviceBackup,
@@ -456,14 +459,31 @@ INSERT INTO public.shop_profiles (
           </div>
 
           <div className="p-4 rounded-2xl bg-[#1A1A1A] border border-[#2A2A2A]">
-            <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Pending Outbox</p>
-            <div className="flex items-baseline gap-2 mt-1">
-              <p className="text-2xl font-black text-white font-headline">{pendingSyncCount}</p>
-              {pendingSyncCount > 0 && (
-                <span className="text-[10px] text-amber-400 font-bold">Unsynced</span>
+            <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Sync Status</p>
+            <div className="flex flex-col gap-1 mt-1.5">
+              <div className="flex items-baseline gap-2">
+                <p className="text-xl font-black text-white font-headline">
+                  {pendingSyncCount > 0 ? `${pendingSyncCount} Pending` : failedSyncCount > 0 ? `${failedSyncCount} Blocked` : 'Synced'}
+                </p>
+                {isSlowSyncing ? (
+                  <span className="text-[9px] text-cyan-400 font-bold px-1.5 py-0.5 rounded bg-cyan-400/10 border border-cyan-400/20">Syncing</span>
+                ) : pendingSyncCount > 0 ? (
+                  <span className="text-[9px] text-amber-400 font-bold px-1.5 py-0.5 rounded bg-amber-400/10 border border-amber-400/20">Waiting</span>
+                ) : failedSyncCount === 0 ? (
+                  <span className="text-[9px] text-emerald-400 font-bold px-1.5 py-0.5 rounded bg-emerald-400/10 border border-emerald-400/20">Synced</span>
+                ) : null}
+              </div>
+              
+              {hasDeterministicError && (
+                <p className="text-[10px] text-rose-400 font-medium leading-tight mt-0.5">⚠️ Needs attention / blocked (Invalid ID/Data)</p>
+              )}
+              {hasTransientError && (
+                <p className="text-[10px] text-amber-400 font-medium leading-tight mt-0.5">🔄 Retryable network failure</p>
+              )}
+              {!hasDeterministicError && !hasTransientError && pendingSyncCount === 0 && failedSyncCount === 0 && (
+                <p className="text-[10px] text-emerald-400 font-medium mt-0.5">All records synced to cloud</p>
               )}
             </div>
-            <p className="text-[9px] text-gray-400 mt-1">Trickles when online</p>
           </div>
         </div>
 
