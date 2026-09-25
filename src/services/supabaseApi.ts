@@ -261,6 +261,30 @@ export const shopProfilesApi = {
     return data;
   },
 
+  async createShopProfile(shop: Database['public']['Tables']['shop_profiles']['Insert']): Promise<ShopProfileRow | null> {
+    const supabase = getSupabase();
+    if (!supabase) throw new Error('Supabase is not configured.');
+
+    const { data, error } = await supabase
+      .from('shop_profiles')
+      .insert(shop)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // After creating a shop, we must link the creator (owner) to it
+    const user = await authApi.getUser();
+    if (user && data) {
+      await supabase
+        .from('profiles')
+        .update({ shop_id: data.id })
+        .eq('id', user.id);
+    }
+
+    return data;
+  },
+
   async updateShopBusinessRulesRpc(rules: BusinessRules, reason?: string): Promise<{ success: boolean; error?: string }> {
     try {
       return await withAuthRecovery(async (supabase) => {

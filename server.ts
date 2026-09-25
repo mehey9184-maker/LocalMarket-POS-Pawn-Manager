@@ -566,6 +566,14 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         return res.status(403).json({ success: false, error: "Account is deactivated." });
       }
 
+      // 1b. Prevent Owner password replacement via PIN mechanism
+      if (profile.role === 'owner' || profile.role === 'admin') {
+        return res.status(403).json({ 
+          success: false, 
+          error: "Owner/Admin accounts must authenticate via email and password for terminal security. Please use 'Sign Out' to return to the login screen." 
+        });
+      }
+
       // 2. Atomic Brute Force Lockout Check & Attempt Reservation
       const { data: lockoutData, error: lockoutErr } = await adminSupabase.rpc('check_pin_lockout', {
         p_user_id: profile.id

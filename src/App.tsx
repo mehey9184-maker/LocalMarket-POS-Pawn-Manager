@@ -17,6 +17,7 @@ import { VaultManager } from './components/screens/VaultManager';
 import { SapsRegister } from './components/screens/SapsRegister';
 import { LandingPage } from './components/screens/LandingPage';
 import { AuthPage } from './components/screens/AuthPage';
+import { ShopSetup } from './components/screens/ShopSetup';
 import { AccountPicker } from './components/auth/AccountPicker';
 import { ScannerModal } from './components/modals/ScannerModal';
 import { ReceiptModal } from './components/modals/ReceiptModal';
@@ -28,20 +29,27 @@ import { useAuth } from './context/AuthContext';
 
 const MainLayout: React.FC = () => {
   const { activeTab, setActiveTab } = useApp();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, profile, isLoading: authLoading } = useAuth();
 
   // Session-based navigation enforcement
   React.useEffect(() => {
     if (authLoading) return;
 
     const isEmailConfirmed = user?.email_confirmed_at || user?.confirmed_at;
+    const hasShop = profile?.shop_id;
 
-    if (user && isEmailConfirmed && (activeTab === 'landing' || activeTab === 'auth')) {
-      setActiveTab('home');
+    if (user && isEmailConfirmed) {
+      if (!hasShop) {
+        if (activeTab !== 'shop-setup') {
+          setActiveTab('shop-setup');
+        }
+      } else if (activeTab === 'landing' || activeTab === 'auth' || activeTab === 'shop-setup') {
+        setActiveTab('home');
+      }
     } else if (!user && activeTab !== 'auth') {
       setActiveTab('auth');
     }
-  }, [user, authLoading, activeTab, setActiveTab]);
+  }, [user, authLoading, activeTab, setActiveTab, profile]);
 
   if (authLoading) {
     return (
@@ -57,6 +65,7 @@ const MainLayout: React.FC = () => {
   // Handle full-screen screens that don't need the standard header/layout
   if (activeTab === 'landing') return <LandingPage />;
   if (activeTab === 'auth') return <AuthPage />;
+  if (activeTab === 'shop-setup') return <ShopSetup />;
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#F5F6F8] text-[#1F2937] font-sans selection:bg-[#FDF0EA] selection:text-[#C85A32]">

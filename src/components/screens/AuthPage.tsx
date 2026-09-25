@@ -2,15 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { authApi } from '../../services/supabaseApi';
 import { testSupabaseConnection, ConnectionTestResult } from '../../services/supabase';
-import { Loader2, Database, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Loader2, Database, AlertCircle, CheckCircle2, UserPlus, LogIn, Mail, Lock, User } from 'lucide-react';
 
-// Cashier/staff accounts are provisioned with a system-generated email in this
-// domain when no real work email is supplied (see StaffAccessManager). Their
-// real password is a one-time random secret that is never surfaced and is
-// rotated on every PIN login (see server.ts /api/auth/login-with-pin), so a
-// login attempt against this email pattern can never succeed here by design.
-// This is only used to choose a more honest error message — it changes no
-// authentication behavior.
 const SYSTEM_STAFF_EMAIL_DOMAIN = '@localmarketpos.co.za';
 
 const isSystemGeneratedStaffEmail = (value: string) =>
@@ -20,13 +13,15 @@ export const AuthPage: React.FC = () => {
   const { setActiveTab, showToast } = useApp();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
 
   // Form State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
 
   // Validation State
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; fullName?: string }>({});
 
   // Connection Test State
   const [testingConnection, setTestingConnection] = useState(false);
@@ -46,16 +41,9 @@ export const AuthPage: React.FC = () => {
     return '';
   };
 
-  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setEmail(val);
-    setErrors(prev => ({ ...prev, email: validateEmail(val) }));
-  };
-
-  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setPassword(val);
-    setErrors(prev => ({ ...prev, password: validatePassword(val) }));
+  const validateFullName = (val: string) => {
+    if (isSignUp && !val) return 'Full name is required';
+    return '';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -63,9 +51,10 @@ export const AuthPage: React.FC = () => {
 
     const eError = validateEmail(email);
     const pError = validatePassword(password);
+    const fError = validateFullName(fullName);
 
-    if (eError || pError) {
-      setErrors({ email: eError, password: pError });
+    if (eError || pError || fError) {
+      setErrors({ email: eError, password: pError, fullName: fError });
       return;
     }
 
@@ -73,13 +62,21 @@ export const AuthPage: React.FC = () => {
     setErrors({});
 
     try {
-      console.log('[Auth] Attempting Operator Sign In for:', email);
-      const { data, error } = await authApi.signIn(email, password);
-      if (error) throw error;
+      if (isSignUp) {
+        console.log('[Auth] Attempting Owner Sign Up for:', email);
+        const { data, error } = await authApi.signUp(email, password, fullName, 'owner');
+        if (error) throw error;
+        
+        showToast('Account Created', 'Verification email sent. Please check your inbox.', 'success');
+        setIsSignUp(false);
+      } else {
+        console.log('[Auth] Attempting Operator Sign In for:', email);
+        const { data, error } = await authApi.signIn(email, password);
+        if (error) throw error;
 
-      console.log('[Auth] Sign In Successful:', data.user?.id);
-      showToast('Operator Verified', 'Welcome to LocalMarket POS Terminal', 'success');
-      setActiveTab('home');
+        showToast('Operator Verified', 'Welcome to LocalMarket POS Terminal', 'success');
+        // Redirection logic is handled in App.tsx based on profile state
+      }
     } catch (err: any) {
       console.error('[Auth] Authentication Failure:', err);
 
@@ -91,9 +88,6 @@ export const AuthPage: React.FC = () => {
       let fieldError = 'Invalid credentials or inactive profile';
 
       if (isInvalidCredentials && isSystemGeneratedStaffEmail(email)) {
-        // Known case: this is a staff/cashier system-generated account, which
-        // has no stable password by design. Point the person at the correct flow
-        // instead of leaving them to keep retrying a password that can't exist.
         errorMessage = 'This looks like a staff PIN account. Please use "Switch Account" and sign in with your 6-digit PIN instead of this screen.';
         fieldError = 'Staff accounts sign in with a PIN, not on this screen';
       } else if (isInvalidCredentials) {
@@ -129,7 +123,7 @@ export const AuthPage: React.FC = () => {
   };
 
   const getInputClass = (error?: string) => {
-    return `w-full h-11 bg-white text-gray-900 placeholder:text-gray-400 text-sm rounded-lg pl-3 pr-4 border ${
+    return `w-full h-11 bg-white text-gray-900 placeholder:text-gray-400 text-sm rounded-lg pl-10 pr-4 border ${
       error ? 'border-red-300 focus:border-red-500' : 'border-gray-300 focus:border-[#c85a32]'
     } focus:ring-1 ${error ? 'focus:ring-red-500' : 'focus:ring-[#c85a32]'} focus:outline-none transition-colors`;
   };
@@ -159,22 +153,43 @@ export const AuthPage: React.FC = () => {
             
             <div className="flex flex-col items-center text-center mb-7">
               <h1 className="font-bold text-2xl text-gray-900 tracking-tight">
-                Sign in to your shop terminal
+                {isSignUp ? 'Create your owner account' : 'Sign in to your shop terminal'}
               </h1>
               <p className="text-sm text-gray-500 mt-2">
-                Use the shop owner account to unlock the terminal. Staff can then use Switch Account.
+                {isSignUp 
+                  ? 'Start your journey with LocalMarket. Register as a shop owner.'
+                  : 'The shop owner must sign in with their password to unlock this terminal. Staff can then switch accounts via 6-digit PIN.'}
               </p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {isSignUp && (
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-medium text-gray-500">Full Name</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input 
+                      required
+                      type="text"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="e.g. John Doe"
+                      className={getInputClass(errors.fullName)}
+                    />
+                  </div>
+                  {errors.fullName && <p className="text-[10px] text-red-500 pl-1">{errors.fullName}</p>}
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <label className="block text-xs font-medium text-gray-500">Email</label>
                 <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input 
                     required
                     type="email"
                     value={email}
-                    onChange={handleEmailChange}
+                    onChange={(e) => setEmail(e.target.value)}
                     placeholder="e.g. owner@store.co.za"
                     className={getInputClass(errors.email)}
                   />
@@ -185,18 +200,19 @@ export const AuthPage: React.FC = () => {
               <div className="space-y-1.5">
                 <label className="block text-xs font-medium text-gray-500">Password</label>
                 <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input 
                     required
                     type={showPassword ? "text" : "password"}
                     value={password}
-                    onChange={handlePasswordChange}
+                    onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     className={getInputClass(errors.password)}
                   />
                   <button 
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors focus:outline-none"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-[#c85a32] hover:text-[#b84e27] focus:outline-none"
                   >
                     {showPassword ? "Hide" : "Show"}
                   </button>
@@ -212,11 +228,22 @@ export const AuthPage: React.FC = () => {
                 {loading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
-                  <span>Sign In</span>
+                  <>
+                    {isSignUp ? <UserPlus className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
+                    <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
+                  </>
                 )}
               </button>
 
-              <div className="pt-4 text-center">
+              <div className="pt-4 flex flex-col items-center gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsSignUp(!isSignUp)}
+                  className="text-sm font-medium text-[#c85a32] hover:underline"
+                >
+                  {isSignUp ? 'Already have an account? Sign In' : 'Need an owner account? Create one'}
+                </button>
+                
                 <button 
                   type="button"
                   onClick={() => setShowDiagnostics(!showDiagnostics)}

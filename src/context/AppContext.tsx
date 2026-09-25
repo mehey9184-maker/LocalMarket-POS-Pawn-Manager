@@ -25,7 +25,7 @@ import { useSync } from './SyncContext';
 import { useAuth } from './AuthContext';
 import { db } from '../db';
 
-export type NavTab = 'landing' | 'auth' | 'home' | 'sell' | 'buy-pawn' | 'inventory' | 'customers' | 'profile' | 'vault' | 'saps';
+export type NavTab = 'landing' | 'auth' | 'shop-setup' | 'home' | 'sell' | 'buy-pawn' | 'inventory' | 'customers' | 'profile' | 'vault' | 'saps';
 
 export interface ShopProfile {
   id?: string;

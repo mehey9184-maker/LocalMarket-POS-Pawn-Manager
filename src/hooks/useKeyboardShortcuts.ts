@@ -46,6 +46,7 @@ export const useKeyboardShortcuts = (options?: KeyboardShortcutOptions) => {
           const tabNames: Record<NavTab, string> = {
             landing: 'System Overview',
             auth: 'Authentication Portal',
+            'shop-setup': 'Initial Store Configuration',
             home: 'Command Center Home',
             sell: 'Front POS Terminal',
             'buy-pawn': 'Buy / Pawn Intake Desk',
