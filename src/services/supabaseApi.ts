@@ -6,6 +6,7 @@ import {
   isAuthExpiryError, 
   withAuthRecovery 
 } from './supabase';
+import { apiPost } from '../utils/apiClient';
 export { 
   isSupabaseConfigured, 
   getValidSupabaseSession, 
@@ -154,21 +155,19 @@ export const authApi = {
 
   async loginWithPin(cashierCode: string, pin: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch('/api/auth/login-with-pin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cashierCode, pin })
-      });
+      const result = await apiPost<{ success: boolean; session?: any; error?: string }>(
+        '/api/auth/login-with-pin',
+        { cashierCode, pin }
+      );
 
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        return { success: false, error: data.error || 'Authentication failed' };
+      if (!result.ok || !result.data?.success) {
+        return { success: false, error: result.error || result.data?.error || 'Authentication failed' };
       }
 
       const supabase = getSupabase();
       if (!supabase) throw new Error('Supabase not configured');
 
-      const { error: sessionErr } = await supabase.auth.setSession(data.session);
+      const { error: sessionErr } = await supabase.auth.setSession(result.data.session);
       if (sessionErr) throw sessionErr;
 
       return { success: true };
@@ -1454,21 +1453,17 @@ export const staffApi = {
         return { success: false, error: 'Authentication required. Please sign in with an authorized Manager or Owner account.' };
       }
 
-      const response = await fetch('/api/staff/provision', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(params)
-      });
+      const result = await apiPost<{ success: boolean; profile?: any; error?: string }>(
+        '/api/staff/provision',
+        params,
+        token
+      );
 
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        return { success: false, error: data.error || 'Failed to provision staff account.' };
+      if (!result.ok || !result.data?.success) {
+        return { success: false, error: result.error || result.data?.error || 'Failed to provision staff account.' };
       }
 
-      return { success: true, profile: data.profile };
+      return { success: true, profile: result.data.profile };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Network error provisioning staff.' };
     }
@@ -1480,22 +1475,18 @@ export const staffApi = {
       const token = session?.access_token;
       if (!token) throw new Error('Authentication required');
 
-      const response = await fetch('/api/staff/update-profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
+      const result = await apiPost<{ success: boolean; data?: any; error?: string }>(
+        '/api/staff/update-profile',
+        {
           targetId: id,
           updates,
           reason
-        })
-      });
+        },
+        token
+      );
 
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        return { success: false, error: data.error || 'Failed to update staff profile.' };
+      if (!result.ok || !result.data?.success) {
+        return { success: false, error: result.error || result.data?.error || 'Failed to update staff profile.' };
       }
 
       return { success: true };
@@ -1510,22 +1501,18 @@ export const staffApi = {
       const token = session?.access_token;
       if (!token) throw new Error('Authentication required');
 
-      const response = await fetch('/api/staff/reset-pin', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
+      const result = await apiPost<{ success: boolean; data?: any; error?: string }>(
+        '/api/staff/reset-pin',
+        {
           targetId: staffId,
           pin: newPin,
           reason
-        })
-      });
+        },
+        token
+      );
 
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        return { success: false, error: data.error || 'Failed to reset staff PIN.' };
+      if (!result.ok || !result.data?.success) {
+        return { success: false, error: result.error || result.data?.error || 'Failed to reset staff PIN.' };
       }
 
       return { success: true };

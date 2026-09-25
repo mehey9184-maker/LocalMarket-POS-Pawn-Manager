@@ -1250,6 +1250,18 @@ async function startServer(desiredPort?: number) {
     });
   });
 
+  // Express error handler for API routes to guarantee JSON error output
+  app.use("/api", (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error(`API Error on ${req.method} ${req.path}:`, err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    return res.status(err?.status || 500).json({
+      success: false,
+      error: err?.message || "Internal server error."
+    });
+  });
+
   // Vite middleware for development (disabled in Electron packaged mode)
   if (process.env.NODE_ENV !== "production" && !process.env.ELECTRON_APP) {
     const vite = await createViteServer({
@@ -1279,14 +1291,15 @@ async function startServer(desiredPort?: number) {
     });
 
     server.on("error", (err: any) => {
-      if (err.code === "EADDRINUSE" && PORT !== 0) {
-        console.warn(`Port ${PORT} in use, binding to ephemeral port...`);
+      if (err.code === "EADDRINUSE" && process.env.ELECTRON_APP) {
+        console.warn(`Port ${PORT} in use, binding to ephemeral port for Electron...`);
         const fallback = app.listen(0, "127.0.0.1", () => {
           const actualPort = (fallback.address() as any)?.port;
           console.log(`LocalMarket Server running on fallback http://127.0.0.1:${actualPort}`);
           resolve({ app, server: fallback, port: actualPort });
         });
       } else {
+        console.error(`Server error on port ${PORT}:`, err);
         reject(err);
       }
     });

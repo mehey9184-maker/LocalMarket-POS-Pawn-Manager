@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authApi, profilesApi, staffApi } from '../services/supabaseApi';
+import { apiPost } from '../utils/apiClient';
 import { ProfileRow, UserRole } from '../types/supabase';
 import { Permissions } from '../types';
 
@@ -257,23 +258,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const verifyManagerPin = async (pin: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const session = await authApi.getSession();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-      }
+      const token = session?.access_token;
 
-      const response = await fetch('/api/verify-pin', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ pin }),
-      });
+      const result = await apiPost<{ success: boolean; authorizedRole?: string; error?: string }>(
+        '/api/verify-pin',
+        { pin },
+        token
+      );
 
-      const data = await response.json();
-      if (response.ok && data.success) {
+      if (result.ok && result.data?.success) {
         setManagerElevation(true);
         return { success: true };
       } else {
-        return { success: false, error: data.error || 'Invalid Manager PIN' };
+        return { success: false, error: result.error || result.data?.error || 'Invalid Manager PIN' };
       }
     } catch (err: any) {
       return { success: false, error: err?.message || 'Connection failed' };

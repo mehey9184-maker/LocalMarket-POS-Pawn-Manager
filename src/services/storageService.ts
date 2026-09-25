@@ -9,6 +9,7 @@
  */
 
 import { authApi } from './supabaseApi';
+import { apiPost } from '../utils/apiClient';
 
 export interface StorageUploadResult {
   imageUrl: string;
@@ -43,34 +44,27 @@ export const storageService = {
       }
 
       const session = await authApi.getSession();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-      }
+      const token = session?.access_token;
 
       // Call secure server-side upload proxy
-      const response = await fetch('/api/storage/upload', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
+      const result = await apiPost<{ imageUrl: string; storageKey: string }>(
+        '/api/storage/upload',
+        {
           image: base64Payload,
           shopId,
           itemId,
           fileName,
-        }),
-      });
+        },
+        token
+      );
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
-        throw new Error(errorData.error || `Upload failed with HTTP ${response.status}`);
+      if (!result.ok || !result.data?.imageUrl) {
+        throw new Error(result.error || `Upload failed with status ${result.status}`);
       }
 
-      const result = await response.json();
       return {
-        imageUrl: result.imageUrl,
-        storageKey: result.storageKey,
+        imageUrl: result.data.imageUrl,
+        storageKey: result.data.storageKey,
       };
     } catch (err: any) {
       console.warn('Storage upload note:', err.message);
@@ -97,20 +91,15 @@ export const storageService = {
 
     try {
       const session = await authApi.getSession();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-      }
+      const token = session?.access_token;
 
-      const response = await fetch('/api/storage/delete', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ storageKey }),
-      });
+      const result = await apiPost(
+        '/api/storage/delete',
+        { storageKey },
+        token
+      );
 
-      return response.ok;
+      return result.ok;
     } catch (err) {
       console.error('Failed to delete image from storage:', err);
       return false;
