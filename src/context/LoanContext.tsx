@@ -26,7 +26,7 @@ interface LoanContextType {
   batchApproveForfeitures: (ids: string[]) => Promise<{ success: boolean; count: number; error?: string }>;
 }
 
-const LoanContext = createContext<LoanContextType | undefined>(undefined);
+export const LoanContext = createContext<LoanContextType | undefined>(undefined);
 
 export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction } = useSync();

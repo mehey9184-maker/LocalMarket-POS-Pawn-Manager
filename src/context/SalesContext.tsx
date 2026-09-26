@@ -42,7 +42,7 @@ interface SalesContextType {
   getSaleByReceipt: (receiptNumber: string) => Promise<SaleTransaction | null>;
 }
 
-const SalesContext = createContext<SalesContextType | undefined>(undefined);
+export const SalesContext = createContext<SalesContextType | undefined>(undefined);
 
 export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction, isOnline } = useSync();

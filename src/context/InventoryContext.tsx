@@ -19,7 +19,7 @@ interface InventoryContextType {
   getInventoryByStatus: (status: ItemStatus) => InventoryItem[];
 }
 
-const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
+export const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
 
 export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction, isOnline } = useSync();
