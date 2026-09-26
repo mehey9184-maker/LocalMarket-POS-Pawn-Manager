@@ -347,6 +347,10 @@ export const AccountPicker: React.FC = () => {
                   ></div>
                 ))}
               </div>
+
+              <p className="text-[11px] text-stone-500 text-center mt-3 font-normal">
+                Forgot your PIN? Ask your Manager or Owner to reset it under Staff Settings.
+              </p>
             </div>
           </div>
         )}

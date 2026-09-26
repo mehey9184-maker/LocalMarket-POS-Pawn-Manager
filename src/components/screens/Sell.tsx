@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { PaymentMethod, ReceiptDelivery, InventoryItem } from '../../types';
+import { validateAndNormalizeSaPhone } from '../../utils/phoneValidator';
+import { focusAndScrollErrorField } from '../../utils/errorNavigator';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Barcode,
@@ -18,7 +20,8 @@ import {
   Zap,
   Info,
   Smartphone,
-  Printer
+  Printer,
+  AlertTriangle
 } from 'lucide-react';
 
 const CartItemRow: React.FC<{ 
@@ -56,14 +59,25 @@ const CartItemRow: React.FC<{
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: 20 }}
-      className="p-3 bg-[#F8F9FA] border border-gray-200 rounded-xl flex items-center gap-3"
+      className={`p-3 rounded-xl flex items-center gap-3 border ${
+        ci.item.status === 'Reserved' 
+          ? 'bg-amber-50/70 border-amber-300' 
+          : 'bg-[#F8F9FA] border-gray-200'
+      }`}
     >
       <div className="w-11 h-11 rounded-lg bg-gray-100 shrink-0 border border-gray-200 overflow-hidden">
         <img src={ci.item.imageUrl} className="w-full h-full object-cover" alt="" />
       </div>
       
       <div className="flex-1 min-w-0">
-        <h4 className="text-xs font-semibold text-gray-900 truncate">{ci.item.title}</h4>
+        <div className="flex items-center gap-1.5">
+          <h4 className="text-xs font-semibold text-gray-900 truncate">{ci.item.title}</h4>
+          {ci.item.status === 'Reserved' && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-amber-200 text-amber-900 border border-amber-300 shrink-0">
+              Reserved
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2 mt-0.5">
           <span className="text-[10px] font-mono text-gray-500 font-semibold">{ci.item.sku}</span>
           {ci.item.acquisitionType && (

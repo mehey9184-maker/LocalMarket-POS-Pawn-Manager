@@ -454,7 +454,7 @@ export const Home: React.FC = () => {
             </div>
 
             {/* PERFORMANCE COLUMN (RIGHT) */}
-            {isAtLeastSeniorCashier && (
+            {isAtLeastSeniorCashier ? (
               <aside className="space-y-4">
                 <h2 className="text-xs font-bold text-stone-500 uppercase tracking-wider">
                   Today’s Summary
@@ -509,6 +509,29 @@ export const Home: React.FC = () => {
                         R {todayTotals.payouts.toLocaleString()}
                       </p>
                     </div>
+                  </div>
+                </div>
+              </aside>
+            ) : (
+              <aside className="space-y-4">
+                <h2 className="text-xs font-bold text-stone-500 uppercase tracking-wider">
+                  Counter Status
+                </h2>
+                <div className="rounded-2xl bg-white border border-stone-200 shadow-xs p-6 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-stone-900">Counter Ready</h3>
+                      <p className="text-xs text-stone-500">Fast transactions active</p>
+                    </div>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-stone-50 border border-stone-100 text-xs text-stone-600 space-y-2">
+                    <p className="font-semibold text-stone-800">Counter Tips</p>
+                    <p className="text-stone-500 leading-relaxed">• Use <span className="font-semibold text-stone-700">Point of Sale</span> for direct retail sales.</p>
+                    <p className="text-stone-500 leading-relaxed">• Press <span className="font-mono font-semibold text-stone-700">F1 / F2 / F3</span> at checkout for Cash / Card / EFT.</p>
+                    <p className="text-stone-500 leading-relaxed">• Search items by SKU, serial number, or title.</p>
                   </div>
                 </div>
               </aside>

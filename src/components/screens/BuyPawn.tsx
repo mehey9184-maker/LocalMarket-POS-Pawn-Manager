@@ -21,6 +21,7 @@ import { MarketCheckCard } from '../common/MarketCheckCard';
 import { MarketCheckResult } from '../../types/marketIntelligence';
 import { motion, AnimatePresence } from 'motion/react';
 import { draftService } from '../../services/draftService';
+import { storageService } from '../../services/storageService';
 import { DraftRecoveryModal } from '../modals/DraftRecoveryModal';
 import { WorkflowDraft } from '../../types';
 import {
@@ -51,7 +52,10 @@ import {
   Tag,
   AlertTriangle,
   Clock,
-  UserCheck
+  UserCheck,
+  Upload,
+  Trash2,
+  Loader2
 } from 'lucide-react';
 
 export type WorkflowStep = 'mode' | 'customer' | 'item' | 'valuation' | 'location' | 'deal' | 'completion';
@@ -127,6 +131,47 @@ export const BuyPawn: React.FC = () => {
     internalNote: '',
     sourceNote: 'Item was already owned by the shop before LocalMarket onboarding'
   });
+
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const photoFileInputRef = React.useRef<HTMLInputElement>(null);
+  const photoCameraInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handlePhotoFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showToast('Invalid File', 'Please select an image file (JPEG, PNG, WebP).', 'amber');
+      return;
+    }
+
+    if (file.size > 15 * 1024 * 1024) {
+      showToast('File Too Large', 'Please select an image smaller than 15MB.', 'amber');
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    try {
+      const uploadRes = await storageService.uploadItemImage(
+        file,
+        shopProfile?.id,
+        `intake-${Date.now()}`,
+        file.name
+      );
+      setItemData(prev => ({ ...prev, imageUrl: uploadRes.imageUrl }));
+      showToast('Photo Attached', 'Item photograph attached successfully.', 'success');
+    } catch (err: any) {
+      showToast('Upload Error', err?.message || 'Could not process photograph', 'error');
+    } finally {
+      setIsUploadingPhoto(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setItemData(prev => ({ ...prev, imageUrl: '' }));
+    showToast('Photo Removed', 'Image removed from item intake.', 'info');
+  };
 
   // Valuation & Pricing State
   const [agreedOffer, setAgreedOffer] = useState<number>(0); // Payout / Principal
@@ -1651,11 +1696,17 @@ export const BuyPawn: React.FC = () => {
                             className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 focus:outline-none focus:border-[#C85A32]"
                           >
                             <option>Phones & Tech</option>
+                            <option>Computing & Laptops</option>
                             <option>Power Tools</option>
                             <option>Audio & Visual</option>
+                            <option>Musical Instruments & Gear</option>
+                            <option>Generators & Power Systems</option>
                             <option>Fine Jewelry & Gold</option>
+                            <option>Watches & Luxury Goods</option>
                             <option>Gaming Consoles</option>
                             <option>Appliances</option>
+                            <option>Sporting Goods & Bicycles</option>
+                            <option>General Goods</option>
                           </select>
                         </div>
 
@@ -1761,30 +1812,96 @@ export const BuyPawn: React.FC = () => {
                       )}
                     </div>
 
-                    {/* PHOTO PREVIEW */}
+                    {/* PHOTO UPLOAD & PREVIEW */}
                     <div className="space-y-2 flex flex-col">
-                      <label className="text-xs font-semibold text-gray-700">Photo / Image</label>
-                      <div className="flex-1 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center p-4 overflow-hidden relative min-h-[180px]">
-                        {itemData.imageUrl ? (
-                          <img
-                            src={itemData.imageUrl}
-                            alt="Preview"
-                            className="w-full h-full object-cover rounded-xl"
-                          />
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-semibold text-gray-700">Item Photo</label>
+                        {itemData.imageUrl && (
+                          <button
+                            type="button"
+                            onClick={handleRemovePhoto}
+                            className="text-[11px] text-red-600 hover:text-red-700 flex items-center gap-1 font-medium transition cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Remove</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Hidden File Inputs */}
+                      <input
+                        ref={photoFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handlePhotoFileSelect}
+                      />
+                      <input
+                        ref={photoCameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={handlePhotoFileSelect}
+                      />
+
+                      <div 
+                        onClick={() => !isUploadingPhoto && photoFileInputRef.current?.click()}
+                        className={`flex-1 rounded-2xl bg-gray-50 border-2 border-dashed ${
+                          itemData.imageUrl ? 'border-emerald-300' : 'border-gray-200 hover:border-[#C85A32]'
+                        } flex flex-col items-center justify-center p-3 overflow-hidden relative min-h-[180px] cursor-pointer transition group`}
+                      >
+                        {isUploadingPhoto ? (
+                          <div className="flex flex-col items-center gap-2 text-[#C85A32]">
+                            <Loader2 className="w-7 h-7 animate-spin" />
+                            <span className="text-xs font-semibold">Processing photo...</span>
+                          </div>
+                        ) : itemData.imageUrl ? (
+                          <div className="relative w-full h-full min-h-[160px]">
+                            <img
+                              src={itemData.imageUrl}
+                              alt="Item Intake Preview"
+                              className="w-full h-full object-cover rounded-xl"
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center text-white text-xs font-semibold gap-1.5">
+                              <Upload className="w-4 h-4" />
+                              <span>Replace photo</span>
+                            </div>
+                          </div>
                         ) : (
-                          <div className="text-center text-gray-400 space-y-1">
-                            <Camera className="w-8 h-8 mx-auto" />
-                            <p className="text-xs">No image attached</p>
+                          <div className="text-center text-gray-400 space-y-2 p-2">
+                            <div className="w-10 h-10 rounded-full bg-stone-100 text-stone-500 flex items-center justify-center mx-auto group-hover:scale-105 group-hover:text-[#C85A32] group-hover:bg-[#FDF0EA] transition">
+                              <Camera className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold text-stone-700">Click to upload photo</p>
+                              <p className="text-[10px] text-stone-400 mt-0.5">PNG, JPG, or WebP up to 15MB</p>
+                            </div>
                           </div>
                         )}
                       </div>
-                      <input
-                        type="text"
-                        placeholder="Image URL..."
-                        value={itemData.imageUrl}
-                        onChange={e => setItemData({ ...itemData, imageUrl: e.target.value })}
-                        className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl px-3 py-1.5 text-[11px] text-gray-600 focus:outline-none"
-                      />
+
+                      {/* Photo Action Buttons */}
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => photoFileInputRef.current?.click()}
+                          disabled={isUploadingPhoto}
+                          className="flex-1 py-2 px-2.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-[#C85A32]" />
+                          <span>Upload File</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => photoCameraInputRef.current?.click()}
+                          disabled={isUploadingPhoto}
+                          className="flex-1 py-2 px-2.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                        >
+                          <Camera className="w-3.5 h-3.5 text-[#C85A32]" />
+                          <span>Camera</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { authApi } from '../../services/supabaseApi';
 import { testSupabaseConnection, ConnectionTestResult } from '../../services/supabase';
 import { Loader2, Database, AlertCircle, CheckCircle2, UserPlus, LogIn, Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
+import { focusAndScrollErrorField } from '../../utils/errorNavigator';
 
 const SYSTEM_STAFF_EMAIL_DOMAIN = '@localmarketpos.co.za';
 
@@ -13,16 +14,18 @@ export const AuthPage: React.FC = () => {
   const { showToast } = useApp();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const loginHint = typeof window !== 'undefined' ? (sessionStorage.getItem('lm_login_hint') || '') : '';
 
   // Form State
   const [email, setEmail] = useState(loginHint);
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
 
   // Validation State
-  const [errors, setErrors] = useState<{ email?: string; password?: string; fullName?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; confirmPassword?: string; fullName?: string }>({});
 
   // Connection Test State (tucked away secondary diagnostics)
   const [testingConnection, setTestingConnection] = useState(false);
@@ -42,6 +45,14 @@ export const AuthPage: React.FC = () => {
     return '';
   };
 
+  const validateConfirmPassword = (val: string, pass: string) => {
+    if (isSignUp) {
+      if (!val) return 'Please confirm your password';
+      if (val !== pass) return "Passwords don’t match. Please check both fields.";
+    }
+    return '';
+  };
+
   const validateFullName = (val: string) => {
     if (isSignUp && !val) return 'Full name is required';
     return '';
@@ -49,18 +60,30 @@ export const AuthPage: React.FC = () => {
 
   const toggleAuthMode = () => {
     setIsSignUp(prev => !prev);
+    setConfirmPassword('');
     setErrors({});
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const eError = validateEmail(email);
+    const normalizedEmail = email.trim().toLowerCase();
+    const eError = validateEmail(normalizedEmail);
     const pError = validatePassword(password);
+    const cpError = validateConfirmPassword(confirmPassword, password);
     const fError = validateFullName(fullName);
 
-    if (eError || pError || fError) {
-      setErrors({ email: eError, password: pError, fullName: fError });
+    if (eError || pError || cpError || fError) {
+      setErrors({ email: eError, password: pError, confirmPassword: cpError, fullName: fError });
+      if (fError) {
+        focusAndScrollErrorField(document.getElementById('fullName'));
+      } else if (eError) {
+        focusAndScrollErrorField(document.getElementById('email'));
+      } else if (pError) {
+        focusAndScrollErrorField(document.getElementById('password'));
+      } else if (cpError) {
+        focusAndScrollErrorField(document.getElementById('confirmPassword'));
+      }
       return;
     }
 
@@ -69,8 +92,8 @@ export const AuthPage: React.FC = () => {
 
     try {
       if (isSignUp) {
-        console.log('[Auth] Attempting Owner Sign Up for:', email);
-        const { data, error } = await authApi.signUp(email, password, fullName, 'owner');
+        console.log('[Auth] Attempting Owner Sign Up for:', normalizedEmail);
+        const { data, error } = await authApi.signUp(normalizedEmail, password, fullName, 'owner');
         if (error) throw error;
         
         if (data?.session) {
@@ -81,8 +104,8 @@ export const AuthPage: React.FC = () => {
           setIsSignUp(false);
         }
       } else {
-        console.log('[Auth] Attempting Operator Sign In for:', email);
-        const { error } = await authApi.signIn(email, password);
+        console.log('[Auth] Attempting Operator Sign In for:', normalizedEmail);
+        const { error } = await authApi.signIn(normalizedEmail, password);
         if (error) throw error;
 
         showToast('Welcome back', 'Welcome to LocalMarket POS Terminal', 'success');
@@ -101,7 +124,7 @@ export const AuthPage: React.FC = () => {
       let errorMessage = err.message || 'Failed to authenticate operator terminal';
       let fieldError = 'Invalid credentials or inactive profile';
 
-      if (isInvalidCredentials && isSystemGeneratedStaffEmail(email)) {
+      if (isInvalidCredentials && isSystemGeneratedStaffEmail(normalizedEmail)) {
         errorMessage = 'This looks like a staff PIN account. Please use "Switch Account" and sign in with your 6-digit PIN instead of this screen.';
         fieldError = 'Staff accounts sign in with a PIN, not on this screen';
       } else if (isInvalidCredentials) {
@@ -111,6 +134,7 @@ export const AuthPage: React.FC = () => {
 
       showToast('Access Denied', errorMessage, 'error');
       setErrors(prev => ({ ...prev, email: fieldError }));
+      focusAndScrollErrorField(document.getElementById('email'));
     } finally {
       setLoading(false);
     }
@@ -339,6 +363,46 @@ export const AuthPage: React.FC = () => {
                   </p>
                 )}
               </div>
+
+              {/* Confirm Password field (Sign Up only) */}
+              {isSignUp && (
+                <div className="space-y-1.5 transition-all">
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="confirmPassword" className="block text-xs font-semibold text-stone-700">
+                      Confirm Password
+                    </label>
+                  </div>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+                    <input 
+                      id="confirmPassword"
+                      required
+                      type={showConfirmPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="••••••••"
+                      aria-invalid={!!errors.confirmPassword}
+                      aria-describedby={errors.confirmPassword ? "confirmPassword-error" : undefined}
+                      className={getInputClass(errors.confirmPassword, true)}
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 p-1 focus:outline-none focus:ring-1 focus:ring-[#C85A32] rounded transition-colors"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {errors.confirmPassword && (
+                    <p id="confirmPassword-error" role="alert" className="text-xs text-red-600 flex items-center gap-1.5 pt-0.5">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{errors.confirmPassword}</span>
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Primary Action Button */}
               <button 

@@ -76,12 +76,26 @@ export interface SellerTransactionItem {
   createdAt: string;
 }
 
+export type ItemCategory = 
+  | 'Phones & Tech'
+  | 'Computing & Laptops'
+  | 'Power Tools'
+  | 'Audio & Visual'
+  | 'Musical Instruments & Gear'
+  | 'Generators & Power Systems'
+  | 'Fine Jewelry & Gold'
+  | 'Watches & Luxury Goods'
+  | 'Gaming Consoles'
+  | 'Appliances'
+  | 'Sporting Goods & Bicycles'
+  | 'General Goods';
+
 export interface InventoryItem {
   id: string;
   shopId?: string;
   sku: string;
   title: string;
-  category: 'Phones & Tech' | 'Power Tools' | 'Audio & Visual' | 'Fine Jewelry & Gold' | 'Gaming Consoles' | 'Appliances';
+  category: ItemCategory | string;
   brand?: string;
   model?: string;
   serialOrImei: string;
