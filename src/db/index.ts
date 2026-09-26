@@ -148,6 +148,22 @@ export class LocalDatabase extends Dexie {
       refundRequests: 'id, shopId, receiptNumber, itemId, status, createdAt',
       syncLogs: '++id, shopId, entityType, entityId, status, createdAt',
       counters: 'id'
+    }).upgrade(async tx => {
+      const QUARANTINE = 'legacy-unassigned';
+      await Promise.all([
+        tx.table('inventory').toCollection().modify(i => { if (!i.shopId) i.shopId = QUARANTINE; }),
+        tx.table('customers').toCollection().modify(c => { if (!c.shopId) c.shopId = QUARANTINE; }),
+        tx.table('sellers').toCollection().modify(s => { if (!s.shopId) s.shopId = QUARANTINE; }),
+        tx.table('sellerTransactions').toCollection().modify(t => { if (!t.shopId) t.shopId = QUARANTINE; }),
+        tx.table('sellerTransactionItems').toCollection().modify(ti => { if (!ti.shopId) ti.shopId = QUARANTINE; }),
+        tx.table('sellerReversals').toCollection().modify(sr => { if (!sr.shopId) sr.shopId = QUARANTINE; }),
+        tx.table('loans').toCollection().modify(l => { if (!l.shopId) l.shopId = QUARANTINE; }),
+        tx.table('saps').toCollection().modify(s => { if (!s.shopId) s.shopId = QUARANTINE; }),
+        tx.table('sales').toCollection().modify(s => { if (!s.shopId) s.shopId = QUARANTINE; }),
+        tx.table('refundRequests').toCollection().modify(rr => { if (!rr.shopId) rr.shopId = QUARANTINE; }),
+        tx.table('syncLogs').toCollection().modify(sl => { if (!sl.shopId) sl.shopId = QUARANTINE; }),
+        tx.table('workflowDrafts').toCollection().modify(wd => { if (!wd.shopId) wd.shopId = QUARANTINE; })
+      ]);
     });
   }
 }
@@ -162,10 +178,12 @@ export async function seedDatabase(
 ) {
   const inventoryCount = await db.inventory.count();
   if (inventoryCount === 0) {
-    console.log('Seeding LocalDatabase with initial data...');
-    await db.inventory.bulkAdd(inventory);
-    await db.customers.bulkAdd(customers);
-    await db.loans.bulkAdd(loans);
-    await db.saps.bulkAdd(saps);
+    console.log('Seeding LocalDatabase with isolated demo data...');
+    const DEMO_SCOPE = 'demo-data';
+    
+    await db.inventory.bulkAdd(inventory.map(i => ({ ...i, shopId: DEMO_SCOPE })));
+    await db.customers.bulkAdd(customers.map(c => ({ ...c, shopId: DEMO_SCOPE })));
+    await db.loans.bulkAdd(loans.map(l => ({ ...l, shopId: DEMO_SCOPE })));
+    await db.saps.bulkAdd(saps.map(s => ({ ...s, shopId: DEMO_SCOPE })));
   }
 }

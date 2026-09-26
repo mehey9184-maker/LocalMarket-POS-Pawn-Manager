@@ -31,19 +31,12 @@ export async function cleanupSyntheticSyncLogs() {
   }
 }
 
-export async function runMigration(quarantineShopId?: string) {
+export async function runMigration() {
   await cleanupSyntheticSyncLogs();
   const isMigrated = localStorage.getItem('lm_dexie_migration_complete');
   if (isMigrated === 'true') return;
 
-  // If we have a target shopId, we can perform the migration. 
-  // Otherwise, we wait until a shopId is available to avoid unassigned data leakage.
-  if (!quarantineShopId) {
-    console.log('[Migration] Waiting for authoritative shop context before claiming legacy data.');
-    return;
-  }
-
-  console.log(`Starting data migration from localStorage to Dexie (Quarantine: ${quarantineShopId})...`);
+  console.log('Starting data migration from localStorage to Dexie (Quarantine: legacy-unassigned)...');
 
   try {
     const getLocal = (key: string) => {
@@ -62,22 +55,22 @@ export async function runMigration(quarantineShopId?: string) {
     const saps = getLocal('lm_saps') as SapsEntry[] | null;
     const sales = getLocal('lm_sales') as SaleTransaction[] | null;
 
-    const SCOPE = quarantineShopId;
+    const QUARANTINE_SCOPE = 'legacy-unassigned';
 
     if (inventory && inventory.length > 0) {
-      await db.inventory.bulkPut(inventory.map(item => ({ ...item, shopId: item.shopId || SCOPE })));
+      await db.inventory.bulkPut(inventory.map(item => ({ ...item, shopId: item.shopId || QUARANTINE_SCOPE })));
     }
     if (customers && customers.length > 0) {
-      await db.customers.bulkPut(customers.map(item => ({ ...item, shopId: item.shopId || SCOPE })));
+      await db.customers.bulkPut(customers.map(item => ({ ...item, shopId: item.shopId || QUARANTINE_SCOPE })));
     }
     if (loans && loans.length > 0) {
-      await db.loans.bulkPut(loans.map(item => ({ ...item, shopId: item.shopId || SCOPE })));
+      await db.loans.bulkPut(loans.map(item => ({ ...item, shopId: item.shopId || QUARANTINE_SCOPE })));
     }
     if (saps && saps.length > 0) {
-      await db.saps.bulkPut(saps.map(item => ({ ...item, shopId: item.shopId || SCOPE })));
+      await db.saps.bulkPut(saps.map(item => ({ ...item, shopId: item.shopId || QUARANTINE_SCOPE })));
     }
     if (sales && sales.length > 0) {
-      await db.sales.bulkPut(sales.map(item => ({ ...item, shopId: item.shopId || SCOPE })));
+      await db.sales.bulkPut(sales.map(item => ({ ...item, shopId: item.shopId || QUARANTINE_SCOPE })));
     }
 
     localStorage.setItem('lm_dexie_migration_complete', 'true');

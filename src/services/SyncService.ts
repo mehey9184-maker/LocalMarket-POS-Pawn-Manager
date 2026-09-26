@@ -86,9 +86,13 @@ export const SyncService = {
   /**
    * Sync a single SyncLog entry to Supabase
    */
-  async syncEntity(log: SyncLog, shopId?: string): Promise<{ success: boolean; error?: string }> {
+  async syncEntity(log: SyncLog, shopId: string): Promise<{ success: boolean; error?: string }> {
     if (!isSupabaseConfigured()) {
       return { success: false, error: 'Supabase is not configured' };
+    }
+
+    if (!shopId || !isUuidOrTestShop(shopId)) {
+      return { success: false, error: 'DETERMINISTIC_RECOVERABLE: Missing or invalid authoritative shop context for synchronization.' };
     }
 
     let validationError: string | null = null;
@@ -120,10 +124,12 @@ export const SyncService = {
     ];
 
     if (!validationError && entityTypesRequiringShopId.includes(log.entityType)) {
-      if (!shopId || !isUuidOrTestShop(shopId)) {
-        validationError = `DETERMINISTIC_RECOVERABLE: Waiting for valid shop context (authoritative shopId UUID is missing or stale)`;
-      } else if (log.shopId && log.shopId !== shopId) {
-        validationError = `DETERMINISTIC_PERMANENT: Shop isolation violation. Record belongs to shop ${log.shopId} but terminal is authenticated for ${shopId}.`;
+      const payloadShopId = log.payload?.shopId || log.payload?.shop_id;
+      
+      if (log.shopId && log.shopId !== shopId) {
+        validationError = `DETERMINISTIC_PERMANENT: Shop isolation violation. Log entry belongs to shop ${log.shopId} but terminal is authenticated for ${shopId}.`;
+      } else if (payloadShopId && payloadShopId !== shopId) {
+        validationError = `DETERMINISTIC_PERMANENT: Shop isolation violation. Payload belongs to shop ${payloadShopId} but terminal is authenticated for ${shopId}.`;
       }
     }
 
@@ -189,7 +195,7 @@ export const SyncService = {
             sapsRef: payload.sapsRef,
             officerName: payload.officerName,
             policeStationRef: payload.policeStationRef,
-            shopId: payload.shopId || shopId,
+            shopId: shopId,
             metadata: payload.metadata
           });
 
@@ -233,7 +239,7 @@ export const SyncService = {
             sapsEntryId: payload.sapsEntryId,
             sapsEntryNumber: payload.sapsEntryNumber,
             history: payload.history,
-            shopId: payload.shopId || shopId
+            shopId: shopId
           });
 
           if (!rpcRes.success) {
@@ -483,12 +489,17 @@ export const SyncService = {
    * Process all pending or failed sync logs in batches with slow trickle rate limiting
    */
   async processAllPendingSync(
-    shopId?: string,
+    shopId: string,
     onProgress?: (current: number, total: number, entity: string) => void,
     trickleDelayMs = 120
   ): Promise<{ processed: number; successful: number; failed: number }> {
     if (activeSyncPromise) {
       return activeSyncPromise;
+    }
+
+    if (!shopId || !isUuidOrTestShop(shopId)) {
+      console.error('[SyncService] Aborting sync: shopId is mandatory.');
+      return { processed: 0, successful: 0, failed: 0 };
     }
 
     activeSyncPromise = (async () => {
@@ -504,16 +515,11 @@ export const SyncService = {
           console.log(`[SyncService] Audited and quarantined ${quarantineCount} legacy/synthetic records.`);
         }
 
-        const pendingLogs = shopId 
-          ? await db.syncLogs
-              .where('shopId')
-              .equals(shopId)
-              .and(log => log.status === 'pending' || log.status === 'failed')
-              .sortBy('createdAt')
-          : await db.syncLogs
-              .where('status')
-              .anyOf('pending', 'failed')
-              .sortBy('createdAt');
+        const pendingLogs = await db.syncLogs
+          .where('shopId')
+          .equals(shopId)
+          .and(log => log.status === 'pending' || log.status === 'failed')
+          .sortBy('createdAt');
 
         const total = pendingLogs.length;
         if (total === 0) return { processed: 0, successful: 0, failed: 0 };

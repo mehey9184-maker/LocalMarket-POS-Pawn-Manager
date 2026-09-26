@@ -132,3 +132,73 @@
 .animate-pulse-slow {
   animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Atmospheric Sky & Cloud Drift System */
+@keyframes skyCloudDrift1 {
+  0% { transform: translate3d(-3%, 0, 0); }
+  50% { transform: translate3d(3%, -1.5%, 0); }
+  100% { transform: translate3d(-3%, 0, 0); }
+}
+
+@keyframes skyCloudDrift2 {
+  0% { transform: translate3d(2.5%, 0, 0); }
+  50% { transform: translate3d(-4%, 2%, 0); }
+  100% { transform: translate3d(2.5%, 0, 0); }
+}
+
+@keyframes skyCloudDrift3 {
+  0% { transform: translate3d(-5%, 0, 0); }
+  50% { transform: translate3d(4%, -1%, 0); }
+  100% { transform: translate3d(-5%, 0, 0); }
+}
+
+@keyframes authCardEntrance {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes authFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-auth-card {
+  animation: authCardEntrance 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-auth-fade {
+  animation: authFadeIn 280ms ease-out both;
+}
+
+.cloud-layer-1 {
+  animation: skyCloudDrift1 80s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.cloud-layer-2 {
+  animation: skyCloudDrift2 105s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.cloud-layer-3 {
+  animation: skyCloudDrift3 125s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloud-layer-1,
+  .cloud-layer-2,
+  .cloud-layer-3,
+  .animate-auth-card,
+  .animate-auth-fade {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}

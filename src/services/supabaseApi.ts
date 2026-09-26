@@ -560,6 +560,7 @@ export const shopItemsApi = {
   mapRowToInventoryItem(row: ShopItemRow): InventoryItem {
     return {
       id: row.id,
+      shopId: row.shop_id || undefined,
       sku: row.sku,
       title: row.title,
       category: row.category as any,
@@ -588,7 +589,7 @@ export const shopItemsApi = {
   mapInventoryItemToRow(item: InventoryItem, shopId?: string): Database['public']['Tables']['shop_items']['Insert'] {
     return {
       id: item.id,
-      shop_id: shopId || null,
+      shop_id: shopId || item.shopId || null,
       sku: item.sku,
       title: item.title,
       category: item.category,
@@ -725,7 +726,7 @@ export const customersApi = {
   mapCustomerToRow(customer: Customer, shopId?: string): Database['public']['Tables']['customers']['Insert'] {
     return {
       id: customer.id,
-      shop_id: shopId || null,
+      shop_id: shopId || customer.shopId || null,
       full_name: customer.fullName,
       id_type: customer.idType || 'RSA Smart ID',
       id_number: customer.idNumber,
@@ -744,6 +745,7 @@ export const customersApi = {
   mapRowToCustomer(row: CustomerRow): Customer {
     return {
       id: row.id,
+      shopId: row.shop_id || undefined,
       fullName: row.full_name,
       idType: row.id_type as any,
       idNumber: row.id_number,
@@ -862,7 +864,7 @@ export const sellersApi = {
   mapSellerToRow(seller: Seller, shopId?: string): Database['public']['Tables']['sellers']['Insert'] {
     return {
       id: seller.id,
-      shop_id: shopId || null,
+      shop_id: shopId || seller.shopId || null,
       full_name: seller.fullName,
       id_type: seller.idType || 'RSA Smart ID',
       id_number: seller.idNumber,
@@ -878,6 +880,7 @@ export const sellersApi = {
   mapRowToSeller(row: SellerRow): Seller {
     return {
       id: row.id,
+      shopId: row.shop_id || undefined,
       fullName: row.full_name,
       idType: row.id_type as any,
       idNumber: row.id_number,
@@ -1308,7 +1311,7 @@ export const pawnLoansApi = {
   mapLoanToRow(loan: PawnLoan, shopId?: string): Database['public']['Tables']['pawn_loans']['Insert'] {
     return {
       id: loan.id,
-      shop_id: shopId || null,
+      shop_id: shopId || loan.shopId || null,
       ticket_number: loan.ticketNumber,
       customer_id: loan.customerId,
       customer_name: loan.customerName || null,
@@ -1343,6 +1346,7 @@ export const pawnLoansApi = {
   mapRowToLoan(row: PawnLoanRow): PawnLoan {
     return {
       id: row.id,
+      shopId: row.shop_id || undefined,
       ticketNumber: row.ticket_number,
       customerId: row.customer_id,
       customerName: row.customer_name || '',
@@ -1484,7 +1488,7 @@ export const salesApi = {
   mapSaleToRow(sale: SaleTransaction, shopId?: string): Database['public']['Tables']['sales']['Insert'] {
     return {
       id: sale.id,
-      shop_id: shopId || null,
+      shop_id: shopId || sale.shopId || null,
       receipt_number: sale.receiptNumber,
       timestamp: sale.timestamp || new Date().toISOString(),
       items: sale.items as any,
@@ -1506,6 +1510,7 @@ export const salesApi = {
   mapRowToSale(row: SaleRow): SaleTransaction {
     return {
       id: row.id,
+      shopId: row.shop_id || undefined,
       receiptNumber: row.receipt_number,
       timestamp: row.timestamp,
       items: (row.items as any) || [],
@@ -1802,7 +1807,7 @@ export const sapsApi = {
   mapEntryToRow(entry: SapsEntry, shopId?: string): Database['public']['Tables']['saps_entries']['Insert'] {
     return {
       id: entry.id,
-      shop_id: shopId || null,
+      shop_id: shopId || entry.shopId || null,
       entry_number: entry.entryNumber,
       timestamp: entry.timestamp || new Date().toISOString(),
       customer_id: entry.customerId,
@@ -1831,6 +1836,7 @@ export const sapsApi = {
   mapRowToEntry(row: SapsEntryRow): SapsEntry {
     return {
       id: row.id,
+      shopId: row.shop_id || undefined,
       entryNumber: row.entry_number,
       timestamp: row.timestamp,
       customerId: row.customer_id,
