@@ -90,6 +90,21 @@ export type ItemCategory =
   | 'Sporting Goods & Bicycles'
   | 'General Goods';
 
+export const ITEM_CATEGORIES: ItemCategory[] = [
+  'Phones & Tech',
+  'Computing & Laptops',
+  'Power Tools',
+  'Audio & Visual',
+  'Musical Instruments & Gear',
+  'Generators & Power Systems',
+  'Fine Jewelry & Gold',
+  'Watches & Luxury Goods',
+  'Gaming Consoles',
+  'Appliances',
+  'Sporting Goods & Bicycles',
+  'General Goods'
+];
+
 export interface InventoryItem {
   id: string;
   shopId?: string;

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { PaymentMethod, ReceiptDelivery, InventoryItem } from '../../types';
 import { validateAndNormalizeSaPhone } from '../../utils/phoneValidator';
 import { focusAndScrollErrorField } from '../../utils/errorNavigator';
@@ -21,7 +22,8 @@ import {
   Info,
   Smartphone,
   Printer,
-  AlertTriangle
+  AlertTriangle,
+  Lock
 } from 'lucide-react';
 
 const CartItemRow: React.FC<{ 
@@ -29,14 +31,19 @@ const CartItemRow: React.FC<{
   onRemove: (id: string) => void; 
   onUpdatePrice: (id: string, price: number) => void;
   onUpdateQuantity: (id: string, qty: number) => void;
-}> = ({ ci, onRemove, onUpdatePrice, onUpdateQuantity }) => {
+  canEditPrice: boolean;
+}> = ({ ci, onRemove, onUpdatePrice, onUpdateQuantity, canEditPrice }) => {
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [tempPrice, setTempPrice] = useState((ci.overridePrice ?? ci.item.retailPrice).toString());
 
   const handlePriceSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEditPrice) {
+      setIsEditingPrice(false);
+      return;
+    }
     const p = parseFloat(tempPrice);
-    if (!isNaN(p)) {
+    if (!isNaN(p) && p >= 0) {
       onUpdatePrice(ci.item.id, p);
     }
     setIsEditingPrice(false);
@@ -89,7 +96,7 @@ const CartItemRow: React.FC<{
       </div>
 
       <div className="flex flex-col items-end gap-1">
-        {isEditingPrice ? (
+        {isEditingPrice && canEditPrice ? (
           <form onSubmit={handlePriceSubmit}>
             <input
               autoFocus
@@ -102,9 +109,11 @@ const CartItemRow: React.FC<{
           </form>
         ) : (
           <div 
-            onClick={() => setIsEditingPrice(true)}
-            className="text-xs font-bold text-gray-900 font-mono cursor-pointer hover:text-[#C85A32] transition"
-            title="Click to override price"
+            onClick={() => canEditPrice && setIsEditingPrice(true)}
+            className={`text-xs font-bold text-gray-900 font-mono transition ${
+              canEditPrice ? 'cursor-pointer hover:text-[#C85A32]' : 'cursor-default'
+            }`}
+            title={canEditPrice ? 'Click to override retail price (Manager / Pricing permission)' : 'Retail Selling Price (Fixed)'}
           >
             R {((ci.overridePrice ?? ci.item.retailPrice) * ci.quantity).toLocaleString()}
           </div>
@@ -157,15 +166,29 @@ export const Sell: React.FC = () => {
     setIsScannerModalOpen
   } = useApp();
 
+  const { hasPermission, isOwner, isManager } = useAuth();
+  const canEditPrice = hasPermission('pricing') || isOwner || isManager;
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTender, setSelectedTender] = useState<PaymentMethod>('cash');
   const [cashTendered, setCashTendered] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [receiptType, setReceiptType] = useState<ReceiptDelivery>('thermal');
+  const [customerMobile, setCustomerMobile] = useState<string>('');
+  const [mobileError, setMobileError] = useState<string | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(true);
   const isSubmittingRef = useRef(false);
   
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const mobileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleProtectedPriceUpdate = (itemId: string, newPrice: number) => {
+    if (!canEditPrice) {
+      showToast('Unauthorized Override', 'Only managers or operators with pricing permission can adjust retail prices.', 'amber');
+      return;
+    }
+    updateCartItemPrice(itemId, newPrice);
+  };
 
   useEffect(() => {
     searchInputRef.current?.focus();
@@ -236,17 +259,48 @@ export const Sell: React.FC = () => {
       return;
     }
 
+    let normalizedPhone: string | undefined = undefined;
+
+    if (receiptType === 'whatsapp') {
+      const rawMobile = customerMobile.trim();
+      if (!rawMobile) {
+        setMobileError('Customer WhatsApp mobile number is required.');
+        showToast('Mobile Number Required', 'Please enter customer mobile number for WhatsApp slip.', 'amber');
+        if (mobileInputRef.current) focusAndScrollErrorField(mobileInputRef.current);
+        return;
+      }
+
+      const phoneCheck = validateAndNormalizeSaPhone(rawMobile);
+      if (!phoneCheck.isValid) {
+        setMobileError(phoneCheck.error || 'Please enter a valid South African mobile number.');
+        showToast('Invalid Phone Number', phoneCheck.error || 'Check customer mobile format.', 'amber');
+        if (mobileInputRef.current) focusAndScrollErrorField(mobileInputRef.current);
+        return;
+      }
+
+      normalizedPhone = phoneCheck.normalizedNumber || rawMobile;
+      setMobileError(null);
+    }
+
     setIsProcessing(true);
-    setTimeout(() => {
-      completeCheckout(
-        selectedTender, 
-        selectedTender === 'cash' ? numTendered : total, 
-        receiptType
-      );
-      setCashTendered('');
-      setIsProcessing(false);
-      setSearchQuery('');
-      searchInputRef.current?.focus();
+    setTimeout(async () => {
+      try {
+        await completeCheckout(
+          selectedTender, 
+          selectedTender === 'cash' ? numTendered : total, 
+          receiptType,
+          normalizedPhone
+        );
+        setCashTendered('');
+        setCustomerMobile('');
+        setMobileError(null);
+        setSearchQuery('');
+      } catch (err: any) {
+        console.error('Checkout error:', err);
+      } finally {
+        setIsProcessing(false);
+        searchInputRef.current?.focus();
+      }
     }, 400);
   };
 
@@ -260,7 +314,7 @@ export const Sell: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, selectedTender, numTendered, total, receiptType]);
+  }, [cart, selectedTender, numTendered, total, receiptType, customerMobile]);
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row bg-[#F5F6F8] overflow-hidden">
@@ -337,6 +391,17 @@ export const Sell: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Keyboard Shortcuts Discoverability Bar */}
+        <div className="px-5 py-2.5 bg-white border-t border-gray-200 flex flex-wrap items-center justify-between gap-3 text-[11px] text-gray-500 shrink-0">
+          <div className="flex items-center gap-4 flex-wrap">
+            <span className="flex items-center gap-1.5"><kbd className="bg-gray-100 border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-gray-700 shadow-2xs">F1</kbd> Cash</span>
+            <span className="flex items-center gap-1.5"><kbd className="bg-gray-100 border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-gray-700 shadow-2xs">F2</kbd> Card</span>
+            <span className="flex items-center gap-1.5"><kbd className="bg-gray-100 border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-gray-700 shadow-2xs">F3</kbd> EFT</span>
+            <span className="flex items-center gap-1.5"><kbd className="bg-gray-100 border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-gray-700 shadow-2xs">Esc</kbd> Clear Cart</span>
+          </div>
+          <span className="flex items-center gap-1.5"><kbd className="bg-gray-100 border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-gray-700 shadow-2xs">Ctrl+Enter</kbd> Finalise</span>
+        </div>
       </div>
 
       {/* RIGHT AREA: CART & CHECKOUT */}
@@ -360,8 +425,9 @@ export const Sell: React.FC = () => {
                 key={ci.item.id} 
                 ci={ci} 
                 onRemove={removeFromCart} 
-                onUpdatePrice={updateCartItemPrice}
+                onUpdatePrice={handleProtectedPriceUpdate}
                 onUpdateQuantity={updateCartQuantity}
+                canEditPrice={canEditPrice}
               />
             ))}
           </AnimatePresence>
@@ -463,7 +529,10 @@ export const Sell: React.FC = () => {
                ].map(rt => (
                  <button
                   key={rt.id}
-                  onClick={() => setReceiptType(rt.id as any)}
+                  onClick={() => {
+                    setReceiptType(rt.id as any);
+                    if (rt.id !== 'whatsapp') setMobileError(null);
+                  }}
                   className={`flex-1 py-1.5 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1.5 transition ${
                     receiptType === rt.id ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-800'
                   }`}
@@ -473,6 +542,45 @@ export const Sell: React.FC = () => {
                  </button>
                ))}
             </div>
+
+            {/* Optional Customer WhatsApp Phone Field */}
+            {receiptType === 'whatsapp' && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                className="space-y-1.5 overflow-hidden pt-1"
+              >
+                <div className="flex items-center justify-between text-[10px]">
+                  <label htmlFor="customer-mobile-input" className="font-bold text-gray-700 uppercase">
+                    Customer WhatsApp Number *
+                  </label>
+                  <span className="text-gray-400 font-normal">No account created</span>
+                </div>
+                <div className="relative">
+                  <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                  <input
+                    id="customer-mobile-input"
+                    ref={mobileInputRef}
+                    type="tel"
+                    value={customerMobile}
+                    onChange={e => {
+                      setCustomerMobile(e.target.value);
+                      if (mobileError) setMobileError(null);
+                    }}
+                    placeholder="e.g. 082 123 4567 or +27..."
+                    className={`w-full bg-white border ${
+                      mobileError ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-[#C85A32]'
+                    } rounded-lg pl-8 pr-3 py-1.5 text-xs font-mono text-gray-900 outline-none transition`}
+                  />
+                </div>
+                {mobileError && (
+                  <p className="text-[10px] text-red-600 font-medium flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    <span>{mobileError}</span>
+                  </p>
+                )}
+              </motion.div>
+            )}
           </div>
 
           <div className="flex gap-2 pt-1">
@@ -486,7 +594,7 @@ export const Sell: React.FC = () => {
             <button 
               onClick={handleCompleteSale}
               disabled={isProcessing || cart.length === 0}
-              className="flex-1 py-3 rounded-xl bg-[#C85A32] disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold text-xs shadow-xs hover:bg-[#A94725] transition flex items-center justify-center gap-2"
+              className="flex-1 py-3 rounded-xl bg-[#C85A32] disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold text-xs shadow-xs hover:bg-[#A94725] transition flex items-center justify-center gap-2 cursor-pointer"
             >
               {isProcessing ? (
                 <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />

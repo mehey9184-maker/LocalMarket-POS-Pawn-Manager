@@ -40,7 +40,52 @@ export const ReceiptModal: React.FC = () => {
   };
 
   const handleWhatsApp = () => {
-    showToast('WhatsApp Sent', `Receipt #${sale.receiptNumber} sent to ${sale.customerMobile || '+27 82 491 0023'}`, 'success');
+    const rawMobile = sale.customerMobile?.trim();
+    if (!rawMobile) {
+      showToast('No Mobile Provided', 'No customer mobile number was captured for this sale.', 'amber');
+      return;
+    }
+
+    let cleanNum = rawMobile.replace(/\D/g, '');
+    if (cleanNum.startsWith('0')) {
+      cleanNum = '27' + cleanNum.slice(1);
+    }
+
+    if (cleanNum.length < 10) {
+      showToast('Invalid Mobile', 'Customer phone number is too short for WhatsApp handoff.', 'amber');
+      return;
+    }
+
+    const storeName = shopProfile?.shop_name || 'LocalMarket';
+    const itemsList = sale.items
+      .map(ci => `• ${ci.item.title} (x${ci.quantity}) - R ${(ci.item.retailPrice * ci.quantity).toFixed(2)}`)
+      .join('\n');
+
+    const message = 
+      `*${storeName.toUpperCase()} — TAX INVOICE / RECEIPT*\n` +
+      `Receipt No: ${sale.receiptNumber}\n` +
+      `Date: ${sale.timestamp}\n` +
+      `Cashier: ${sale.cashier}\n\n` +
+      `*ITEMS PURCHASED:*\n${itemsList}\n\n` +
+      `Subtotal (excl. VAT): R ${(sale.total - sale.vatAmount).toFixed(2)}\n` +
+      `VAT (15%): R ${sale.vatAmount.toFixed(2)}\n` +
+      `*TOTAL PAID: R ${sale.total.toFixed(2)}*\n` +
+      `Tender Method: ${sale.tenderMethod.toUpperCase()}\n` +
+      `${sale.change > 0 ? `Change Given: R ${sale.change.toFixed(2)}\n` : ''}\n` +
+      `Thank you for shopping at ${storeName}!`;
+
+    const waUrl = `https://wa.me/${cleanNum}?text=${encodeURIComponent(message)}`;
+
+    try {
+      const win = window.open(waUrl, '_blank', 'noopener,noreferrer');
+      if (win) {
+        showToast('Opening WhatsApp', `Connecting to +${cleanNum}...`, 'info');
+      } else {
+        showToast('Popup Blocked', 'Please allow popups or open WhatsApp link directly.', 'amber');
+      }
+    } catch {
+      showToast('Handoff Failed', 'Could not open WhatsApp window.', 'error');
+    }
   };
 
   return (
@@ -188,7 +233,7 @@ export const ReceiptModal: React.FC = () => {
             className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow transition"
           >
             <MessageSquare className="w-4 h-4" />
-            <span>WhatsApp Slip</span>
+            <span>Open WhatsApp</span>
           </button>
         </div>
       </div>

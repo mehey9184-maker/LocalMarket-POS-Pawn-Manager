@@ -28,9 +28,9 @@ export const storageService = {
     itemId: string = `item-${Date.now()}`,
     fileName?: string
   ): Promise<StorageUploadResult> {
-    try {
-      let base64Payload: string;
+    let base64Payload: string = '';
 
+    try {
       if (typeof fileOrDataUrl === 'string') {
         base64Payload = fileOrDataUrl;
       } else {
@@ -67,18 +67,18 @@ export const storageService = {
         storageKey: result.data.storageKey,
       };
     } catch (err: any) {
-      console.warn('Storage upload note:', err.message);
+      console.warn('Storage upload note (preserving image locally):', err.message);
       // Fallback: If network or server endpoint is temporarily unavailable,
-      // return data URL so local workflow is never blocked
-      if (typeof fileOrDataUrl === 'string') {
+      // return genuine base64 data URL so local workflow is never blocked and the real image is preserved
+      if (base64Payload) {
         return {
-          imageUrl: fileOrDataUrl,
+          imageUrl: base64Payload,
           storageKey: `local/${shopId || 'offline'}/${itemId}.jpg`,
         };
       }
       return {
-        imageUrl: 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=600&q=80',
-        storageKey: `fallback/${itemId}.jpg`,
+        imageUrl: typeof fileOrDataUrl === 'string' ? fileOrDataUrl : '',
+        storageKey: `local/${shopId || 'offline'}/${itemId}.jpg`,
       };
     }
   },
@@ -110,7 +110,7 @@ export const storageService = {
    * Resolves a storageKey or URL to a fully qualified URL
    */
   getItemImageUrl(storageKeyOrUrl: string): string {
-    if (!storageKeyOrUrl) return 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=600&q=80';
+    if (!storageKeyOrUrl) return '';
     if (storageKeyOrUrl.startsWith('http://') || storageKeyOrUrl.startsWith('https://') || storageKeyOrUrl.startsWith('data:')) {
       return storageKeyOrUrl;
     }

@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useInventory } from '../../context/InventoryContext';
 import { useSaps } from '../../context/SapsContext';
-import { InventoryItem } from '../../types';
+import { InventoryItem, ITEM_CATEGORIES } from '../../types';
 import { ProfileRow } from '../../types/supabase';
 import { AutoSizer as AutoSizerComponent } from 'react-virtualized-auto-sizer';
 import { VirtualList } from '../common/VirtualList';
@@ -197,9 +197,8 @@ export const OutrightBuysLedger: React.FC = () => {
   }, [outrightItems]);
 
   const categories = useMemo(() => {
-    const set = new Set(outrightItems.map(i => i.category));
-    return ['all', ...Array.from(set)];
-  }, [outrightItems]);
+    return ['all', ...ITEM_CATEGORIES];
+  }, []);
 
   const managers = useMemo(() => {
     return users.filter((u: ProfileRow) => (u.role === 'manager' || u.role === 'owner') && u.id !== currentUserProfile?.id);

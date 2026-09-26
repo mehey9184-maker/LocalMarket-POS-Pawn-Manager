@@ -6,11 +6,9 @@ import {
   Download, 
   Upload, 
   RefreshCw, 
-  FileCode2, 
   CheckCircle2, 
   AlertTriangle, 
   ShieldCheck, 
-  Copy, 
   Check, 
   X, 
   Edit3, 
@@ -52,8 +50,6 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState<ShopProfile>(shopProfile);
   const [rulesForm, setRulesForm] = useState<BusinessRules>(businessRules);
-  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
-  const [copiedSql, setCopiedSql] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -91,80 +87,6 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
     }
   };
 
-  const sqlScript = `-- ==============================================================================
--- SHOP PROFILES & LOCAL-FIRST COMPLIANCE MIGRATION
--- Run this in your Supabase SQL Editor:
--- https://supabase.com/dashboard/project/_/sql/new
--- ==============================================================================
-
-CREATE TABLE IF NOT EXISTS public.shop_profiles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    shop_code TEXT UNIQUE NOT NULL,
-    shop_name TEXT NOT NULL,
-    trading_name TEXT,
-    registration_number TEXT,
-    vat_number TEXT,
-    saps_dealer_license TEXT,
-    phone TEXT,
-    email TEXT,
-    address TEXT,
-    city TEXT,
-    province TEXT,
-    postal_code TEXT,
-    currency TEXT DEFAULT 'ZAR',
-    receipt_header TEXT,
-    receipt_footer TEXT,
-    is_active BOOLEAN DEFAULT true,
-    metadata JSONB DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- Link shop items & profiles to shop_profiles
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles' AND column_name = 'shop_id') THEN
-        ALTER TABLE public.profiles ADD COLUMN shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE SET NULL;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'shop_items' AND column_name = 'shop_id') THEN
-        ALTER TABLE public.shop_items ADD COLUMN shop_id UUID REFERENCES public.shop_profiles(id) ON DELETE SET NULL;
-    END IF;
-END $$;
-
--- Enable Row Level Security (RLS)
-ALTER TABLE public.shop_profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow public read active shop profiles" ON public.shop_profiles FOR SELECT TO public USING (is_active = true);
-CREATE POLICY "Allow authenticated manage shop profiles" ON public.shop_profiles FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow anon read shop profiles" ON public.shop_profiles FOR SELECT TO anon USING (true);
-CREATE POLICY "Allow anon update shop profiles" ON public.shop_profiles FOR UPDATE TO anon USING (true);
-CREATE POLICY "Allow anon insert shop profiles" ON public.shop_profiles FOR INSERT TO anon WITH CHECK (true);
-
--- Seed Initial Store Profile
-INSERT INTO public.shop_profiles (
-    shop_code, shop_name, trading_name, registration_number, vat_number,
-    saps_dealer_license, phone, email, address, city, province, postal_code, currency
-) VALUES (
-    '${shopProfile.shop_code}',
-    '${shopProfile.shop_name}',
-    '${shopProfile.trading_name}',
-    '${shopProfile.registration_number}',
-    '${shopProfile.vat_number}',
-    '${shopProfile.saps_dealer_license}',
-    '${shopProfile.phone}',
-    '${shopProfile.email}',
-    '${shopProfile.address}',
-    '${shopProfile.city}',
-    '${shopProfile.province}',
-    '${shopProfile.postal_code}',
-    '${shopProfile.currency}'
-) ON CONFLICT (shop_code) DO NOTHING;`;
-
-  const handleCopySql = () => {
-    navigator.clipboard.writeText(sqlScript);
-    setCopiedSql(true);
-    showToast('SQL Copied', 'Paste into your Supabase SQL editor to run migration', 'success');
-    setTimeout(() => setCopiedSql(false), 2500);
-  };
-
   return (
     <div className="space-y-8">
       {/* 1. STORE PROFILE & STATUTORY COMPLIANCE CARD */}
@@ -188,14 +110,6 @@ INSERT INTO public.shop_profiles (
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              onClick={() => setIsSqlModalOpen(true)}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#1A1A1A] hover:bg-[#222] text-gray-300 hover:text-white rounded-xl text-xs font-bold border border-[#2A2A2A] transition"
-              title="View SQL query to add shop_profiles to Supabase"
-            >
-              <FileCode2 className="w-4 h-4 text-emerald-400" />
-              <span>Supabase SQL</span>
-            </button>
             <button
               onClick={() => {
                 setProfileForm(shopProfile);
@@ -837,68 +751,6 @@ INSERT INTO public.shop_profiles (
                   </button>
                 </div>
               </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: SUPABASE SQL VIEWER */}
-      <AnimatePresence>
-        {isSqlModalOpen && (
-          <div className="fixed inset-0 z-[170] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-3xl bg-[#121212] border border-[#2A2A2A] rounded-3xl p-8 space-y-6 shadow-2xl relative max-h-[90vh] flex flex-col"
-            >
-              <div className="flex items-center justify-between pb-4 border-b border-[#2A2A2A] shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-400">
-                    <FileCode2 className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-white font-headline">Supabase SQL: shop_profiles Migration</h3>
-                    <p className="text-xs text-gray-400">Creates the branch profiles table and sets up safe RLS policies</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setIsSqlModalOpen(false)}
-                  className="p-2 text-gray-400 hover:text-white rounded-xl hover:bg-[#1E1E1E] transition"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-[#181818] border border-[#2A2A2A] flex items-center gap-3 shrink-0">
-                <Info className="w-5 h-5 text-emerald-400 shrink-0" />
-                <p className="text-xs text-gray-300">
-                  Open your Supabase project dashboard → <strong className="text-white">SQL Editor</strong> → Paste this script and click <strong className="text-emerald-400">Run</strong>.
-                </p>
-              </div>
-
-              <div className="flex-1 min-h-0 bg-[#0A0A0A] border border-[#2A2A2A] rounded-2xl p-4 overflow-y-auto font-mono text-[11px] text-gray-300 leading-relaxed custom-scrollbar selection:bg-emerald-500/30">
-                <pre>{sqlScript}</pre>
-              </div>
-
-              <div className="flex items-center justify-between pt-4 border-t border-[#2A2A2A] shrink-0">
-                <span className="text-[11px] text-gray-500 font-mono">File: /supabase/shop_profiles.sql</span>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setIsSqlModalOpen(false)}
-                    className="px-5 py-2.5 bg-[#1E1E1E] hover:bg-[#252525] text-gray-300 rounded-xl text-xs font-bold transition"
-                  >
-                    Close
-                  </button>
-                  <button
-                    onClick={handleCopySql}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-600/20"
-                  >
-                    {copiedSql ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    <span>{copiedSql ? 'Copied to Clipboard!' : 'Copy SQL Script'}</span>
-                  </button>
-                </div>
-              </div>
             </motion.div>
           </div>
         )}

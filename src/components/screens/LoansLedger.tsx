@@ -134,9 +134,50 @@ const LoanCard: React.FC<{
 };
 
 export const LoansLedger: React.FC = () => {
-  const { showToast, activeCustomer, setActiveCustomer } = useApp();
+  const { showToast, activeCustomer, setActiveCustomer, shopProfile } = useApp();
   const { loans, redeemLoan, extendLoan } = useLoans();
   const { customers } = useCustomers();
+
+  const handleOpenWhatsApp = (loan: PawnLoan) => {
+    const rawMobile = loan.customerMobile?.trim();
+    if (!rawMobile) {
+      showToast('No Phone Number', `No contact mobile recorded for ${loan.customerName}.`, 'amber');
+      return;
+    }
+
+    let cleanNum = rawMobile.replace(/\D/g, '');
+    if (cleanNum.startsWith('0')) {
+      cleanNum = '27' + cleanNum.slice(1);
+    }
+
+    if (cleanNum.length < 10) {
+      showToast('Invalid Mobile', 'Customer phone number is too short for WhatsApp.', 'amber');
+      return;
+    }
+
+    const storeName = shopProfile?.shop_name || 'LocalMarket';
+    const message = 
+      `Hello ${loan.customerName},\n\n` +
+      `This is ${storeName} regarding your pawn pledge (Ticket *#${loan.ticketNumber}* for "${loan.itemTitle}").\n` +
+      `• Principal: R ${loan.principal.toFixed(2)}\n` +
+      `• Redemption Amount: R ${loan.totalRedemptionAmount.toFixed(2)}\n` +
+      `• Expiry Date: ${loan.expiryDate} (${loan.daysRemaining > 0 ? `${loan.daysRemaining} days remaining` : `${Math.abs(loan.daysRemaining)} days overdue`})\n` +
+      `• Vault Location: Shelf ${loan.vaultShelf}\n\n` +
+      `Please visit our counter or reply if you need an extension or settlement. Thank you!`;
+
+    const waUrl = `https://wa.me/${cleanNum}?text=${encodeURIComponent(message)}`;
+
+    try {
+      const win = window.open(waUrl, '_blank', 'noopener,noreferrer');
+      if (win) {
+        showToast('Opening WhatsApp', `Connecting to ${loan.customerName}...`, 'info');
+      } else {
+        showToast('Popup Blocked', 'Please allow popups to open WhatsApp link.', 'amber');
+      }
+    } catch {
+      showToast('Handoff Failed', 'Could not open WhatsApp window.', 'error');
+    }
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'expiring' | 'overdue' | 'redeemed'>('all');
@@ -300,7 +341,7 @@ export const LoansLedger: React.FC = () => {
                             <LoanCard 
                               loan={loan} 
                               onClick={handleCardClick} 
-                              onWhatsApp={(l) => showToast('WhatsApp', `Opening chat with ${l.customerName}`, 'info')}
+                              onWhatsApp={handleOpenWhatsApp}
                             />
                           </div>
                         ))}
