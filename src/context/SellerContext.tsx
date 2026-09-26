@@ -150,6 +150,28 @@ export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const item = await db.inventory.get(itemId);
     if (!item || item.shopId !== shopId) throw new Error('Item not found in inventory.');
 
+    // Obtain authoritative seller transaction item for payout calculation
+    let txItem = tx.items?.find(i => i.itemId === itemId);
+    if (!txItem) {
+      txItem = await db.sellerTransactionItems
+        .where('sellerTransactionId')
+        .equals(txId)
+        .and(i => i.itemId === itemId)
+        .first();
+    }
+    if (!txItem) {
+      txItem = await db.sellerTransactionItems
+        .where('itemId')
+        .equals(itemId)
+        .and(i => !i.shopId || i.shopId === shopId)
+        .first();
+    }
+
+    const payoutAmount = txItem?.amountPaid;
+    if (payoutAmount === undefined || payoutAmount === null || typeof payoutAmount !== 'number' || isNaN(payoutAmount)) {
+      throw new Error('Unable to perform reversal: Authoritative seller transaction item payout amount is unavailable.');
+    }
+
     const reversalId = crypto.randomUUID();
     const reversalRecord: SellerReversalRecord = {
       id: reversalId,
@@ -157,8 +179,8 @@ export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       sellerTransactionId: txId,
       itemId,
       sellerId: tx.sellerId,
-      originalPayout: item.costBasis ?? 0,
-      reversalAmount: item.costBasis ?? 0,
+      originalPayout: payoutAmount,
+      reversalAmount: payoutAmount,
       reason,
       actorId,
       actorName,

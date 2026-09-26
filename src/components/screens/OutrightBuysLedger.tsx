@@ -392,7 +392,7 @@ export const OutrightBuysLedger: React.FC = () => {
                   <img src={reversalItem.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover" />
                   <div>
                     <p className="text-sm font-bold text-gray-900">{reversalItem.title}</p>
-                    <p className="text-[10px] text-gray-500 font-mono">{reversalItem.sku} • Cost: R {reversalItem.costBasis.toLocaleString()}</p>
+                    <p className="text-[10px] text-gray-500 font-mono">{reversalItem.sku} • Cost: {reversalItem.costBasis !== undefined ? `R ${reversalItem.costBasis.toLocaleString()}` : 'Unknown'}</p>
                   </div>
                 </div>
               </div>
