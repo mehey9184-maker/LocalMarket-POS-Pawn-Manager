@@ -61,15 +61,15 @@ export const ShopSetup: React.FC = () => {
       <div className="w-full max-w-xl animate-in fade-in slide-in-from-bottom-4 duration-700">
         <div className="bg-white border border-gray-200 rounded-3xl p-8 sm:p-12 shadow-sm">
           
-          <div className="flex flex-col items-center text-center mb-10">
-            <div className="w-20 h-20 bg-[#FDF0EA] rounded-[2rem] flex items-center justify-center mb-6">
-              <Store className="w-10 h-10 text-[#c85a32]" />
+          <div className="flex flex-col items-center text-center mb-8">
+            <div className="w-16 h-16 bg-[#FDF0EA] rounded-2xl flex items-center justify-center mb-5">
+              <Store className="w-8 h-8 text-[#c85a32]" />
             </div>
-            <h1 className="font-bold text-3xl text-gray-900 tracking-tight">
+            <h1 className="font-bold text-2xl text-gray-900 tracking-tight">
               Let's get your shop ready
             </h1>
-            <p className="text-gray-500 mt-3 max-w-sm leading-relaxed">
-              Just the basics for now. You can add more business and compliance details later in settings.
+            <p className="text-sm text-gray-500 mt-2 max-w-xs leading-relaxed">
+              Just the basics for now. You can add more business details later in settings.
             </p>
           </div>
 
@@ -77,7 +77,7 @@ export const ShopSetup: React.FC = () => {
             <div className="space-y-6">
               {/* Primary Field */}
               <div className="space-y-2">
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Shop Name</label>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Shop Name</label>
                 <input 
                   required
                   autoFocus
@@ -85,7 +85,7 @@ export const ShopSetup: React.FC = () => {
                   value={shopName}
                   onChange={(e) => setShopName(e.target.value)}
                   placeholder="e.g. Downtown Pawn & Gold"
-                  className="w-full h-14 bg-[#F9FAFB] border border-gray-200 rounded-2xl px-6 text-lg font-medium focus:outline-none focus:ring-2 focus:ring-[#c85a32]/20 focus:border-[#c85a32] transition-all placeholder:text-gray-300"
+                  className="w-full h-14 bg-white border border-gray-300 rounded-2xl px-6 text-lg font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#c85a32]/20 focus:border-[#c85a32] transition-all placeholder:text-gray-400 shadow-sm"
                 />
               </div>
 
@@ -95,7 +95,7 @@ export const ShopSetup: React.FC = () => {
                 onClick={() => setShowOptional(!showOptional)}
                 className="text-sm font-bold text-[#c85a32] hover:text-[#b84e27] flex items-center gap-2 transition-colors pl-1"
               >
-                {showOptional ? 'Hide optional details' : 'Add optional details (Code, Phone, Address...)'}
+                {showOptional ? 'Hide optional details' : 'Add location & contact details (optional)'}
                 <Globe className={`w-4 h-4 transition-transform duration-300 ${showOptional ? 'rotate-180' : ''}`} />
               </button>
 
@@ -103,64 +103,64 @@ export const ShopSetup: React.FC = () => {
                 <div className="space-y-6 pt-2 animate-in fade-in zoom-in-95 duration-300">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Shop Code</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Shop Code</label>
                       <input 
                         type="text"
                         value={shopCode}
                         onChange={(e) => setShopCode(e.target.value.toUpperCase())}
                         placeholder="Auto-generated if empty"
-                        className="w-full h-11 bg-white border border-gray-200 rounded-xl px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all font-mono"
+                        className="w-full h-11 bg-white border border-gray-300 rounded-xl px-4 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all font-mono placeholder:text-gray-400"
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Store Phone</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Store Phone</label>
                       <input 
                         type="tel"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         placeholder="011 123 4567"
-                        className="w-full h-11 bg-white border border-gray-200 rounded-xl px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all"
+                        className="w-full h-11 bg-white border border-gray-300 rounded-xl px-4 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all placeholder:text-gray-400"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Physical Address</label>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Physical Address</label>
                     <textarea 
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
                       placeholder="Street address..."
                       rows={2}
-                      className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all resize-none"
+                      className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all resize-none placeholder:text-gray-400"
                     />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">City</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">City</label>
                       <input 
                         type="text"
                         value={city}
                         onChange={(e) => setCity(e.target.value)}
-                        className="w-full h-11 bg-white border border-gray-200 rounded-xl px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all"
+                        className="w-full h-11 bg-white border border-gray-300 rounded-xl px-4 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all"
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Province</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Province</label>
                       <input 
                         type="text"
                         value={province}
                         onChange={(e) => setProvince(e.target.value)}
-                        className="w-full h-11 bg-white border border-gray-200 rounded-xl px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all"
+                        className="w-full h-11 bg-white border border-gray-300 rounded-xl px-4 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all"
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-1">Postal</label>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Postal</label>
                       <input 
                         type="text"
                         value={postalCode}
                         onChange={(e) => setPostalCode(e.target.value)}
-                        className="w-full h-11 bg-white border border-gray-200 rounded-xl px-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all"
+                        className="w-full h-11 bg-white border border-gray-300 rounded-xl px-4 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-[#c85a32] transition-all"
                       />
                     </div>
                   </div>
@@ -178,7 +178,7 @@ export const ShopSetup: React.FC = () => {
               ) : (
                 <>
                   <CheckCircle2 className="w-5 h-5" />
-                  <span>Create Shop</span>
+                  <span>Set up my shop</span>
                 </>
               )}
             </button>
@@ -186,7 +186,7 @@ export const ShopSetup: React.FC = () => {
         </div>
 
         <p className="text-center text-[11px] text-gray-400 mt-8 uppercase tracking-[0.2em]">
-          Secure POS Initialization · Powered by LocalMarket
+          Powered by LocalMarket
         </p>
       </div>
     </div>

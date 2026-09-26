@@ -50,8 +50,14 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [searchQuery, setSearchQuery] = useState('');
 
   // Live queries from Dexie
-  const salesHistory = useLiveQuery(() => db.sales.orderBy('timestamp').reverse().toArray()) || [];
-  const localRefunds = useLiveQuery(() => db.refundRequests.orderBy('createdAt').reverse().toArray()) || [];
+  const salesHistory = useLiveQuery(
+    () => shopId ? db.sales.where('shopId').equals(shopId).reverse().sortBy('timestamp') : Promise.resolve([] as SaleTransaction[]),
+    [shopId]
+  ) || [];
+  const localRefunds = useLiveQuery(
+    () => shopId ? db.refundRequests.where('shopId').equals(shopId).reverse().sortBy('createdAt') : Promise.resolve([] as RefundRequest[]),
+    [shopId]
+  ) || [];
   const [remoteRefunds, setRemoteRefunds] = useState<RefundRequest[]>([]);
 
   // In-flight refresh deduplication ref
@@ -59,7 +65,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Fetch remote refund requests when online and authenticated
   const refreshRemoteRefunds = useCallback(async () => {
-    if (!isOnline || !isSupabaseConfigured() || !user) {
+    if (!isOnline || !isSupabaseConfigured() || !user || !shopId) {
       return;
     }
 
@@ -74,11 +80,11 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return;
         }
 
-        const fetched = await refundsApi.getRefundRequests(shopId || undefined);
+        const fetched = await refundsApi.getRefundRequests(shopId);
         setRemoteRefunds(fetched);
         // Upsert into local Dexie for offline cache
         for (const req of fetched) {
-          await db.refundRequests.put(req);
+          await db.refundRequests.put({ ...req, shopId });
         }
       } catch (err: any) {
         if (!isAuthExpiryError(err)) {
@@ -94,6 +100,10 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [isOnline, shopId, user]);
 
   useEffect(() => {
+    if (!shopId) {
+      setRemoteRefunds([]);
+      return;
+    }
     refreshRemoteRefunds();
 
     // Listen for session recovery / token refreshed event
@@ -107,17 +117,19 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         window.removeEventListener('lm_session_recovered', handleSessionRecovered);
       };
     }
-  }, [refreshRemoteRefunds]);
+  }, [refreshRemoteRefunds, shopId]);
 
   // Combine and deduplicate refund requests
   const refundRequests = useMemo(() => {
     const map = new Map<string, RefundRequest>();
     for (const r of localRefunds) map.set(r.id, r);
-    for (const r of remoteRefunds) map.set(r.id, r);
+    for (const r of remoteRefunds) {
+      if (r.shopId === shopId) map.set(r.id, r);
+    }
     return Array.from(map.values()).sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [localRefunds, remoteRefunds]);
+  }, [localRefunds, remoteRefunds, shopId]);
 
   const fuse = useMemo(() => new Fuse(salesHistory, {
     keys: ['receiptNumber', 'customerMobile', 'items.item.title', 'items.item.sku'],
@@ -130,14 +142,15 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [searchQuery, salesHistory, fuse]);
 
   const getSaleByReceipt = async (receiptNumber: string): Promise<SaleTransaction | null> => {
+    if (!shopId) return null;
     // Check local Dexie first
-    const local = await db.sales.where('receiptNumber').equals(receiptNumber).first();
+    const local = await db.sales.where('shopId').equals(shopId).and(s => s.receiptNumber === receiptNumber).first();
     if (local) return local;
 
     // If online, check Supabase
     if (isOnline && isSupabaseConfigured()) {
       const remote = await salesApi.getSaleByReceiptNumber(receiptNumber);
-      if (remote) {
+      if (remote && remote.shop_id === shopId) {
         return salesApi.mapRowToSale(remote);
       }
     }
@@ -165,6 +178,9 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     customerMobile?: string;
     cashierName?: string;
   }): Promise<{ success: boolean; sale?: SaleTransaction; error?: string }> => {
+    if (!shopId) {
+      return { success: false, error: 'No active shop context.' };
+    }
     if (!params.cart || params.cart.length === 0) {
       return { success: false, error: 'Cart is empty.' };
     }
@@ -194,6 +210,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const saleRecord: SaleTransaction = {
       id: saleId,
+      shopId,
       receiptNumber,
       timestamp,
       items: normalizedCart,
@@ -211,13 +228,6 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       // If online and Supabase is configured, call atomic RPC first
       if (isOnline && isSupabaseConfigured() && user) {
-        if (!shopId) {
-          return {
-            success: false,
-            error: 'No active shop branch assignment found on user profile. Cannot complete online sale.'
-          };
-        }
-
         const rpcPayload = {
           saleId,
           receiptNumber,
@@ -300,6 +310,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     refundAmount: number;
     reason: string;
   }): Promise<{ success: boolean; refundId?: string; error?: string }> => {
+    if (!shopId) return { success: false, error: 'No active shop context.' };
     if (!params.reason.trim()) {
       return { success: false, error: 'A valid refund reason is strictly mandatory.' };
     }
@@ -330,7 +341,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const existingPending = await db.refundRequests
       .where('receiptNumber')
       .equals(params.receiptNumber)
-      .and(r => r.itemId === params.itemId && r.status === 'Pending Approval')
+      .and(r => r.itemId === params.itemId && r.status === 'Pending Approval' && r.shopId === shopId)
       .first();
 
     if (existingPending) {
@@ -338,15 +349,10 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     const refundId = crypto.randomUUID();
-    const effectiveShopId = shopId || profile?.shop_id;
-
-    if (isOnline && isSupabaseConfigured() && user && !effectiveShopId) {
-      return { success: false, error: 'No active shop assignment found. Cannot submit refund request.' };
-    }
 
     const refundRecord: RefundRequest = {
       id: refundId,
-      shopId: effectiveShopId || '',
+      shopId,
       saleId: sale.id,
       receiptNumber: params.receiptNumber,
       itemId: params.itemId,
@@ -404,12 +410,13 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     approved: boolean;
     note?: string;
   }): Promise<{ success: boolean; error?: string }> => {
+    if (!shopId) return { success: false, error: 'No active shop context.' };
     if (!hasPermission('refunds')) {
       return { success: false, error: 'Unauthorized: You do not have permission to approve refunds.' };
     }
 
     const req = await db.refundRequests.get(params.refundId);
-    if (!req) {
+    if (!req || req.shopId !== shopId) {
       return { success: false, error: 'Refund request record not found.' };
     }
 
@@ -489,8 +496,9 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const recordSale = async (saleData: Omit<SaleTransaction, 'id'>) => {
+    if (!shopId) throw new Error('No active shop context.');
     const id = crypto.randomUUID();
-    const newSale = { ...saleData, id };
+    const newSale = { ...saleData, id, shopId };
     await db.sales.add(newSale);
     await queueSyncAction('sales', id, 'create', newSale);
     return id;

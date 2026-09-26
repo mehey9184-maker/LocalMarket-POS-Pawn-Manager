@@ -68,14 +68,14 @@ export const AuthPage: React.FC = () => {
         const { data, error } = await authApi.signUp(email, password, fullName, 'owner');
         if (error) throw error;
         
-        showToast('Account Created', 'Verification email sent. Please check your inbox.', 'success');
+        showToast('Check your email', 'We sent a verification link to your inbox.', 'success');
         setIsSignUp(false);
       } else {
         console.log('[Auth] Attempting Operator Sign In for:', email);
         const { data, error } = await authApi.signIn(email, password);
         if (error) throw error;
 
-        showToast('Operator Verified', 'Welcome to LocalMarket POS Terminal', 'success');
+        showToast('Welcome back', 'Welcome to LocalMarket POS Terminal', 'success');
         sessionStorage.removeItem('lm_login_hint');
         // Redirection logic is handled in App.tsx based on profile state
       }
@@ -142,7 +142,7 @@ export const AuthPage: React.FC = () => {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 text-xs text-gray-500 font-mono">
               <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>SYSTEM ONLINE</span>
+              <span>Connecting to LocalMarket Cloud</span>
             </div>
           </div>
         </div>
@@ -155,12 +155,12 @@ export const AuthPage: React.FC = () => {
             
             <div className="flex flex-col items-center text-center mb-7">
               <h1 className="font-bold text-2xl text-gray-900 tracking-tight">
-                {isSignUp ? 'Create your owner account' : 'Sign in to your shop terminal'}
+                {isSignUp ? 'Create your Management Account' : 'Sign in to LocalMarket'}
               </h1>
               <p className="text-sm text-gray-500 mt-2">
                 {isSignUp 
-                  ? 'Start your journey with LocalMarket. Register as a shop owner.'
-                  : 'The shop owner must sign in with their password to unlock this terminal. Staff can then switch accounts via 6-digit PIN.'}
+                  ? 'Get started with your secure shop management dashboard.'
+                  : 'Owners sign in with their email. Staff switch accounts via 6-digit PIN.'}
               </p>
             </div>
 
@@ -251,7 +251,7 @@ export const AuthPage: React.FC = () => {
                   onClick={() => setShowDiagnostics(!showDiagnostics)}
                   className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  {showDiagnostics ? 'Hide Diagnostics' : 'Show Terminal Diagnostics'}
+                  {showDiagnostics ? 'Hide System Status' : 'Show System Status'}
                 </button>
               </div>
 
@@ -279,7 +279,7 @@ export const AuthPage: React.FC = () => {
                     }`}>
                       {testResult.success ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />}
                       <div className="flex flex-col gap-1">
-                        <span>{testResult.message}</span>
+                        <span>{testResult.success ? 'Connected to secure cloud database' : testResult.message}</span>
                       </div>
                     </div>
                   )}
@@ -295,9 +295,9 @@ export const AuthPage: React.FC = () => {
           </div>
 
           <div className="mt-6 flex items-center justify-center gap-6 text-[11px] text-gray-400">
-            <span>Encrypted Session</span>
+            <span>Encrypted Connection</span>
             <span>•</span>
-            <span>Multi-Branch Sync</span>
+            <span>LocalMarket Verified</span>
           </div>
         </div>
       </main>
@@ -305,9 +305,9 @@ export const AuthPage: React.FC = () => {
       <footer className="w-full border-t border-gray-100 py-5">
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
           <div className="flex items-center gap-2 text-[11px] text-gray-500">
-            <span>NCR & Second-Hand Goods Workflow Ready</span>
+            <span>Retail & Compliance Ready</span>
             <span>•</span>
-            <span>SAPS Form 21 Register Support</span>
+            <span>Official South African Retail Edition</span>
           </div>
           <p className="text-[11px] text-gray-500">
             © {new Date().getFullYear()} LocalMarket POS.

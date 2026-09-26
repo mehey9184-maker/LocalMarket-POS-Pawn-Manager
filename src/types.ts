@@ -19,6 +19,7 @@ export interface RsaIdScanResult {
 
 export interface Customer {
   id: string;
+  shopId?: string;
   fullName: string;
   idNumber: string;
   idType: 'RSA Smart ID' | 'Green ID Book' | 'Passport';
@@ -34,6 +35,7 @@ export interface Customer {
 
 export interface Seller {
   id: string;
+  shopId?: string;
   fullName: string;
   idNumber: string;
   idType: 'RSA Smart ID' | 'Green ID Book' | 'Passport';
@@ -76,6 +78,7 @@ export interface SellerTransactionItem {
 
 export interface InventoryItem {
   id: string;
+  shopId?: string;
   sku: string;
   title: string;
   category: 'Phones & Tech' | 'Power Tools' | 'Audio & Visual' | 'Fine Jewelry & Gold' | 'Gaming Consoles' | 'Appliances';
@@ -111,6 +114,7 @@ export interface LoanHistoryEntry {
 
 export interface PawnLoan {
   id: string;
+  shopId?: string;
   ticketNumber: string; // e.g. #PWN-8829
   customerId: string;
   customerName: string;
@@ -141,6 +145,7 @@ export interface PawnLoan {
 
 export interface SapsEntry {
   id: string;
+  shopId?: string;
   entryNumber: string; // SAPS-2026-0842
   timestamp: string;
   customerId: string;
@@ -171,6 +176,7 @@ export interface CartItem {
 
 export interface SaleTransaction {
   id: string;
+  shopId?: string;
   receiptNumber: string;
   timestamp: string;
   items: CartItem[];
@@ -216,6 +222,7 @@ export interface BusinessRules {
 
 export interface SyncLog {
   id?: number;
+  shopId?: string;
   entityType: 'inventory' | 'loans' | 'customers' | 'saps' | 'sales' | 'rules' | 'sellers' | 'sellerTransactions' | 'sellerReversals' | 'refunds' | 'refund_approval' | 'shopProfile' | 'buyAcquisition' | 'pawnIntake';
   entityId: string;
   action: 'create' | 'update' | 'delete' | 'approve' | 'reject';

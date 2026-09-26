@@ -132,21 +132,21 @@ export class LocalDatabase extends Dexie {
       counters: 'id'
     });
 
-    // Version 8: Resumable Workflow Drafts
-    this.version(8).stores({
-      inventory: 'id, sku, status, category, acquisitionType, pawnTicketId, addedAt',
-      customers: 'id, fullName, idNumber, mobile',
-      sellers: 'id, fullName, idNumber, mobile',
-      sellerTransactions: 'id, sellerId, transactionNumber, timestamp',
-      sellerTransactionItems: 'id, sellerTransactionId, itemId, itemSku',
-      sellerReversals: 'id, sellerTransactionId, itemId, sellerId, timestamp',
+    // Version 9: Multi-shop data isolation
+    this.version(9).stores({
+      inventory: 'id, shopId, sku, status, category, acquisitionType, pawnTicketId, addedAt',
+      customers: 'id, shopId, fullName, idNumber, mobile',
+      sellers: 'id, shopId, fullName, idNumber, mobile',
+      sellerTransactions: 'id, shopId, sellerId, transactionNumber, timestamp',
+      sellerTransactionItems: 'id, shopId, sellerTransactionId, itemId, itemSku',
+      sellerReversals: 'id, shopId, sellerTransactionId, itemId, sellerId, timestamp',
       terminalSessions: 'id, userId, shopId, deviceId, status',
-      workflowDrafts: 'id, userId, workflowType, status, updatedAt',
-      loans: 'id, ticketNumber, customerId, status, expiryDate',
-      saps: 'id, entryNumber, timestamp, customerId',
-      sales: 'id, receiptNumber, timestamp',
-      refundRequests: 'id, receiptNumber, itemId, status, createdAt',
-      syncLogs: '++id, entityType, entityId, status, createdAt',
+      workflowDrafts: 'id, shopId, userId, workflowType, status, updatedAt',
+      loans: 'id, shopId, ticketNumber, customerId, status, expiryDate',
+      saps: 'id, shopId, entryNumber, timestamp, customerId',
+      sales: 'id, shopId, receiptNumber, timestamp',
+      refundRequests: 'id, shopId, receiptNumber, itemId, status, createdAt',
+      syncLogs: '++id, shopId, entityType, entityId, status, createdAt',
       counters: 'id'
     });
   }

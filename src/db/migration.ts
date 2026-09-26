@@ -55,20 +55,24 @@ export async function runMigration() {
     const saps = getLocal('lm_saps') as SapsEntry[] | null;
     const sales = getLocal('lm_sales') as SaleTransaction[] | null;
 
+    // RULE: For legacy data, assign to 'legacy-unassigned' to prevent leakage.
+    // Do NOT guess or assign to current shop unless proven.
+    const LEGACY_SCOPE = 'legacy-unassigned';
+
     if (inventory && inventory.length > 0) {
-      await db.inventory.bulkPut(inventory);
+      await db.inventory.bulkPut(inventory.map(item => ({ ...item, shopId: item.shopId || LEGACY_SCOPE })));
     }
     if (customers && customers.length > 0) {
-      await db.customers.bulkPut(customers);
+      await db.customers.bulkPut(customers.map(item => ({ ...item, shopId: item.shopId || LEGACY_SCOPE })));
     }
     if (loans && loans.length > 0) {
-      await db.loans.bulkPut(loans);
+      await db.loans.bulkPut(loans.map(item => ({ ...item, shopId: item.shopId || LEGACY_SCOPE })));
     }
     if (saps && saps.length > 0) {
-      await db.saps.bulkPut(saps);
+      await db.saps.bulkPut(saps.map(item => ({ ...item, shopId: item.shopId || LEGACY_SCOPE })));
     }
     if (sales && sales.length > 0) {
-      await db.sales.bulkPut(sales);
+      await db.sales.bulkPut(sales.map(item => ({ ...item, shopId: item.shopId || LEGACY_SCOPE })));
     }
 
     localStorage.setItem('lm_dexie_migration_complete', 'true');

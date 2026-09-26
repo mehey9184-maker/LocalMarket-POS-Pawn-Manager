@@ -5,6 +5,8 @@ import { Customer } from '../types';
 import Fuse from 'fuse.js';
 import { useSync } from './SyncContext';
 
+import { useAuth } from './AuthContext';
+
 interface CustomerContextType {
   customers: Customer[];
   filteredCustomers: Customer[];
@@ -20,9 +22,13 @@ const CustomerContext = createContext<CustomerContextType | undefined>(undefined
 
 export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction } = useSync();
+  const { shopId } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const customers = useLiveQuery(() => db.customers.orderBy('fullName').toArray()) || [];
+  const customers = useLiveQuery(
+    () => shopId ? db.customers.where('shopId').equals(shopId).sortBy('fullName') : Promise.resolve([] as Customer[]),
+    [shopId]
+  ) || [];
 
   const fuse = useMemo(() => new Fuse(customers, {
     keys: ['fullName', 'idNumber', 'mobile'],
@@ -35,10 +41,12 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [searchQuery, customers, fuse]);
 
   const addCustomer = async (customerData: Omit<Customer, 'id' | 'createdAt'>) => {
+    if (!shopId) throw new Error('Cannot add customer without active shop context.');
     const id = crypto.randomUUID();
     const newCustomer = {
       ...customerData,
       id,
+      shopId,
       createdAt: new Date().toISOString()
     };
     await db.customers.add(newCustomer);
@@ -52,11 +60,14 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const getCustomerById = async (id: string) => {
-    return await db.customers.get(id);
+    const customer = await db.customers.get(id);
+    if (customer && customer.shopId === shopId) return customer;
+    return undefined;
   };
 
   const getCustomerByIdNumber = async (idNumber: string) => {
-    return await db.customers.where('idNumber').equals(idNumber).first();
+    if (!shopId) return undefined;
+    return await db.customers.where('shopId').equals(shopId).and(c => c.idNumber === idNumber).first();
   };
 
   return (

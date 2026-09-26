@@ -6,6 +6,8 @@ import Fuse from 'fuse.js';
 import { useSync } from './SyncContext';
 import { useInventory } from './InventoryContext';
 
+import { useAuth } from './AuthContext';
+
 interface LoanContextType {
   loans: PawnLoan[];
   filteredLoans: PawnLoan[];
@@ -29,13 +31,16 @@ const LoanContext = createContext<LoanContextType | undefined>(undefined);
 export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction } = useSync();
   const { updateItem } = useInventory();
+  const { shopId } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const rawLoans = useLiveQuery(() => db.loans.orderBy('expiryDate').toArray()) || [];
+  const rawLoans = useLiveQuery(
+    () => shopId ? db.loans.where('shopId').equals(shopId).sortBy('expiryDate') : Promise.resolve([] as PawnLoan[]),
+    [shopId]
+  ) || [];
 
   const loans = useMemo(() => {
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
     
     return rawLoans.map(loan => {
       const start = new Date(loan.startDate);
@@ -66,8 +71,9 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [searchQuery, loans, fuse]);
 
   const createLoan = async (loanData: Omit<PawnLoan, 'id'>) => {
+    if (!shopId) throw new Error('Cannot create loan without active shop context.');
     const id = crypto.randomUUID();
-    const newLoan = { ...loanData, id };
+    const newLoan = { ...loanData, id, shopId };
     await db.loans.add(newLoan);
     await queueSyncAction('loans', id, 'create', newLoan);
     return id;
@@ -79,12 +85,14 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const getLoanByTicket = async (ticket: string) => {
-    return await db.loans.where('ticketNumber').equals(ticket).first();
+    if (!shopId) return undefined;
+    return await db.loans.where('shopId').equals(shopId).and(l => l.ticketNumber === ticket).first();
   };
 
   const redeemLoan = async (ticketNumber: string, amount: number) => {
+    if (!shopId) return { success: false, error: 'No active shop context.' };
     return await db.transaction('rw', db.loans, db.inventory, db.syncLogs, async () => {
-      const loan = await db.loans.where('ticketNumber').equals(ticketNumber).first();
+      const loan = await db.loans.where('shopId').equals(shopId).and(l => l.ticketNumber === ticketNumber).first();
       if (!loan) return { success: false, error: 'Loan not found' };
 
       const now = new Date().toISOString();
@@ -118,8 +126,9 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const extendLoan = async (ticketNumber: string, fee: number) => {
+    if (!shopId) return { success: false, error: 'No active shop context.' };
     return await db.transaction('rw', db.loans, db.syncLogs, async () => {
-      const loan = await db.loans.where('ticketNumber').equals(ticketNumber).first();
+      const loan = await db.loans.where('shopId').equals(shopId).and(l => l.ticketNumber === ticketNumber).first();
       if (!loan) return { success: false, error: 'Loan not found' };
 
       const now = new Date();
@@ -155,8 +164,9 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const transferOverdueToFloor = async (ticketNumber: string, retailPrice: number) => {
+    if (!shopId) return { success: false, error: 'No active shop context.' };
     return await db.transaction('rw', db.loans, db.inventory, db.syncLogs, async () => {
-      const loan = await db.loans.where('ticketNumber').equals(ticketNumber).first();
+      const loan = await db.loans.where('shopId').equals(shopId).and(l => l.ticketNumber === ticketNumber).first();
       if (!loan) return { success: false, error: 'Loan not found' };
 
       const updates = { 
@@ -179,7 +189,7 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const approveForfeiture = async (id: string, retailPrice: number) => {
     return await db.transaction('rw', db.loans, db.inventory, db.syncLogs, async () => {
       const loan = await db.loans.get(id);
-      if (!loan) return { success: false, error: 'Loan not found' };
+      if (!loan || loan.shopId !== shopId) return { success: false, error: 'Loan not found' };
 
       const historyEntry = {
         date: new Date().toISOString().replace('T', ' ').slice(0, 16),
@@ -213,7 +223,7 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const rejectForfeiture = async (id: string) => {
     return await db.transaction('rw', db.loans, db.inventory, db.syncLogs, async () => {
       const loan = await db.loans.get(id);
-      if (!loan) return { success: false, error: 'Loan not found' };
+      if (!loan || loan.shopId !== shopId) return { success: false, error: 'Loan not found' };
 
       await db.loans.update(loan.id, { status: 'Active' });
       await db.inventory.update(loan.itemId, { status: 'Vault Hold' });
@@ -226,10 +236,11 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const batchTransferOverdue = async () => {
+    if (!shopId) return { success: false, count: 0, error: 'No active shop context.' };
     const now = new Date().toISOString().split('T')[0];
     const overdueLoans = await db.loans
-      .where('status').equals('Active')
-      .and(l => l.expiryDate < now)
+      .where('shopId').equals(shopId)
+      .and(l => l.status === 'Active' && l.expiryDate < now)
       .toArray();
 
     if (overdueLoans.length === 0) return { success: true, count: 0 };

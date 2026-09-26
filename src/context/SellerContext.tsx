@@ -6,6 +6,8 @@ import Fuse from 'fuse.js';
 import { useSync } from './SyncContext';
 import { generateUniqueTransactionNumber } from '../utils/identifierGenerator';
 
+import { useAuth } from './AuthContext';
+
 interface SellerContextType {
   sellers: Seller[];
   filteredSellers: Seller[];
@@ -25,9 +27,13 @@ const SellerContext = createContext<SellerContextType | undefined>(undefined);
 
 export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction } = useSync();
+  const { shopId } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const sellers = useLiveQuery(() => db.sellers.orderBy('fullName').toArray()) || [];
+  const sellers = useLiveQuery(
+    () => shopId ? db.sellers.where('shopId').equals(shopId).sortBy('fullName') : Promise.resolve([] as Seller[]),
+    [shopId]
+  ) || [];
 
   const fuse = useMemo(() => new Fuse(sellers, {
     keys: ['fullName', 'idNumber', 'mobile'],
@@ -40,10 +46,12 @@ export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [searchQuery, sellers, fuse]);
 
   const addSeller = async (sellerData: Omit<Seller, 'id' | 'createdAt'>) => {
+    if (!shopId) throw new Error('Cannot add seller without active shop context.');
     const id = crypto.randomUUID();
     const newSeller = {
       ...sellerData,
       id,
+      shopId,
       createdAt: new Date().toISOString()
     };
     await db.sellers.add(newSeller);
@@ -57,28 +65,34 @@ export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const getSellerById = async (id: string) => {
-    return await db.sellers.get(id);
+    const seller = await db.sellers.get(id);
+    if (seller && seller.shopId === shopId) return seller;
+    return undefined;
   };
 
   const getSellerByIdNumber = async (idNumber: string) => {
-    return await db.sellers.where('idNumber').equals(idNumber).first();
+    if (!shopId) return undefined;
+    return await db.sellers.where('shopId').equals(shopId).and(s => s.idNumber === idNumber).first();
   };
 
   const getSellerTransactions = async (sellerId: string) => {
-    return await db.sellerTransactions.where('sellerId').equals(sellerId).reverse().sortBy('timestamp');
+    if (!shopId) return [];
+    return await db.sellerTransactions.where('shopId').equals(shopId).and(tx => tx.sellerId === sellerId).reverse().sortBy('timestamp');
   };
 
   const addSellerTransaction = async (txData: Omit<SellerTransaction, 'id' | 'transactionNumber'> & { transactionNumber?: string }) => {
+    if (!shopId) throw new Error('Cannot add seller transaction without active shop context.');
     const id = crypto.randomUUID();
     let transactionNumber = txData.transactionNumber;
     if (!transactionNumber) {
-      const existing = await db.sellerTransactions.toArray();
+      const existing = await db.sellerTransactions.where('shopId').equals(shopId).toArray();
       const existingSet = new Set(existing.map(t => t.transactionNumber));
       transactionNumber = generateUniqueTransactionNumber(tn => existingSet.has(tn));
     }
     const newTx: SellerTransaction = { 
       ...txData, 
       id, 
+      shopId,
       transactionNumber,
       status: txData.status || 'Draft',
       paymentStatus: txData.paymentStatus || 'Pending',
@@ -92,6 +106,7 @@ export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const itemsWithIds = newTx.items.map(item => ({
         ...item,
         id: item.id || crypto.randomUUID(),
+        shopId,
         sellerTransactionId: id
       }));
       await db.sellerTransactionItems.bulkAdd(itemsWithIds);
@@ -116,20 +131,21 @@ export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     actorName: string, 
     approvingManagerId: string
   ): Promise<boolean> => {
+    if (!shopId) return false;
     if (actorId && approvingManagerId && actorId === approvingManagerId) {
       throw new Error('Self-Approval Forbidden: Staff member cannot approve their own acquisition reversal.');
     }
 
     const tx = await db.sellerTransactions.get(txId);
-    if (!tx) throw new Error('Seller transaction not found.');
+    if (!tx || tx.shopId !== shopId) throw new Error('Seller transaction not found.');
 
     const item = await db.inventory.get(itemId);
-    if (!item) throw new Error('Item not found in inventory.');
+    if (!item || item.shopId !== shopId) throw new Error('Item not found in inventory.');
 
     const reversalId = crypto.randomUUID();
     const reversalRecord: SellerReversalRecord = {
       id: reversalId,
-      shopId: tx.shopId || 'default-shop',
+      shopId,
       sellerTransactionId: txId,
       itemId,
       sellerId: tx.sellerId,

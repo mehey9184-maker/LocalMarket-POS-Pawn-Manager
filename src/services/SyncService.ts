@@ -122,6 +122,8 @@ export const SyncService = {
     if (!validationError && entityTypesRequiringShopId.includes(log.entityType)) {
       if (!shopId || !isUuidOrTestShop(shopId)) {
         validationError = `DETERMINISTIC_RECOVERABLE: Waiting for valid shop context (authoritative shopId UUID is missing or stale)`;
+      } else if (log.shopId && log.shopId !== shopId) {
+        validationError = `DETERMINISTIC_PERMANENT: Shop isolation violation. Record belongs to shop ${log.shopId} but terminal is authenticated for ${shopId}.`;
       }
     }
 

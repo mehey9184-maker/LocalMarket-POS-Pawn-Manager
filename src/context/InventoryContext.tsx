@@ -23,10 +23,13 @@ const InventoryContext = createContext<InventoryContextType | undefined>(undefin
 
 export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction, isOnline } = useSync();
-  const { isManager, isOwner, hasPermission } = useAuth();
+  const { isManager, isOwner, hasPermission, shopId } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   
-  const inventory = useLiveQuery(() => db.inventory.orderBy('addedAt').reverse().toArray()) || [];
+  const inventory = useLiveQuery(
+    () => shopId ? db.inventory.where('shopId').equals(shopId).reverse().sortBy('addedAt') : Promise.resolve([] as InventoryItem[]),
+    [shopId]
+  ) || [];
 
   const fuse = useMemo(() => new Fuse(inventory, {
     keys: ['title', 'sku', 'serialOrImei', 'specs'],
@@ -40,10 +43,12 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [searchQuery, inventory, fuse]);
 
   const addItem = async (itemData: Omit<InventoryItem, 'id' | 'addedAt'>) => {
+    if (!shopId) throw new Error('Cannot add item without active shop context.');
     const id = crypto.randomUUID();
     const newItem: InventoryItem = {
       ...itemData,
       id,
+      shopId,
       addedAt: new Date().toISOString()
     };
     

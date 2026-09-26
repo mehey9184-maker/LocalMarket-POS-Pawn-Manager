@@ -14,8 +14,8 @@ export const TerminalGuard: React.FC<{ children: React.ReactNode }> = ({ childre
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-[#0a0a0a]/90 backdrop-blur-md z-[100]">
         <div className="bg-[#141414] border border-[#2A2A2A] rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl space-y-4">
-          <Loader2 className="w-10 h-10 text-amber-500 animate-spin mx-auto" />
-          <p className="text-gray-200 font-medium text-sm">Authorizing Terminal Session...</p>
+          <Loader2 className="w-10 h-10 text-[#c85a32] animate-spin mx-auto" />
+          <p className="text-gray-200 font-medium text-sm">Connecting to your Shop...</p>
         </div>
       </div>
     );

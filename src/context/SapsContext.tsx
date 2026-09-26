@@ -5,6 +5,8 @@ import { SapsEntry } from '../types';
 import Fuse from 'fuse.js';
 import { useSync } from './SyncContext';
 
+import { useAuth } from './AuthContext';
+
 interface SapsContextType {
   sapsEntries: SapsEntry[];
   filteredSaps: SapsEntry[];
@@ -20,9 +22,13 @@ const SapsContext = createContext<SapsContextType | undefined>(undefined);
 
 export const SapsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction } = useSync();
+  const { shopId } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const sapsEntries = useLiveQuery(() => db.saps.orderBy('timestamp').reverse().toArray()) || [];
+  const sapsEntries = useLiveQuery(
+    () => shopId ? db.saps.where('shopId').equals(shopId).reverse().sortBy('timestamp') : Promise.resolve([] as SapsEntry[]),
+    [shopId]
+  ) || [];
 
   const fuse = useMemo(() => new Fuse(sapsEntries, {
     keys: ['entryNumber', 'customerName', 'customerIdNumber', 'itemDescription', 'serialOrImei'],
@@ -35,9 +41,10 @@ export const SapsProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [searchQuery, sapsEntries, fuse]);
 
   const addSapsEntry = async (entryData: Omit<SapsEntry, 'id' | 'entryNumber'>) => {
+    if (!shopId) throw new Error('Cannot add SAPS entry without active shop context.');
     return await db.transaction('rw', db.saps, db.counters, db.syncLogs, async () => {
       const year = new Date().getFullYear();
-      const counterId = `saps-${year}`;
+      const counterId = `saps-${shopId}-${year}`;
       const counter = await db.counters.get(counterId);
       const nextValue = (counter?.value || 0) + 1;
       
@@ -45,7 +52,7 @@ export const SapsProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       const entryNumber = `SAPS-${year}-${nextValue.toString().padStart(4, '0')}`;
       const id = crypto.randomUUID();
-      const newEntry: SapsEntry = { ...entryData, id, entryNumber };
+      const newEntry: SapsEntry = { ...entryData, id, entryNumber, shopId };
       
       await db.saps.add(newEntry);
       await queueSyncAction('saps', id, 'create', newEntry);
@@ -55,7 +62,7 @@ export const SapsProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const cancelSapsEntry = async (id: string, reason: string) => {
     const entry = await db.saps.get(id);
-    if (!entry) return;
+    if (!entry || entry.shopId !== shopId) return;
 
     const updates = {
       isCancelled: true,
@@ -68,7 +75,9 @@ export const SapsProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const getSapsEntry = async (id: string) => {
-    return await db.saps.get(id);
+    const entry = await db.saps.get(id);
+    if (entry && entry.shopId === shopId) return entry;
+    return undefined;
   };
 
   const exportSapsCsv = () => {

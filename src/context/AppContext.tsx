@@ -218,27 +218,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Shop Profile State
   const [shopProfile, setShopProfile] = useState<ShopProfile>(() => {
-    const saved = localStorage.getItem('lm_shop_profile');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+    if (currentUserProfile?.shop_id) {
+      const saved = localStorage.getItem(`lm_shop_profile_${currentUserProfile.shop_id}`);
+      if (saved) {
+        try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      }
     }
     return INITIAL_SHOP_PROFILE;
   });
 
   // Business Rules State
   const [businessRules, setBusinessRules] = useState<BusinessRules>(() => {
-    const savedRules = localStorage.getItem('lm_business_rules');
-    if (savedRules) {
-      try {
-        return { ...DEFAULT_BUSINESS_RULES, ...JSON.parse(savedRules) };
-      } catch (e) {
-        console.error(e);
+    if (currentUserProfile?.shop_id) {
+      const savedRules = localStorage.getItem(`lm_business_rules_${currentUserProfile.shop_id}`);
+      if (savedRules) {
+        try {
+          return { ...DEFAULT_BUSINESS_RULES, ...JSON.parse(savedRules) };
+        } catch (e) {
+          console.error(e);
+        }
       }
     }
     return shopProfile.businessRules
       ? { ...DEFAULT_BUSINESS_RULES, ...shopProfile.businessRules }
       : DEFAULT_BUSINESS_RULES;
   });
+
+  // Effect to reset/re-hydrate state when shop context changes
+  useEffect(() => {
+    if (!currentUserProfile?.shop_id) {
+      setShopProfile(INITIAL_SHOP_PROFILE);
+      setBusinessRules(DEFAULT_BUSINESS_RULES);
+      return;
+    }
+
+    const sKey = `lm_shop_profile_${currentUserProfile.shop_id}`;
+    const rKey = `lm_business_rules_${currentUserProfile.shop_id}`;
+    
+    const savedS = localStorage.getItem(sKey);
+    const savedR = localStorage.getItem(rKey);
+
+    if (savedS) {
+      try { setShopProfile(JSON.parse(savedS)); } catch {}
+    }
+    if (savedR) {
+      try { setBusinessRules({ ...DEFAULT_BUSINESS_RULES, ...JSON.parse(savedR) }); } catch {}
+    }
+  }, [currentUserProfile?.shop_id]);
 
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
 
@@ -263,21 +289,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateBusinessRules = useCallback(async (updates: Partial<BusinessRules>, reason?: string) => {
     const nextRules = { ...businessRules, ...updates };
-    const targetShopId = shopProfile.id || currentUserProfile?.shop_id || 'default-shop';
+    const targetShopId = currentUserProfile?.shop_id;
+    if (!targetShopId) return;
+
     const isOwner = currentUserProfile?.role === 'owner';
 
     // 1. Online: when authenticated as owner, attempt server persistence first
-    if (navigator.onLine && currentUserProfile?.shop_id && isOwner) {
+    if (navigator.onLine && isOwner) {
       try {
         const res = await shopProfilesApi.updateShopBusinessRulesRpc(nextRules, reason);
         if (res.success) {
           // Server update confirmed authoritative: persist to state and local cache
           setBusinessRules(nextRules);
-          localStorage.setItem('lm_business_rules', JSON.stringify(nextRules));
+          localStorage.setItem(`lm_business_rules_${targetShopId}`, JSON.stringify(nextRules));
           
           setShopProfile(sp => {
             const updated = { ...sp, businessRules: nextRules };
-            localStorage.setItem('lm_shop_profile', JSON.stringify(updated));
+            localStorage.setItem(`lm_shop_profile_${targetShopId}`, JSON.stringify(updated));
             return updated;
           });
 
@@ -294,11 +322,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 2. Offline / Fallback:
     // Update local state/cache for offline operational continuity
     setBusinessRules(nextRules);
-    localStorage.setItem('lm_business_rules', JSON.stringify(nextRules));
+    localStorage.setItem(`lm_business_rules_${targetShopId}`, JSON.stringify(nextRules));
     
     setShopProfile(sp => {
       const updated = { ...sp, businessRules: nextRules };
-      localStorage.setItem('lm_shop_profile', JSON.stringify(updated));
+      localStorage.setItem(`lm_shop_profile_${targetShopId}`, JSON.stringify(updated));
       return updated;
     });
 
@@ -309,15 +337,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     showToast('Offline Mode', 'Business rules saved locally and queued for cloud sync.', 'amber');
-  }, [businessRules, shopProfile.id, currentUserProfile, queueSyncAction, showToast]);
+  }, [businessRules, currentUserProfile, queueSyncAction, showToast]);
 
   const updateShopProfile = useCallback(async (updates: Partial<ShopProfile>) => {
     const next = { ...shopProfile, ...updates };
-    const targetShopId = shopProfile.id || currentUserProfile?.shop_id || 'default-shop';
+    const targetShopId = currentUserProfile?.shop_id;
+    if (!targetShopId) return;
+
     const canManage = currentUserProfile?.role === 'owner' || currentUserProfile?.role === 'manager';
 
     // 1. Online: when authenticated with management privileges, attempt server persistence first
-    if (navigator.onLine && canManage && targetShopId) {
+    if (navigator.onLine && canManage) {
       try {
         const payload: any = {};
         if (updates.shop_name !== undefined) payload.shop_name = updates.shop_name;
@@ -339,7 +369,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (updated) {
           // Server update confirmed authoritative: persist to state and local cache
           setShopProfile(next);
-          localStorage.setItem('lm_shop_profile', JSON.stringify(next));
+          localStorage.setItem(`lm_shop_profile_${targetShopId}`, JSON.stringify(next));
           showToast('Store Profile Updated', 'Persisted to server database.', 'success');
           return;
         } else {
@@ -353,7 +383,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 2. Offline / Fallback:
     // Update local state/cache for offline operational continuity
     setShopProfile(next);
-    localStorage.setItem('lm_shop_profile', JSON.stringify(next));
+    localStorage.setItem(`lm_shop_profile_${targetShopId}`, JSON.stringify(next));
 
     // 3. Durable pending sync record created in Dexie syncLogs outbox
     await queueSyncAction('shopProfile', targetShopId, 'update', updates);
@@ -372,10 +402,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (currentUserProfile?.shop_id) {
       shopProfilesApi.getShopById(currentUserProfile.shop_id).then(async (shop) => {
         if (shop) {
+          const shopId = currentUserProfile.shop_id!;
           // Check for pending/syncing/failed outbox records
           const pendingLogs = await db.syncLogs
             .where('status')
             .anyOf('pending', 'syncing', 'failed')
+            .and(l => l.shopId === shopId)
             .toArray();
 
           const hasPendingRules = pendingLogs.some(l => l.entityType === 'rules');
@@ -405,7 +437,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // Only hydrate store profile from server if no pending local mutations are waiting to replay
           if (!hasPendingProfile) {
             setShopProfile(mappedShop);
-            localStorage.setItem('lm_shop_profile', JSON.stringify(mappedShop));
+            localStorage.setItem(`lm_shop_profile_${shopId}`, JSON.stringify(mappedShop));
           } else {
             console.log('[AppContext] Preserving pending local shopProfile mutation during server hydration');
           }
@@ -417,7 +449,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ...serverRules
             };
             setBusinessRules(authoritativeRules);
-            localStorage.setItem('lm_business_rules', JSON.stringify(authoritativeRules));
+            localStorage.setItem(`lm_business_rules_${shopId}`, JSON.stringify(authoritativeRules));
           } else if (hasPendingRules) {
             console.log('[AppContext] Preserving pending local businessRules mutation during server hydration');
           }

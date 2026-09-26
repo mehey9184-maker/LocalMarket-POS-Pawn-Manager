@@ -52,13 +52,28 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const isReadyForAutoSync = isQueueAudited && !authLoading && !!user && !!shopId && isUuidOrTestShop(shopId);
+  const currentShopId = shopId;
 
-  const allLogs = (useLiveQuery(() => db.syncLogs.orderBy('createdAt').reverse().limit(50).toArray()) || []) as SyncLog[];
-  const pendingCount = useLiveQuery(() => db.syncLogs.where('status').equals('pending').count()) || 0;
-  const failedCount = useLiveQuery(() => db.syncLogs.where('status').equals('failed').count()) || 0;
+  const allLogs = (useLiveQuery(
+    () => currentShopId ? db.syncLogs.where('shopId').equals(currentShopId).reverse().limit(50).toArray() : Promise.resolve([] as SyncLog[]),
+    [currentShopId]
+  ) || []) as SyncLog[];
+
+  const pendingCount = useLiveQuery(
+    () => currentShopId ? db.syncLogs.where('shopId').equals(currentShopId).and(log => log.status === 'pending').count() : Promise.resolve(0),
+    [currentShopId]
+  ) || 0;
+
+  const failedCount = useLiveQuery(
+    () => currentShopId ? db.syncLogs.where('shopId').equals(currentShopId).and(log => log.status === 'failed').count() : Promise.resolve(0),
+    [currentShopId]
+  ) || 0;
 
   // Compute deterministic vs transient error counts reactively
-  const failedLogs = useLiveQuery(() => db.syncLogs.where('status').equals('failed').toArray()) || [];
+  const failedLogs = useLiveQuery(
+    () => currentShopId ? db.syncLogs.where('shopId').equals(currentShopId).and(log => log.status === 'failed').toArray() : Promise.resolve([] as SyncLog[]),
+    [currentShopId]
+  ) || [];
   const hasDeterministicError = failedLogs.some(log => log.error && log.error.toUpperCase().includes('DETERMINISTIC'));
   const hasTransientError = failedLogs.some(log => log.error && !log.error.toUpperCase().includes('DETERMINISTIC'));
 
@@ -81,6 +96,11 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     action: SyncLog['action'],
     payload: any
   ) => {
+    if (!currentShopId) {
+      console.warn(`[SyncContext] Refusing to queue ${entityType} action: No active shop context.`);
+      return;
+    }
+
     // If the entityId is not a valid UUID, it is synthetic/demo/seed data and must never be queued for Supabase
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(entityId)) {
@@ -89,6 +109,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     await db.syncLogs.add({
+      shopId: currentShopId,
       entityType,
       entityId,
       action,
@@ -97,33 +118,33 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createdAt: new Date().toISOString(),
       retryCount: 0
     });
-  }, []);
+  }, [currentShopId]);
 
   const triggerSync = useCallback(async () => {
     if (isSyncing || !isOnline || !isSupabaseConfigured()) return;
-    if (!shopId || !isUuidOrTestShop(shopId)) {
+    if (!currentShopId || !isUuidOrTestShop(currentShopId)) {
       console.warn('[SyncContext] Aborting sync: shop context is invalid or not yet established.');
       return;
     }
 
     setIsSyncing(true);
     try {
-      const res = await SyncService.processAllPendingSync(shopId);
+      const res = await SyncService.processAllPendingSync(currentShopId);
       if (res && res.failed === 0) {
         const now = new Date().toISOString();
         setLastSyncTime(now);
-        localStorage.setItem('last_sync_time', now);
+        localStorage.setItem(`last_sync_time_${currentShopId}`, now);
       }
     } finally {
       setIsSyncing(false);
     }
-  }, [isSyncing, isOnline, shopId]);
+  }, [isSyncing, isOnline, currentShopId]);
 
   const retryFailedSync = async (logId: number) => {
     const log = await db.syncLogs.get(logId);
-    if (log) {
+    if (log && log.shopId === currentShopId) {
       await db.syncLogs.update(logId, { status: 'syncing', error: undefined });
-      const res = await SyncService.syncEntity(log as SyncLog, shopId || undefined);
+      const res = await SyncService.syncEntity(log as SyncLog, currentShopId || undefined);
       if (res && !res.success) {
         await db.syncLogs.update(logId, {
           status: 'failed',
@@ -134,7 +155,8 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const clearCompletedLogs = async () => {
-    await db.syncLogs.where('status').equals('completed').delete();
+    if (!currentShopId) return;
+    await db.syncLogs.where('shopId').equals(currentShopId).and(log => log.status === 'completed').delete();
   };
 
   // 1. Initial application startup sync trigger
