@@ -23,7 +23,7 @@ interface SellerContextType {
   reverseSellerAcquisition: (txId: string, itemId: string, reason: string, actorId: string, actorName: string, approvingManagerId: string) => Promise<boolean>;
 }
 
-const SellerContext = createContext<SellerContextType | undefined>(undefined);
+export const SellerContext = createContext<SellerContextType | undefined>(undefined);
 
 export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction } = useSync();

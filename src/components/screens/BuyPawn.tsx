@@ -175,21 +175,20 @@ export const BuyPawn: React.FC = () => {
   const [draftId, setDraftId] = useState<string>(() => crypto.randomUUID());
 
   useEffect(() => {
-    if (user && shopProfile.id) {
-      draftService.getActiveDrafts(user.id, shopProfile.id).then(drafts => {
+    if (user) {
+      draftService.getActiveDrafts(user.id).then(drafts => {
         const relevant = drafts.filter(d => d.workflowType === 'buy' || d.workflowType === 'pawn');
         setActiveDrafts(relevant);
       });
     }
-  }, [user, shopProfile.id]);
+  }, [user]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (step !== 'completion' && txType && user && shopProfile.id) {
+      if (step !== 'completion' && txType && user) {
         draftService.saveDraft({
           id: draftId,
           userId: user.id,
-          shopId: shopProfile.id,
           workflowType: txType,
           step: step,
           payload: { itemData, newIdentity, selectedIdentity, txType }
@@ -197,7 +196,7 @@ export const BuyPawn: React.FC = () => {
       }
     }, 2000);
     return () => clearTimeout(timer);
-  }, [step, txType, itemData, newIdentity, selectedIdentity, draftId, user, shopProfile.id]);
+  }, [step, txType, itemData, newIdentity, selectedIdentity, draftId, user]);
 
   const handleContinueDraft = (draft: WorkflowDraft) => {
     setDraftId(draft.id);
@@ -211,10 +210,8 @@ export const BuyPawn: React.FC = () => {
   };
 
   const handleDiscardDraft = (id: string) => {
-    if (shopProfile.id) {
-      draftService.discardDraft(id, shopProfile.id);
-      setActiveDrafts(activeDrafts.filter(d => d.id !== id));
-    }
+    draftService.discardDraft(id);
+    setActiveDrafts(activeDrafts.filter(d => d.id !== id));
   };
   // ------------------------
 
@@ -648,12 +645,11 @@ export const BuyPawn: React.FC = () => {
     }
 
     const transactionId = crypto.randomUUID();
-    const existingTxList = await db.sellerTransactions.where('shopId').equals(shopProfile.id!).toArray();
+    const existingTxList = await db.sellerTransactions.toArray();
     const existingTxSet = new Set(existingTxList.map(t => t.transactionNumber));
     const transactionNumber = generateUniqueTransactionNumber(tn => existingTxSet.has(tn));
     const totalPayout = finalBasket.reduce((sum, i) => sum + i.agreedOffer, 0);
     const nowIso = new Date().toISOString();
-    const currentShopId = shopProfile.id!;
 
     if (txType === 'buy') {
       const seller = selectedIdentity as Seller;
@@ -663,7 +659,7 @@ export const BuyPawn: React.FC = () => {
       const sapsEntriesToAdd: any[] = [];
       const rpcItemsPayload: any[] = [];
 
-      const currentInventory = await db.inventory.where('shopId').equals(currentShopId).toArray();
+      const currentInventory = await db.inventory.toArray();
       const existingSkuSet = new Set(currentInventory.map(i => i.sku));
 
       for (const bItem of finalBasket) {
@@ -676,7 +672,6 @@ export const BuyPawn: React.FC = () => {
 
         const invItem: InventoryItem = {
           id: itemId,
-          shopId: currentShopId,
           sku,
           title: bItem.title,
           category: bItem.category,
@@ -702,7 +697,7 @@ export const BuyPawn: React.FC = () => {
         transactionItemsToAdd.push({
           id: crypto.randomUUID(),
           sellerTransactionId: transactionId,
-          shopId: currentShopId,
+          shopId: shopProfile.id,
           itemId,
           itemSku: sku,
           itemTitle: bItem.title,
@@ -715,7 +710,6 @@ export const BuyPawn: React.FC = () => {
 
         sapsEntriesToAdd.push({
           id: sapsId,
-          shopId: currentShopId,
           entryNumber: sapsEntryNo,
           timestamp: nowIso,
           customerId: seller.id,
@@ -757,7 +751,7 @@ export const BuyPawn: React.FC = () => {
 
       const txRecord = {
         id: transactionId,
-        shopId: currentShopId,
+        shopId: shopProfile.id || 'default-shop',
         sellerId: seller.id,
         transactionNumber,
         totalProposedPayout: totalPayout,
@@ -783,7 +777,7 @@ export const BuyPawn: React.FC = () => {
         sapsRef: transactionNumber,
         officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
         policeStationRef: shopProfile.saps_dealer_license || '',
-        shopId: currentShopId
+        shopId: shopProfile.id
       };
 
       let syncLogStatus: 'completed' | 'pending' = 'pending';
@@ -823,7 +817,6 @@ export const BuyPawn: React.FC = () => {
         await db.saps.bulkAdd(sapsEntriesToAdd);
 
         await db.syncLogs.add({
-          shopId: currentShopId,
           entityType: 'buyAcquisition',
           entityId: transactionId,
           action: 'create',
@@ -840,7 +833,7 @@ export const BuyPawn: React.FC = () => {
         item: { title: `${finalBasket.length} Items`, sku: transactionNumber } as any
       });
 
-      await draftService.closeDraft(draftId, currentShopId);
+      await draftService.closeDraft(draftId);
       setStep('completion');
       if (syncLogStatus === 'completed') {
         showToast('Batch Purchase Complete', `${finalBasket.length} items acquired atomically and logged to SAPS`, 'success');
@@ -852,9 +845,9 @@ export const BuyPawn: React.FC = () => {
 
     if (txType === 'pawn' && pawnCalculations) {
       const pCustomer = selectedIdentity as Customer;
-      const allLoans = await db.loans.where('shopId').equals(currentShopId).toArray();
+      const allLoans = await db.loans.toArray();
       const ticketNumber = generateUniquePawnTicket(t => allLoans.some(l => l.ticketNumber === t));
-      const currentInventory = await db.inventory.where('shopId').equals(currentShopId).toArray();
+      const currentInventory = await db.inventory.toArray();
       const sku = generateUniqueSku(s => currentInventory.some(i => i.sku === s));
 
       const loanId = crypto.randomUUID();
@@ -866,7 +859,6 @@ export const BuyPawn: React.FC = () => {
 
       const invItem: InventoryItem = {
         id: itemId,
-        shopId: currentShopId,
         sku,
         title: itemData.title,
         category: itemData.category,
@@ -892,7 +884,6 @@ export const BuyPawn: React.FC = () => {
 
       const loanRecord: PawnLoan = {
         id: loanId,
-        shopId: currentShopId,
         ticketNumber,
         customerId: pCustomer.id,
         customerName: pCustomer.fullName,
@@ -928,7 +919,6 @@ export const BuyPawn: React.FC = () => {
 
       const sapsRecord = {
         id: sapsId,
-        shopId: currentShopId,
         entryNumber: sapsEntryNo,
         timestamp: nowIso,
         customerId: pCustomer.id,
@@ -980,7 +970,7 @@ export const BuyPawn: React.FC = () => {
         sapsEntryId: sapsId,
         sapsEntryNumber: sapsEntryNo,
         history: loanRecord.history,
-        shopId: currentShopId
+        shopId: shopProfile.id
       };
 
       let syncLogStatus: 'completed' | 'pending' = 'pending';
@@ -1019,7 +1009,6 @@ export const BuyPawn: React.FC = () => {
         await db.saps.add(sapsRecord);
 
         await db.syncLogs.add({
-          shopId: currentShopId,
           entityType: 'pawnIntake',
           entityId: loanId,
           action: 'create',
@@ -1038,7 +1027,7 @@ export const BuyPawn: React.FC = () => {
         loan: { id: loanId, ticketNumber } as any
       });
 
-      await draftService.closeDraft(draftId, currentShopId);
+      await draftService.closeDraft(draftId);
       setStep('completion');
       if (syncLogStatus === 'completed') {
         showToast('Pawn Finalized', `Ticket ${ticketNumber} created and asset vaulted atomically`, 'success');
@@ -1085,31 +1074,50 @@ export const BuyPawn: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-[#F5F6F8] overflow-hidden">
+    <div className="relative flex-1 flex flex-col bg-stone-50/60 overflow-hidden font-sans text-stone-900 selection:bg-[#FDF0EA] selection:text-[#C85A32]">
+      {/* Subtle Atmospheric Sky Background */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0 select-none" aria-hidden="true">
+        <div className="absolute inset-0 bg-gradient-to-b from-[#EEF4F8]/50 via-[#F7F7F5]/60 to-[#F6EFE8]/30" />
+        <div className="cloud-layer-1 absolute -top-20 -left-20 w-[140%] h-[35%] opacity-15 filter blur-3xl" />
+        <div className="cloud-layer-2 absolute top-[30%] -left-32 w-[150%] h-[35%] opacity-10 filter blur-[46px]" />
+      </div>
+
       {/* Header bar */}
-      <div className="px-8 py-5 bg-white border-b border-gray-200 shrink-0 shadow-xs">
+      <div className="relative z-10 px-6 lg:px-8 py-4 bg-white/95 backdrop-blur-md border-b border-stone-200/90 shrink-0 shadow-xs">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center font-bold shadow-2xs">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900 leading-tight">Add Stock & Intake Hub</h2>
-              <p className="text-xs text-gray-500">
-                {txType === 'existing'
-                  ? 'Adding existing store inventory (No seller record required)'
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-[#C85A32] uppercase tracking-wider">
+                  Add Stock
+                </span>
+                {step !== 'mode' && (
+                  <>
+                    <span className="text-stone-300">/</span>
+                    <span className="text-xs font-medium text-stone-500">
+                      {txType === 'existing' ? 'Existing Stock' : txType === 'buy' ? 'Buy From Person' : 'Pawn'}
+                    </span>
+                  </>
+                )}
+              </div>
+              <h2 className="text-base font-bold text-stone-900 leading-tight">
+                {step === 'mode'
+                  ? 'Intake Selection'
+                  : txType === 'existing'
+                  ? 'Add Existing Store Stock'
                   : txType === 'buy'
-                  ? 'Purchasing second-hand goods from outright seller'
-                  : txType === 'pawn'
-                  ? 'Issuing secured pledge loan under NCR Act 34'
-                  : 'Select the intake source to begin'}
-              </p>
+                  ? 'Buy Item From Person'
+                  : 'Start Pawn Loan'}
+              </h2>
             </div>
           </div>
           {step !== 'mode' && step !== 'completion' && (
             <button
               onClick={resetWorkflow}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 text-xs font-medium text-stone-600 hover:text-stone-900 hover:bg-stone-50 transition cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
               <span>Cancel Intake</span>
@@ -1118,8 +1126,8 @@ export const BuyPawn: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 md:p-8 no-scrollbar">
-        <div className="max-w-4xl mx-auto">
+      <div className="relative z-10 flex-1 overflow-y-auto p-6 md:p-8 no-scrollbar">
+        <div className="max-w-5xl mx-auto">
           {/* Progress Indicator */}
           {step !== 'completion' && step !== 'mode' && (
             <div className="flex items-center gap-2 mb-8 px-2">
@@ -1151,133 +1159,165 @@ export const BuyPawn: React.FC = () => {
             </div>
           )}
 
+          {/* Active Drafts Notice (Reassuring & Non-intrusive) */}
+          {step === 'mode' && activeDrafts.length > 0 && (
+            <div className="mb-6 p-4 sm:p-5 rounded-2xl bg-white/95 border border-amber-200/90 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-auth-fade">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-stone-900">You have unfinished work</h3>
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    Continue where you left off: <span className="font-semibold text-stone-700">{activeDrafts[0].payload?.itemData?.title || 'Untitled intake'}</span>
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 self-end sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => handleContinueDraft(activeDrafts[0])}
+                  className="px-4 py-2 bg-[#C85A32] hover:bg-[#B84E27] text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                >
+                  <span>Continue</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDiscardDraft(activeDrafts[0].id)}
+                  className="px-3 py-2 border border-stone-200 text-stone-600 hover:text-rose-600 hover:bg-stone-50 rounded-xl text-xs font-medium transition cursor-pointer"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
             {/* ============================================================
                 STEP 0: INTAKE SELECTION (3 Distinct Options)
                ============================================================ */}
             {step === 'mode' && (
               <motion.div
-                initial={{ opacity: 0, y: 15 }}
+                initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.98 }}
-                className="space-y-6 py-4"
+                className="space-y-6 py-2 sm:py-4"
               >
-                <div className="text-center max-w-xl mx-auto mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 tracking-tight">How is this item being acquired?</h3>
-                  <p className="text-sm text-gray-500 mt-1.5">
-                    Select the intake pathway below. Existing store stock does not require seller identification.
+                {/* Heading Hierarchy */}
+                <div className="text-center max-w-xl mx-auto mb-7 sm:mb-9">
+                  <span className="inline-block text-xs font-bold text-[#C85A32] uppercase tracking-widest mb-2">
+                    Add Stock
+                  </span>
+                  <h1 className="font-headline font-bold text-3xl sm:text-4xl text-stone-900 tracking-tight">
+                    What are you adding?
+                  </h1>
+                  <p className="text-stone-600 text-sm sm:text-base mt-2.5 font-normal leading-relaxed">
+                    Choose what best matches what’s happening at the counter.
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* OPTION 1: EXISTING STOCK */}
+                {/* The 3 Cards */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* CARD 1: EXISTING STOCK */}
                   {hasPermission('inventory') && (
                     <div
                       onClick={() => handleSelectTxType('existing')}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectTxType('existing'); }}
-                      className="p-7 rounded-2xl bg-white border-2 border-gray-200 hover:border-[#C85A32] transition-all text-left space-y-5 shadow-xs hover:shadow-md cursor-pointer group flex flex-col justify-between"
+                      className="group relative flex flex-col justify-between p-7 sm:p-8 rounded-2xl bg-white/95 backdrop-blur-xs border border-stone-200/90 hover:border-[#C85A32] hover:-translate-y-1 shadow-xs hover:shadow-md transition-all duration-150 cursor-pointer active:scale-[0.99] text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32]"
                     >
-                      <div className="space-y-4">
+                      <div className="space-y-5">
                         <div className="flex items-center justify-between">
-                          <div className="w-12 h-12 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
+                          <div className="w-12 h-12 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform shadow-2xs">
                             <Package className="w-6 h-6" />
                           </div>
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Shop Owned
+                          <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wide bg-emerald-50 text-emerald-700 border border-emerald-200/70">
+                            Already yours
                           </span>
                         </div>
                         <div>
-                          <h4 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
+                          <h2 className="text-xl font-bold text-stone-900 group-hover:text-[#C85A32] transition-colors">
                             Existing Stock
-                          </h4>
-                          <p className="text-xs font-medium text-gray-500 mt-0.5">
-                            Already owned by the shop
-                          </p>
-                          <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
-                            Items already in your store prior to onboarding, retail restock, or supplier merchandise. No seller or customer ID needed.
+                          </h2>
+                          <p className="text-sm text-stone-600 mt-2 leading-relaxed">
+                            Already part of your shop? Add it without creating a seller or customer record.
                           </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 text-xs font-semibold text-[#C85A32] pt-4 border-t border-gray-100">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-[#C85A32] pt-6 border-t border-stone-100 mt-6">
                         <span>Add Existing Stock</span>
                         <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                       </div>
                     </div>
                   )}
 
-                  {/* OPTION 2: BUY FROM PERSON */}
+                  {/* CARD 2: BUY FROM PERSON */}
                   {hasPermission('sellerAcquisitions') && (
                     <div
                       onClick={() => handleSelectTxType('buy')}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectTxType('buy'); }}
-                      className="p-7 rounded-2xl bg-white border-2 border-gray-200 hover:border-[#C85A32] transition-all text-left space-y-5 shadow-xs hover:shadow-md cursor-pointer group flex flex-col justify-between"
+                      className="group relative flex flex-col justify-between p-7 sm:p-8 rounded-2xl bg-white/95 backdrop-blur-xs border border-stone-200/90 hover:border-[#C85A32] hover:-translate-y-1 shadow-xs hover:shadow-md transition-all duration-150 cursor-pointer active:scale-[0.99] text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32]"
                     >
-                      <div className="space-y-4">
+                      <div className="space-y-5">
                         <div className="flex items-center justify-between">
-                          <div className="w-12 h-12 rounded-xl bg-orange-50 text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform">
+                          <div className="w-12 h-12 rounded-xl bg-orange-50 text-[#C85A32] flex items-center justify-center group-hover:scale-105 transition-transform shadow-2xs">
                             <ShoppingBag className="w-6 h-6" />
                           </div>
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-blue-50 text-blue-700 border border-blue-200">
-                            SHG Act 06
+                          <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wide bg-orange-50 text-orange-700 border border-orange-200/70">
+                            Buying second-hand
                           </span>
                         </div>
                         <div>
-                          <h4 className="text-lg font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">
+                          <h2 className="text-xl font-bold text-stone-900 group-hover:text-[#C85A32] transition-colors">
                             Buy From Person
-                          </h4>
-                          <p className="text-xs font-medium text-gray-500 mt-0.5">
-                            Purchase an item from a seller
-                          </p>
-                          <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
-                            Outright purchase from an individual. Verifies RSA ID or Passport, logs Form 21 register, and creates seller ledger.
+                          </h2>
+                          <p className="text-sm text-stone-600 mt-2 leading-relaxed">
+                            Buying an item from someone? We’ll keep the seller and required records together.
                           </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 text-xs font-semibold text-[#C85A32] pt-4 border-t border-gray-100">
-                        <span>Start Seller Purchase</span>
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-[#C85A32] pt-6 border-t border-stone-100 mt-6">
+                        <span>Buy From Person</span>
                         <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                       </div>
                     </div>
                   )}
 
-                  {/* OPTION 3: PAWN */}
+                  {/* CARD 3: PAWN */}
                   {hasPermission('pawn') && (
                     <div
                       onClick={() => handleSelectTxType('pawn')}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelectTxType('pawn'); }}
-                      className="p-7 rounded-2xl bg-white border-2 border-gray-200 hover:border-[#C85A32] transition-all text-left space-y-5 shadow-xs hover:shadow-md cursor-pointer group flex flex-col justify-between"
+                      className="group relative flex flex-col justify-between p-7 sm:p-8 rounded-2xl bg-white/95 backdrop-blur-xs border border-stone-200/90 hover:border-blue-600 hover:-translate-y-1 shadow-xs hover:shadow-md transition-all duration-150 cursor-pointer active:scale-[0.99] text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
                     >
-                      <div className="space-y-4">
+                      <div className="space-y-5">
                         <div className="flex items-center justify-between">
-                          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+                          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-105 transition-transform shadow-2xs">
                             <Lock className="w-6 h-6" />
                           </div>
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide bg-purple-50 text-purple-700 border border-purple-200">
-                            NCR Act 34
+                          <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wide bg-blue-50 text-blue-700 border border-blue-200/70">
+                            Loan against an item
                           </span>
                         </div>
                         <div>
-                          <h4 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
+                          <h2 className="text-xl font-bold text-stone-900 group-hover:text-blue-600 transition-colors">
                             Pawn
-                          </h4>
-                          <p className="text-xs font-medium text-gray-500 mt-0.5">
-                            Collateral for a loan
-                          </p>
-                          <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
-                            30-day secured credit agreement. Item vaulted securely. Customer retains statutory redemption rights.
+                          </h2>
+                          <p className="text-sm text-stone-600 mt-2 leading-relaxed">
+                            Taking an item as security for a loan? Start a new pawn.
                           </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 pt-4 border-t border-gray-100">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 pt-6 border-t border-stone-100 mt-6">
                         <span>Start Pawn Loan</span>
                         <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                       </div>
