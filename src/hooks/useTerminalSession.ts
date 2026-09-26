@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { terminalService } from '../services/terminalService';
 import { TerminalSession } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -10,19 +10,27 @@ export function useTerminalSession() {
   const [isLoading, setIsLoading] = useState(true);
   const [isOfflineRevalidation, setIsOfflineRevalidation] = useState(false);
 
+  const initSeq = useRef(0);
+
   const checkAndInitialize = useCallback(async () => {
+    const currentSeq = ++initSeq.current;
+
     if (isSwitchingAccount) {
       return;
     }
+
     if (!user || !profile) {
-      setSession(null);
-      setIsLoading(false);
-      setIsOfflineRevalidation(false);
+      if (currentSeq === initSeq.current) {
+        setSession(null);
+        setIsLoading(false);
+        setIsOfflineRevalidation(false);
+      }
       return;
     }
 
     try {
       const localSession = await terminalService.getCurrentLocalSession();
+      if (currentSeq !== initSeq.current) return;
 
       if (localSession && localSession.status === 'active') {
         // Render local session immediately so UI never hangs on network latency
@@ -32,6 +40,8 @@ export function useTerminalSession() {
         // Perform background server heartbeat/revalidation
         try {
           const heartbeatRes = await terminalService.heartbeat(localSession.id);
+          if (currentSeq !== initSeq.current) return;
+
           if (heartbeatRes.status === 'active') {
             setIsOfflineRevalidation(false);
           } else if (heartbeatRes.status === 'invalidated' || heartbeatRes.status === 'expired') {
@@ -42,7 +52,9 @@ export function useTerminalSession() {
             setIsOfflineRevalidation(true);
           }
         } catch {
-          setIsOfflineRevalidation(true);
+          if (currentSeq === initSeq.current) {
+            setIsOfflineRevalidation(true);
+          }
         }
         return;
       }
@@ -57,6 +69,8 @@ export function useTerminalSession() {
 
       // Check server for active sessions
       const serverCheck = await terminalService.checkActiveSession();
+      if (currentSeq !== initSeq.current) return;
+
       if (!serverCheck.success) {
         // Transient network failure contacting server
         if (localSession && localSession.status === 'active') {
@@ -68,9 +82,17 @@ export function useTerminalSession() {
         return;
       }
 
+      const identity = {
+        shopId: profile.shop_id || '',
+        userId: user.id,
+        userName: profile.full_name
+      };
+
       if (serverCheck.has_active_session) {
         if (serverCheck.terminal_id === terminalService.getDeviceId()) {
-          const activateRes = await terminalService.activateSession(`${profile.full_name}'s Terminal`);
+          const activateRes = await terminalService.activateSession(`${profile.full_name}'s Terminal`, identity);
+          if (currentSeq !== initSeq.current) return;
+
           if (activateRes.success) {
             const newLocal = await terminalService.getCurrentLocalSession();
             setSession(newLocal);
@@ -80,7 +102,9 @@ export function useTerminalSession() {
           setConflict({ active_session: serverCheck });
         }
       } else {
-        const activateRes = await terminalService.activateSession(`${profile.full_name}'s Terminal`);
+        const activateRes = await terminalService.activateSession(`${profile.full_name}'s Terminal`, identity);
+        if (currentSeq !== initSeq.current) return;
+
         if (activateRes.success) {
           const newLocal = await terminalService.getCurrentLocalSession();
           setSession(newLocal);
@@ -89,25 +113,36 @@ export function useTerminalSession() {
       }
     } catch (err) {
       console.error('Terminal session initialization error:', err);
+      if (currentSeq !== initSeq.current) return;
+
       const fallbackLocal = await terminalService.getCurrentLocalSession();
       if (fallbackLocal && fallbackLocal.status === 'active') {
         setSession(fallbackLocal);
         setIsOfflineRevalidation(true);
       }
     } finally {
-      setIsLoading(false);
+      if (currentSeq === initSeq.current) {
+        setIsLoading(false);
+      }
     }
-  }, [user, profile]);
+  }, [user, profile, isSwitchingAccount]);
 
   useEffect(() => {
     checkAndInitialize();
   }, [checkAndInitialize]);
 
-  // Heartbeat loop
+  // Heartbeat loop (Strictly tied to current session identity)
   useEffect(() => {
-    if (!session || session.status !== 'active') return;
+    if (isSwitchingAccount || !session || session.status !== 'active' || !user) return;
+
+    // Verify session belongs to the current user before starting heartbeat
+    if (session.userId !== user.id) {
+      console.warn("Heartbeat skipped: session userId mismatch", session.userId, user.id);
+      return;
+    }
 
     const interval = setInterval(async () => {
+      if (isSwitchingAccount) return;
       try {
         const res = await terminalService.heartbeat(session.id);
         if (res.status === 'active') {
@@ -125,14 +160,19 @@ export function useTerminalSession() {
     }, 60000); // 1 minute
 
     return () => clearInterval(interval);
-  }, [session]);
+  }, [session?.id, session?.userId, user?.id, isSwitchingAccount]);
 
   const switchTerminal = async () => {
-    if (!profile) return;
+    if (!profile || !user) return;
     setIsLoading(true);
     try {
       await terminalService.clearLocalSession();
-      const res = await terminalService.activateSession(`${profile.full_name}'s Terminal`);
+      const identity = {
+        shopId: profile.shop_id || '',
+        userId: user.id,
+        userName: profile.full_name
+      };
+      const res = await terminalService.activateSession(`${profile.full_name}'s Terminal`, identity);
       if (res.success) {
         const newLocal = await terminalService.getCurrentLocalSession();
         setSession(newLocal);

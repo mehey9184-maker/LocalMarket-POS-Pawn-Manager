@@ -14,6 +14,7 @@ export const AccountPicker: React.FC = () => {
     setIsAccountPickerOpen,
     logout,
     isSwitchingAccount,
+    resetSwitchState,
     switchAccountWithPin
   } = useAuth();
 
@@ -159,7 +160,13 @@ export const AccountPicker: React.FC = () => {
     setError(null);
 
     try {
-      const res = await switchAccountWithPin(selectedStaff.cashier_code, pin, selectedStaff.full_name);
+      const res = await switchAccountWithPin({
+        targetStaffId: selectedStaff.id,
+        targetShopId: selectedStaff.shop_id || '',
+        cashierCode: selectedStaff.cashier_code,
+        pin,
+        staffName: selectedStaff.full_name
+      });
       
       if (!res.success) {
         if (res.locked) {
@@ -183,6 +190,7 @@ export const AccountPicker: React.FC = () => {
       setPin('');
       setLockoutUntil(null);
       setRemainingSeconds(0);
+      resetSwitchState();
     } catch (err: any) {
       setError(err.message || 'Connection error during authentication');
     } finally {

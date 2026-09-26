@@ -21,16 +21,23 @@ export const terminalService = {
     return await terminalSessionsApi.checkActiveSessionRpc();
   },
 
-  async activateSession(terminalName?: string) {
+  async activateSession(
+    terminalName: string | undefined,
+    identity: {
+      shopId: string;
+      userId: string;
+      userName: string;
+    }
+  ) {
     const deviceId = this.getDeviceId();
     const res = await terminalSessionsApi.activateSessionRpc(deviceId, terminalName);
     
     if (res.success && res.session_id) {
       const session: TerminalSession = {
         id: res.session_id,
-        shopId: '', // Will be filled by sync or profile
-        userId: '', // Will be filled by profile
-        userName: '',
+        shopId: identity.shopId,
+        userId: identity.userId,
+        userName: identity.userName,
         deviceId,
         activatedAt: new Date().toISOString(),
         lastHeartbeatAt: new Date().toISOString(),

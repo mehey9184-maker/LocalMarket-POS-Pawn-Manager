@@ -1,8 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { authApi, profilesApi, staffApi } from '../services/supabaseApi';
 import { apiPost } from '../utils/apiClient';
 import { ProfileRow, UserRole } from '../types/supabase';
 import { Permissions } from '../types';
+
+export type SwitchState = 'idle' | 'authenticating' | 'loading_profile' | 'acquiring_terminal' | 'ready' | 'error';
 
 interface AuthContextType {
   user: any | null;
@@ -35,11 +37,19 @@ interface AuthContextType {
   isAccountPickerOpen: boolean;
   setIsAccountPickerOpen: (open: boolean) => void;
   isSwitchingAccount: boolean;
-  switchAccountWithPin: (
-    cashierCode: string,
-    pin: string,
-    staffName: string
-  ) => Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }>;
+  switchState: SwitchState;
+  switchError: string | null;
+  switchTarget: { targetStaffId: string; targetShopId: string; cashierCode: string; staffName: string } | null;
+  retrySwitchAccount: () => Promise<{ success: boolean; error?: string }>;
+  cancelSwitchAccount: () => Promise<void>;
+  resetSwitchState: () => void;
+  switchAccountWithPin: (params: {
+    targetStaffId: string;
+    targetShopId: string;
+    cashierCode: string;
+    pin: string;
+    staffName: string;
+  }) => Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -52,19 +62,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [managerElevation, setManagerElevation] = useState(false);
   const [isAccountPickerOpen, setIsAccountPickerOpen] = useState(false);
-  const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
+
+  // Switching State Machine variables
+  const [switchState, setSwitchState] = useState<SwitchState>('idle');
+  const [switchTarget, setSwitchTarget] = useState<{
+    targetStaffId: string;
+    targetShopId: string;
+    cashierCode: string;
+    staffName: string;
+  } | null>(null);
+  const [switchError, setSwitchError] = useState<string | null>(null);
+
+  // Request sequencers for safe asynchronous commits (Generation Guard)
+  const profileRequestSeq = useRef(0);
+  const staffRequestSeq = useRef(0);
+
+  const isSwitchingRef = useRef(false);
+  isSwitchingRef.current = switchState !== 'idle';
 
   const fetchProfile = async (userId: string) => {
+    const requestId = ++profileRequestSeq.current;
     try {
       const p = await profilesApi.getProfileById(userId);
+      
+      // Check generation validity
+      if (requestId !== profileRequestSeq.current) return;
+      
+      // Verify the authenticated user is still the same before committing
+      const currentUser = await authApi.getUser();
+      if (!currentUser || currentUser.id !== userId) return;
+
       setProfile(p);
+
       if (p?.shop_id) {
+        const staffRequestId = ++staffRequestSeq.current;
         const allStaff = await profilesApi.getProfilesByShop(p.shop_id);
+        
+        if (staffRequestId !== staffRequestSeq.current) return;
         setUsers(allStaff);
       }
     } catch (err) {
       console.warn('Failed to load profile for user:', userId, err);
-      setProfile(null);
+      if (profileRequestSeq.current === requestId) {
+        setProfile(null);
+      }
     }
   };
 
@@ -111,10 +152,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setSession(newSession);
           const newUser = newSession?.user ?? null;
           setUser(newUser);
-          if (newUser?.id) {
-            setTimeout(() => {
-              fetchProfile(newUser.id);
-            }, 0);
+          if (newUser?.id && !isSwitchingRef.current) {
+            fetchProfile(newUser.id);
           }
           break;
         }
@@ -128,7 +167,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setUser(newUser);
             }
           }
-          // Do NOT dispatch lm_session_recovered or reload profile on routine TOKEN_REFRESHED
           break;
         }
         case 'USER_UPDATED': {
@@ -136,10 +174,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setSession(newSession);
           const newUser = newSession?.user ?? null;
           setUser(newUser);
-          if (newUser?.id) {
-            setTimeout(() => {
-              fetchProfile(newUser.id);
-            }, 0);
+          if (newUser?.id && !isSwitchingRef.current) {
+            fetchProfile(newUser.id);
           }
           break;
         }
@@ -324,7 +360,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setProfile(null);
     setManagerElevation(false);
-    setIsSwitchingAccount(false);
+    setSwitchState('idle');
+    setSwitchTarget(null);
+    setSwitchError(null);
   };
 
   const logoutManager = () => {
@@ -347,64 +385,179 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return res;
   };
 
-  const switchAccountWithPin = async (
-    cashierCode: string,
-    pin: string,
-    staffName: string
-  ): Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }> => {
-    setIsSwitchingAccount(true);
+  const completeSwitchSteps = async (
+    targetStaffId: string,
+    targetShopId: string,
+    cashierCode: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    // Increment sequencer so any running background fetchProfile is canceled/ignored
+    profileRequestSeq.current++;
+    staffRequestSeq.current++;
+
+    setSwitchState('loading_profile');
     try {
-      const res = await authApi.loginWithPin(cashierCode, pin);
-      if (!res.success) {
-        setIsSwitchingAccount(false);
-        return res;
+      let profileSyncOk = false;
+      let freshProfile: ProfileRow | null = null;
+
+      // Poll and wait for user.id === profile.id === targetStaffId and match targetShopId and is_active === true
+      // Limit to 10 seconds of polling (100 attempts at 100ms)
+      for (let attempts = 0; attempts < 100; attempts++) {
+        const currentUser = await authApi.getUser();
+        const p = await profilesApi.getCurrentProfile();
+
+        if (
+          currentUser && 
+          p && 
+          currentUser.id === targetStaffId && 
+          p.id === targetStaffId && 
+          p.shop_id === targetShopId && 
+          p.cashier_code === cashierCode
+        ) {
+          if (p.is_active !== true) {
+            throw new Error('This operator profile has been deactivated.');
+          }
+          freshProfile = p;
+          profileSyncOk = true;
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      // Poll and wait for user.id === profile.id to avoid race condition of async fetchProfile
-      await new Promise<void>((resolve, reject) => {
-        let attempts = 0;
-        const interval = setInterval(async () => {
-          attempts++;
-          const currentUser = await authApi.getUser();
-          const currentProfile = await profilesApi.getCurrentProfile();
-          
-          if (currentUser && currentProfile && currentUser.id === currentProfile.id && currentProfile.cashier_code === cashierCode) {
-            clearInterval(interval);
-            // Sync local states immediately
-            setUser(currentUser);
-            setProfile(currentProfile);
-            resolve();
-          } else if (attempts > 100) { // 10 seconds timeout
-            clearInterval(interval);
-            reject(new Error("Timeout waiting for profile synchronization"));
-          }
-        }, 100);
+      if (!profileSyncOk || !freshProfile) {
+        throw new Error('Failed to verify profile synchronization. Please try again.');
+      }
+
+      // Sync React Auth State immediately
+      const currentUser = await authApi.getUser();
+      setUser(currentUser);
+      setProfile(freshProfile);
+
+      setSwitchState('acquiring_terminal');
+
+      // Sync local terminal session for the new staff member
+      const { terminalService } = await import('../services/terminalService');
+      await terminalService.clearLocalSession();
+
+      const terminalName = `${freshProfile.full_name}'s Terminal`;
+      const activateRes = await terminalService.activateSession(terminalName, {
+        shopId: targetShopId,
+        userId: targetStaffId,
+        userName: freshProfile.full_name
       });
 
-      // Synchronously establish the terminal session for the new staff member
-      const freshProfile = await profilesApi.getCurrentProfile();
-      if (freshProfile) {
-        // Clear old terminal session
-        const { terminalService } = await import('../services/terminalService');
-        await terminalService.clearLocalSession();
-        // Activate new terminal session
-        const activateRes = await terminalService.activateSession(`${freshProfile.full_name}'s Terminal`);
-        if (!activateRes.success) {
-          const errStr = 'error' in activateRes ? activateRes.error : 'Unknown error';
-          console.warn("Failed to activate terminal session during switch:", errStr);
+      if (!activateRes.success) {
+        throw new Error('Failed to acquire terminal session. Terminal is not authorized.');
+      }
+
+      // Verify stored local session
+      const newSession = await terminalService.getCurrentLocalSession();
+      if (
+        !newSession ||
+        newSession.shopId !== targetShopId ||
+        newSession.userId !== targetStaffId ||
+        newSession.userName !== freshProfile.full_name ||
+        newSession.status !== 'active'
+      ) {
+        throw new Error('Failed to verify local terminal session integrity.');
+      }
+
+      // Pre-load the new shop's active staff list so the Account Picker shows correct members immediately
+      if (freshProfile.shop_id) {
+        try {
+          const allStaff = await profilesApi.getProfilesByShop(freshProfile.shop_id);
+          setUsers(allStaff);
+        } catch (err) {
+          console.warn('Failed to pre-load new shop staff profiles:', err);
         }
       }
 
-      // Add a slight calm delay for a beautiful transition
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      setSwitchState('ready');
+      setSwitchError(null);
+      return { success: true };
+
+    } catch (err: any) {
+      console.error("Account switch step completion failed:", err);
+      const errMsg = err?.message || 'Failed to complete account switch';
+      setSwitchState('error');
+      setSwitchError(errMsg);
+      return { success: false, error: errMsg };
+    }
+  };
+
+  const switchAccountWithPin = async (params: {
+    targetStaffId: string;
+    targetShopId: string;
+    cashierCode: string;
+    pin: string;
+    staffName: string;
+  }): Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }> => {
+    if (switchState !== 'idle' && switchState !== 'error') {
+      return { success: false, error: 'A switch is already in progress' };
+    }
+
+    setSwitchState('authenticating');
+    setSwitchError(null);
+    setSwitchTarget({
+      targetStaffId: params.targetStaffId,
+      targetShopId: params.targetShopId,
+      cashierCode: params.cashierCode,
+      staffName: params.staffName
+    });
+
+    try {
+      const res = await authApi.loginWithPin(params.cashierCode, params.pin);
+      if (!res.success) {
+        setSwitchState('idle');
+        setSwitchTarget(null);
+        return res;
+      }
+
+      const stepRes = await completeSwitchSteps(params.targetStaffId, params.targetShopId, params.cashierCode);
+      if (!stepRes.success) {
+        setSwitchState('idle');
+        setSwitchTarget(null);
+        await authApi.signOut(); // logout of partial session completely to secure terminal
+        return { success: false, error: stepRes.error };
+      }
+
+      return { success: true };
 
     } catch (err: any) {
       console.error("Account switch pipeline failed:", err);
-    } finally {
-      setIsSwitchingAccount(false);
+      setSwitchState('idle');
+      setSwitchTarget(null);
+      await authApi.signOut(); // logout of partial session completely to secure terminal
+      return { success: false, error: err?.message || 'Authentication failed' };
     }
-    return { success: true };
   };
+
+  const retrySwitchAccount = async (): Promise<{ success: boolean; error?: string }> => {
+    if (!switchTarget) {
+      return { success: false, error: 'No active switch target to retry' };
+    }
+    setSwitchError(null);
+    return await completeSwitchSteps(
+      switchTarget.targetStaffId,
+      switchTarget.targetShopId,
+      switchTarget.cashierCode
+    );
+  };
+
+  const cancelSwitchAccount = async () => {
+    setSwitchState('idle');
+    setSwitchTarget(null);
+    setSwitchError(null);
+    await logout(); // Logout of partial session completely to secure terminal
+  };
+
+  const resetSwitchState = () => {
+    setSwitchState('idle');
+    setSwitchTarget(null);
+    setSwitchError(null);
+  };
+
+  // Remains true during the entire transition flow until explicitly closed and reset to idle
+  const isSwitchingAccount = switchState !== 'idle';
 
   return (
     <AuthContext.Provider value={{ 
@@ -432,6 +585,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isAccountPickerOpen,
       setIsAccountPickerOpen,
       isSwitchingAccount,
+      switchState,
+      switchError,
+      switchTarget,
+      retrySwitchAccount,
+      cancelSwitchAccount,
+      resetSwitchState,
       switchAccountWithPin
     }}>
       {children}
