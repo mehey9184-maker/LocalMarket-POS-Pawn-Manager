@@ -18,7 +18,7 @@ interface SapsContextType {
   exportSapsCsv: () => void;
 }
 
-export const SapsContext = createContext<SapsContextType | undefined>(undefined);
+const SapsContext = createContext<SapsContextType | undefined>(undefined);
 
 export const SapsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction } = useSync();

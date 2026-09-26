@@ -26,6 +26,7 @@ export async function runResumableWorkTests() {
     const draftObj = {
       id: 'draft-test-123',
       userId: 'user-1',
+      shopId: 'shop-1',
       workflowType: 'buy' as const,
       step: 'item',
       payload: { title: 'Samsung Galaxy S24', price: 8500 },

@@ -18,7 +18,7 @@ interface CustomerContextType {
   getCustomerByIdNumber: (idNumber: string) => Promise<Customer | undefined>;
 }
 
-export const CustomerContext = createContext<CustomerContextType | undefined>(undefined);
+const CustomerContext = createContext<CustomerContextType | undefined>(undefined);
 
 export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction } = useSync();

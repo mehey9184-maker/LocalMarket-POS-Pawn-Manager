@@ -171,23 +171,25 @@ export const BuyPawn: React.FC = () => {
   }, [capturedRsaIdScan, step, txType, customers, sellers, showToast]);
 
   // --- DRAFT CONTINUITY ---
+  const currentShopId = shopProfile?.id || user?.user_metadata?.shop_id || 'default-shop';
   const [activeDrafts, setActiveDrafts] = useState<WorkflowDraft[]>([]);
   const [draftId, setDraftId] = useState<string>(() => crypto.randomUUID());
 
   useEffect(() => {
-    if (user) {
-      draftService.getActiveDrafts(user.id).then(drafts => {
+    if (user && currentShopId) {
+      draftService.getActiveDrafts(user.id, currentShopId).then(drafts => {
         const relevant = drafts.filter(d => d.workflowType === 'buy' || d.workflowType === 'pawn');
         setActiveDrafts(relevant);
       });
     }
-  }, [user]);
+  }, [user, currentShopId]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (step !== 'completion' && txType && user) {
+      if (step !== 'completion' && txType && user && currentShopId) {
         draftService.saveDraft({
           id: draftId,
+          shopId: currentShopId,
           userId: user.id,
           workflowType: txType,
           step: step,
@@ -196,7 +198,7 @@ export const BuyPawn: React.FC = () => {
       }
     }, 2000);
     return () => clearTimeout(timer);
-  }, [step, txType, itemData, newIdentity, selectedIdentity, draftId, user]);
+  }, [step, txType, itemData, newIdentity, selectedIdentity, draftId, user, currentShopId]);
 
   const handleContinueDraft = (draft: WorkflowDraft) => {
     setDraftId(draft.id);
@@ -210,7 +212,7 @@ export const BuyPawn: React.FC = () => {
   };
 
   const handleDiscardDraft = (id: string) => {
-    draftService.discardDraft(id);
+    draftService.discardDraft(id, currentShopId);
     setActiveDrafts(activeDrafts.filter(d => d.id !== id));
   };
   // ------------------------
@@ -833,7 +835,7 @@ export const BuyPawn: React.FC = () => {
         item: { title: `${finalBasket.length} Items`, sku: transactionNumber } as any
       });
 
-      await draftService.closeDraft(draftId);
+      await draftService.closeDraft(draftId, currentShopId);
       setStep('completion');
       if (syncLogStatus === 'completed') {
         showToast('Batch Purchase Complete', `${finalBasket.length} items acquired atomically and logged to SAPS`, 'success');
@@ -1027,7 +1029,7 @@ export const BuyPawn: React.FC = () => {
         loan: { id: loanId, ticketNumber } as any
       });
 
-      await draftService.closeDraft(draftId);
+      await draftService.closeDraft(draftId, currentShopId);
       setStep('completion');
       if (syncLogStatus === 'completed') {
         showToast('Pawn Finalized', `Ticket ${ticketNumber} created and asset vaulted atomically`, 'success');

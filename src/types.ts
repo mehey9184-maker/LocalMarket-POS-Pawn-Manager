@@ -317,7 +317,7 @@ export interface SyncStatus {
 export interface WorkflowDraft {
   id: string;
   userId: string;
-  shopId?: string;
+  shopId: string;
   workflowType: 'buy' | 'pawn' | 'existing';
   step: string;
   payload: any;

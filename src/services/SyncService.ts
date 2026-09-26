@@ -86,7 +86,7 @@ export const SyncService = {
   /**
    * Sync a single SyncLog entry to Supabase
    */
-  async syncEntity(log: SyncLog, shopId: string): Promise<{ success: boolean; error?: string }> {
+  async syncEntity(log: SyncLog, shopId?: string): Promise<{ success: boolean; error?: string }> {
     if (!isSupabaseConfigured()) {
       return { success: false, error: 'Supabase is not configured' };
     }
@@ -489,7 +489,7 @@ export const SyncService = {
    * Process all pending or failed sync logs in batches with slow trickle rate limiting
    */
   async processAllPendingSync(
-    shopId: string,
+    shopId?: string,
     onProgress?: (current: number, total: number, entity: string) => void,
     trickleDelayMs = 120
   ): Promise<{ processed: number; successful: number; failed: number }> {

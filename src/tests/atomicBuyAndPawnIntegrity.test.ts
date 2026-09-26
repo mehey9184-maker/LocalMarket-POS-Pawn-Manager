@@ -622,6 +622,7 @@ export async function runAtomicBuyAndPawnIntegrityTests() {
   await db.workflowDrafts.add({
     id: draftId,
     userId: 'staff-991',
+    shopId: 'shop-test-1',
     workflowType: 'buy',
     step: 'item',
     status: 'active',

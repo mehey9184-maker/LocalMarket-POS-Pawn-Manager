@@ -31,7 +31,7 @@ export async function cleanupSyntheticSyncLogs() {
   }
 }
 
-export async function runMigration() {
+export async function runMigration(_shopId?: string) {
   await cleanupSyntheticSyncLogs();
   const isMigrated = localStorage.getItem('lm_dexie_migration_complete');
   if (isMigrated === 'true') return;
