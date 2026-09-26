@@ -4,13 +4,16 @@ import { TerminalSession } from '../types';
 import { useAuth } from '../context/AuthContext';
 
 export function useTerminalSession() {
-  const { user, profile } = useAuth();
+  const { user, profile, isSwitchingAccount } = useAuth();
   const [session, setSession] = useState<TerminalSession | null>(null);
   const [conflict, setConflict] = useState<{ active_session: any } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isOfflineRevalidation, setIsOfflineRevalidation] = useState(false);
 
   const checkAndInitialize = useCallback(async () => {
+    if (isSwitchingAccount) {
+      return;
+    }
     if (!user || !profile) {
       setSession(null);
       setIsLoading(false);

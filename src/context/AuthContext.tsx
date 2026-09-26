@@ -34,6 +34,12 @@ interface AuthContextType {
   users: ProfileRow[];
   isAccountPickerOpen: boolean;
   setIsAccountPickerOpen: (open: boolean) => void;
+  isSwitchingAccount: boolean;
+  switchAccountWithPin: (
+    cashierCode: string,
+    pin: string,
+    staffName: string
+  ) => Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -46,6 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [managerElevation, setManagerElevation] = useState(false);
   const [isAccountPickerOpen, setIsAccountPickerOpen] = useState(false);
+  const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
 
   const fetchProfile = async (userId: string) => {
     try {
@@ -317,6 +324,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setProfile(null);
     setManagerElevation(false);
+    setIsSwitchingAccount(false);
   };
 
   const logoutManager = () => {
@@ -337,6 +345,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await refreshProfile();
     }
     return res;
+  };
+
+  const switchAccountWithPin = async (
+    cashierCode: string,
+    pin: string,
+    staffName: string
+  ): Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }> => {
+    setIsSwitchingAccount(true);
+    try {
+      const res = await authApi.loginWithPin(cashierCode, pin);
+      if (!res.success) {
+        setIsSwitchingAccount(false);
+        return res;
+      }
+
+      // Poll and wait for user.id === profile.id to avoid race condition of async fetchProfile
+      await new Promise<void>((resolve, reject) => {
+        let attempts = 0;
+        const interval = setInterval(async () => {
+          attempts++;
+          const currentUser = await authApi.getUser();
+          const currentProfile = await profilesApi.getCurrentProfile();
+          
+          if (currentUser && currentProfile && currentUser.id === currentProfile.id && currentProfile.cashier_code === cashierCode) {
+            clearInterval(interval);
+            // Sync local states immediately
+            setUser(currentUser);
+            setProfile(currentProfile);
+            resolve();
+          } else if (attempts > 100) { // 10 seconds timeout
+            clearInterval(interval);
+            reject(new Error("Timeout waiting for profile synchronization"));
+          }
+        }, 100);
+      });
+
+      // Synchronously establish the terminal session for the new staff member
+      const freshProfile = await profilesApi.getCurrentProfile();
+      if (freshProfile) {
+        // Clear old terminal session
+        const { terminalService } = await import('../services/terminalService');
+        await terminalService.clearLocalSession();
+        // Activate new terminal session
+        const activateRes = await terminalService.activateSession(`${freshProfile.full_name}'s Terminal`);
+        if (!activateRes.success) {
+          const errStr = 'error' in activateRes ? activateRes.error : 'Unknown error';
+          console.warn("Failed to activate terminal session during switch:", errStr);
+        }
+      }
+
+      // Add a slight calm delay for a beautiful transition
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+    } catch (err: any) {
+      console.error("Account switch pipeline failed:", err);
+    } finally {
+      setIsSwitchingAccount(false);
+    }
+    return { success: true };
   };
 
   return (
@@ -363,7 +430,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       resetStaffPin,
       users,
       isAccountPickerOpen,
-      setIsAccountPickerOpen
+      setIsAccountPickerOpen,
+      isSwitchingAccount,
+      switchAccountWithPin
     }}>
       {children}
     </AuthContext.Provider>

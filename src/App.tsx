@@ -29,11 +29,11 @@ import { useAuth } from './context/AuthContext';
 
 const MainLayout: React.FC = () => {
   const { activeTab, setActiveTab } = useApp();
-  const { user, profile, isLoading: authLoading } = useAuth();
+  const { user, profile, isLoading: authLoading, isSwitchingAccount } = useAuth();
 
   // Session-based navigation enforcement
   React.useEffect(() => {
-    if (authLoading) return;
+    if (authLoading || isSwitchingAccount) return;
 
     const isEmailConfirmed = user?.email_confirmed_at || user?.confirmed_at;
     const hasShop = profile?.shop_id;
@@ -49,7 +49,7 @@ const MainLayout: React.FC = () => {
     } else if (!user && activeTab !== 'auth') {
       setActiveTab('auth');
     }
-  }, [user, authLoading, activeTab, setActiveTab, profile]);
+  }, [user, authLoading, activeTab, setActiveTab, profile, isSwitchingAccount]);
 
   if (authLoading) {
     return (

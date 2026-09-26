@@ -12,7 +12,9 @@ export const AccountPicker: React.FC = () => {
     profile: currentProfile, 
     isAccountPickerOpen, 
     setIsAccountPickerOpen,
-    logout
+    logout,
+    isSwitchingAccount,
+    switchAccountWithPin
   } = useAuth();
 
   const { showToast } = useApp();
@@ -26,7 +28,7 @@ export const AccountPicker: React.FC = () => {
 
   // Close modal on Escape key press
   useEffect(() => {
-    if (!isAccountPickerOpen) return;
+    if (!isAccountPickerOpen || isSwitchingAccount) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -36,7 +38,7 @@ export const AccountPicker: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isAccountPickerOpen, setIsAccountPickerOpen]);
+  }, [isAccountPickerOpen, setIsAccountPickerOpen, isSwitchingAccount]);
 
   // Reset local state when picker closes
   useEffect(() => {
@@ -157,7 +159,7 @@ export const AccountPicker: React.FC = () => {
     setError(null);
 
     try {
-      const res = await authApi.loginWithPin(selectedStaff.cashier_code, pin);
+      const res = await switchAccountWithPin(selectedStaff.cashier_code, pin, selectedStaff.full_name);
       
       if (!res.success) {
         if (res.locked) {
@@ -201,27 +203,59 @@ export const AccountPicker: React.FC = () => {
 
   const content = (
     <div 
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md overflow-y-auto animate-auth-fade"
-      onClick={() => setIsAccountPickerOpen(false)}
+      className={isSwitchingAccount 
+        ? "fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-stone-50 p-6 animate-auth-fade"
+        : "fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md overflow-y-auto animate-auth-fade"
+      }
+      onClick={() => !isSwitchingAccount && setIsAccountPickerOpen(false)}
     >
-      <div 
-        className="w-full max-w-2xl bg-white text-gray-900 border border-stone-200 rounded-3xl p-6 sm:p-8 shadow-2xl relative my-auto max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={() => setIsAccountPickerOpen(false)}
-          className="absolute top-5 right-5 p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
-          aria-label="Close Account Switcher"
-        >
-          <X className="w-5 h-5" />
-        </button>
+      {isSwitchingAccount ? (
+        <div className="text-center space-y-6 flex flex-col items-center max-w-md w-full animate-auth-fade">
+          <div className="w-24 h-24 rounded-full bg-white border border-stone-200 flex items-center justify-center overflow-hidden shadow-md">
+            {(selectedStaff || currentProfile)?.avatar_url ? (
+              <img src={(selectedStaff || currentProfile)?.avatar_url || undefined} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-3xl font-bold text-stone-600">
+                {getInitials((selectedStaff || currentProfile)?.full_name || 'Staff')}
+              </span>
+            )}
+          </div>
+          
+          <div className="space-y-3">
+            <h1 className="font-headline font-bold text-3xl text-stone-900 tracking-tight">
+              Switching account
+            </h1>
+            <p className="text-stone-600 text-base">
+              Signing you in as <span className="font-bold">{(selectedStaff || currentProfile)?.full_name}</span>…
+            </p>
+            <p className="text-stone-400 text-sm mt-1">
+              Please wait while this terminal is secured.
+            </p>
+          </div>
 
-        {!selectedStaff ? (
+          <div className="flex justify-center pt-6">
+            <Loader2 className="w-10 h-10 text-[#C85A32] animate-spin" />
+          </div>
+        </div>
+      ) : (
+        <div 
+          className="w-full max-w-2xl bg-white text-gray-900 border border-stone-200 rounded-3xl p-6 sm:p-8 shadow-2xl relative my-auto max-h-[90vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => setIsAccountPickerOpen(false)}
+            className="absolute top-5 right-5 p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+            aria-label="Close Account Switcher"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          {!selectedStaff ? (
           <div className="text-center">
             <h1 className="font-headline font-bold text-3xl sm:text-4xl text-stone-900 mb-2 tracking-tight">
               Switch Account
             </h1>
-            <p className="text-stone-500 mb-8 text-sm">Select staff member for this terminal session</p>
+            <p className="text-stone-500 mb-8 text-sm">Choose who is using this terminal</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
               {activeStaff.map((staff) => (
@@ -293,7 +327,7 @@ export const AccountPicker: React.FC = () => {
                   <span className="text-xl font-bold text-stone-600">{getInitials(selectedStaff.full_name)}</span>
                 )}
               </div>
-              <h2 className="font-headline font-bold text-2xl text-stone-900 tracking-tight">{selectedStaff.full_name}</h2>
+              <h2 className="font-headline font-bold text-2xl text-stone-900 tracking-tight">Welcome back, {selectedStaff.full_name}</h2>
               <p className="text-xs text-stone-500 mt-1">Enter your 6-digit terminal PIN</p>
             </div>
 
@@ -402,7 +436,8 @@ export const AccountPicker: React.FC = () => {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 

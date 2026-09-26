@@ -47,14 +47,11 @@ export const StaffAccessManager: React.FC = () => {
     onConfirm: () => Promise<void>;
   } | null>(null);
 
-  // Manageable staff filter:
-  // - Owners can manage Managers, Senior Cashiers, and Cashiers (Technical admin hidden from normal business UI)
-  // - Managers can manage Cashiers and Senior Cashiers only (cannot manage other Managers or Owners)
+  // Manageable staff filter
   const manageableStaff = useMemo(() => {
     if (isOwner) {
       return users.filter(u => u.role !== 'admin');
     }
-    // Managers can only manage cashiers and senior cashiers
     return users.filter(u => u.role === 'cashier' || u.role === 'senior_cashier');
   }, [users, isOwner]);
 
@@ -66,7 +63,6 @@ export const StaffAccessManager: React.FC = () => {
         { value: 'manager', label: 'Manager' },
       ];
     }
-    // Managers can only assign Cashier or Senior Cashier
     return [
       { value: 'cashier', label: 'Cashier' },
       { value: 'senior_cashier', label: 'Senior Cashier' },
@@ -227,58 +223,58 @@ export const StaffAccessManager: React.FC = () => {
     const schedule = (selectedStaff.schedule as any) || {};
     
     return (
-      <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+      <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300 text-stone-900">
         <div className="flex items-center justify-between">
           <button 
             onClick={() => setSelectedStaff(null)}
-            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors group cursor-pointer"
+            className="flex items-center gap-2 text-sm text-stone-400 hover:text-stone-700 transition-colors group cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
             <span>Back to Staff List</span>
           </button>
           
           <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${
-            selectedStaff.is_active ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'
+            selectedStaff.is_active ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'
           }`}>
             {selectedStaff.is_active ? 'Active' : 'Deactivated'}
           </div>
         </div>
 
-        <div className="flex items-center gap-6 pb-8 border-b border-[#282828]">
-          <div className="w-20 h-20 rounded-2xl bg-[#1A1A1A] border border-[#282828] flex items-center justify-center overflow-hidden">
+        <div className="flex items-center gap-6 pb-8 border-b border-stone-200">
+          <div className="w-20 h-20 rounded-2xl bg-stone-100 border border-stone-200 flex items-center justify-center overflow-hidden">
             {selectedStaff.avatar_url ? (
               <img src={selectedStaff.avatar_url} alt="" className="w-full h-full object-cover" />
             ) : (
-              <User className="w-10 h-10 text-gray-600" />
+              <User className="w-10 h-10 text-stone-400" />
             )}
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-4">
-              <h2 className="text-2xl font-bold text-white">{selectedStaff.full_name}</h2>
+              <h2 className="text-2xl font-bold text-stone-900">{selectedStaff.full_name}</h2>
               <select
                 value={selectedStaff.role}
                 onChange={(e) => handleUpdateRole(e.target.value)}
                 disabled={isSaving}
-                className="bg-[#1A1A1A] border border-[#282828] rounded-lg px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#C85A32] focus:border-[#C85A32] outline-none transition-all cursor-pointer"
+                className="bg-white border border-stone-200 rounded-lg px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#C85A32] focus:border-[#C85A32] outline-none transition-all cursor-pointer"
               >
                 {availableRolesForTarget.map(r => (
                   <option key={r.value} value={r.value}>{r.label}</option>
                 ))}
               </select>
             </div>
-            <p className="text-gray-500 font-mono text-xs uppercase tracking-widest mt-1">Operator ID: {selectedStaff.cashier_code} · {selectedStaff.email}</p>
+            <p className="text-stone-500 font-mono text-xs uppercase tracking-widest mt-1">Operator ID: {selectedStaff.cashier_code} · {selectedStaff.email}</p>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
           {/* PERMISSIONS SECTION */}
           <div className="space-y-6">
-            <div className="flex items-center gap-3 text-emerald-400">
+            <div className="flex items-center gap-3 text-emerald-600">
               <Shield className="w-5 h-5" />
               <h3 className="text-sm font-bold uppercase tracking-widest">Access Control</h3>
             </div>
             
-            <div className="bg-[#121212] border border-[#282828] rounded-2xl overflow-hidden divide-y divide-[#282828]">
+            <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden divide-y divide-stone-100 shadow-xs">
               {[
                 { id: 'sales', label: 'Sales & Register', desc: 'Process checkout, sales, and receipts' },
                 { id: 'inventory', label: 'Inventory Management', desc: 'Add, edit, or adjust shop stock' },
@@ -289,10 +285,10 @@ export const StaffAccessManager: React.FC = () => {
                 { id: 'reports', label: 'View Reports', desc: 'Access financial and performance analytics' },
                 ...(isOwner ? [{ id: 'staff', label: 'Staff Management', desc: 'Manage other staff accounts and access' }] : [])
               ].map(item => (
-                <div key={item.id} className="p-5 flex items-center justify-between group hover:bg-[#1A1A1A] transition-colors">
+                <div key={item.id} className="p-5 flex items-center justify-between group hover:bg-stone-50 transition-colors">
                   <div className="max-w-[70%]">
-                    <p className="text-sm font-bold text-gray-200">{item.label}</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">{item.desc}</p>
+                    <p className="text-sm font-bold text-stone-800">{item.label}</p>
+                    <p className="text-[11px] text-stone-500 mt-0.5 leading-relaxed">{item.desc}</p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input 
@@ -302,7 +298,7 @@ export const StaffAccessManager: React.FC = () => {
                       onChange={(e) => handleUpdatePermissions(item.id, e.target.checked)}
                       disabled={isSaving}
                     />
-                    <div className="w-11 h-6 bg-[#282828] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600 peer-checked:after:bg-white"></div>
+                    <div className="w-11 h-6 bg-stone-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600 peer-checked:after:bg-white"></div>
                   </label>
                 </div>
               ))}
@@ -312,15 +308,15 @@ export const StaffAccessManager: React.FC = () => {
           {/* SCHEDULE & CREDENTIALS SECTION */}
           <div className="space-y-8">
             <div className="space-y-6">
-              <div className="flex items-center gap-3 text-amber-500">
+              <div className="flex items-center gap-3 text-amber-600">
                 <Calendar className="w-5 h-5" />
                 <h3 className="text-sm font-bold uppercase tracking-widest">Work Schedule</h3>
               </div>
               
-              <div className="bg-[#121212] border border-[#282828] rounded-2xl p-6 space-y-8">
+              <div className="bg-white border border-stone-200 rounded-2xl p-6 space-y-8 shadow-xs">
                 {/* Working Days */}
                 <div className="space-y-4">
-                  <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Scheduled Days</p>
+                  <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Scheduled Days</p>
                   <div className="flex justify-between gap-1">
                     {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
                       <button
@@ -329,8 +325,8 @@ export const StaffAccessManager: React.FC = () => {
                         onClick={() => toggleDay(i)}
                         className={`w-10 h-10 rounded-xl font-bold text-xs transition-all border cursor-pointer ${
                           (schedule.workingDays || []).includes(i)
-                            ? 'bg-amber-600 border-amber-500 text-white shadow-lg shadow-amber-900/20'
-                            : 'bg-[#1A1A1A] border-[#282828] text-gray-500 hover:border-gray-600'
+                            ? 'bg-amber-600 border-amber-500 text-white shadow-md'
+                            : 'bg-stone-50 border-stone-200 text-stone-500 hover:border-stone-400'
                         }`}
                       >
                         {day}
@@ -342,31 +338,31 @@ export const StaffAccessManager: React.FC = () => {
                 {/* Shift Hours */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Shift Starts</label>
+                    <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Shift Starts</label>
                     <input 
                       type="time" 
                       value={schedule.startTime || "08:00"}
                       onChange={(e) => handleUpdateSchedule({ startTime: e.target.value })}
-                      className="w-full bg-[#1A1A1A] border border-[#282828] rounded-xl px-4 py-3 text-sm text-white focus:border-amber-500 outline-none"
+                      className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-900 focus:border-amber-500 outline-none"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Shift Ends</label>
+                    <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Shift Ends</label>
                     <input 
                       type="time" 
                       value={schedule.endTime || "17:00"}
                       onChange={(e) => handleUpdateSchedule({ endTime: e.target.value })}
-                      className="w-full bg-[#1A1A1A] border border-[#282828] rounded-xl px-4 py-3 text-sm text-white focus:border-amber-500 outline-none"
+                      className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-900 focus:border-amber-500 outline-none"
                     />
                   </div>
                 </div>
 
                 {/* Other Settings */}
-                <div className="space-y-4 pt-4 border-t border-[#282828]">
+                <div className="space-y-4 pt-4 border-t border-stone-100">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-bold text-gray-200">Overnight Shift</p>
-                      <p className="text-[11px] text-gray-500 mt-0.5">Allows login past midnight until shift end</p>
+                      <p className="text-sm font-bold text-stone-800">Overnight Shift</p>
+                      <p className="text-[11px] text-stone-500 mt-0.5">Allows login past midnight until shift end</p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input 
@@ -375,17 +371,17 @@ export const StaffAccessManager: React.FC = () => {
                         checked={schedule.overnight ?? false}
                         onChange={(e) => handleUpdateSchedule({ overnight: e.target.checked })}
                       />
-                      <div className="w-11 h-6 bg-[#282828] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                      <div className="w-11 h-6 bg-stone-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
                     </label>
                   </div>
 
                   <div className="space-y-2 pt-2">
-                    <label className="text-[11px] font-bold text-gray-200">Early Login Allowance (Minutes)</label>
+                    <label className="text-[11px] font-bold text-stone-800">Early Login Allowance (Minutes)</label>
                     <input 
                       type="number" 
                       value={schedule.earlyLoginMinutes ?? 10}
                       onChange={(e) => handleUpdateSchedule({ earlyLoginMinutes: parseInt(e.target.value) || 0 })}
-                      className="w-full bg-[#1A1A1A] border border-[#282828] rounded-xl px-4 py-3 text-sm text-white focus:border-amber-500 outline-none"
+                      className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-900 focus:border-amber-500 outline-none"
                     />
                   </div>
                 </div>
@@ -393,12 +389,12 @@ export const StaffAccessManager: React.FC = () => {
             </div>
 
             {/* ACCOUNT SECURITY CARD */}
-            <div className="bg-red-500/5 border border-red-500/10 rounded-2xl p-6 space-y-4">
-              <div className="flex items-center gap-3 text-red-400">
+            <div className="bg-red-50 border border-red-100 rounded-2xl p-6 space-y-4 shadow-2xs">
+              <div className="flex items-center gap-3 text-red-600">
                 <Lock className="w-5 h-5" />
                 <h3 className="text-sm font-bold uppercase tracking-widest">Account Security</h3>
               </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
+              <p className="text-[11px] text-stone-500 leading-relaxed">
                 Terminal credentials are authenticated via salted PBKDF2 hashes. Plaintext PINs are never stored or exposed.
               </p>
               
@@ -411,7 +407,7 @@ export const StaffAccessManager: React.FC = () => {
                     setIsResetPinModalOpen(true);
                   }}
                   disabled={isSaving}
-                  className="w-full py-3 rounded-xl text-xs font-bold border border-red-500/20 text-red-500 hover:bg-red-500/10 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-3 rounded-xl text-xs font-bold border border-red-200 bg-white text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Key className="w-3.5 h-3.5" />
                   <span>Reset Terminal PIN</span>
@@ -421,10 +417,10 @@ export const StaffAccessManager: React.FC = () => {
                   type="button"
                   onClick={handleToggleActive}
                   disabled={isSaving}
-                  className={`w-full py-3 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                  className={`w-full py-3 rounded-xl text-xs font-bold border transition-colors cursor-pointer bg-white ${
                     selectedStaff.is_active 
-                      ? 'border-red-500/20 text-red-500 hover:bg-red-500/10' 
-                      : 'border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10'
+                      ? 'border-red-200 text-red-600 hover:bg-red-50' 
+                      : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
                   }`}
                 >
                   {selectedStaff.is_active ? 'Deactivate Account' : 'Reactivate Account'}
@@ -435,62 +431,62 @@ export const StaffAccessManager: React.FC = () => {
         </div>
 
         {/* AUDIT HISTORY SECTION */}
-        <div className="space-y-6 pt-10 border-t border-[#282828]">
+        <div className="space-y-6 pt-10 border-t border-stone-200">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 text-blue-400">
+            <div className="flex items-center gap-3 text-blue-600">
               <History className="w-5 h-5" />
               <h3 className="text-sm font-bold uppercase tracking-widest">Administrative Audit Trail</h3>
             </div>
-            {isLoadingLogs && <Loader2 className="w-4 h-4 animate-spin text-gray-500" />}
+            {isLoadingLogs && <Loader2 className="w-4 h-4 animate-spin text-stone-500" />}
           </div>
 
-          <div className="bg-[#121212] border border-[#282828] rounded-2xl overflow-hidden divide-y divide-[#282828]">
+          <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden divide-y divide-stone-100 shadow-xs">
             {auditLogs.length > 0 ? auditLogs.map((log) => {
               const eventBadgeStyle = () => {
                 switch (log.event_type) {
                   case 'STAFF_PROVISIONED':
-                    return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                    return 'bg-emerald-50 text-emerald-700 border-emerald-200';
                   case 'PIN_RESET':
                   case 'PIN_CHANGED':
                   case 'PIN_MIGRATED':
-                    return 'bg-red-500/10 text-red-400 border-red-500/20';
+                    return 'bg-red-50 text-red-700 border-red-200';
                   case 'ROLE_CHANGED':
-                    return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
+                    return 'bg-purple-50 text-purple-700 border-purple-200';
                   case 'SCHEDULE_CHANGED':
-                    return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+                    return 'bg-amber-50 text-amber-700 border-amber-200';
                   case 'STAFF_DEACTIVATED':
-                    return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+                    return 'bg-rose-50 text-rose-700 border-rose-200';
                   case 'STAFF_REACTIVATED':
-                    return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                    return 'bg-emerald-50 text-emerald-700 border-emerald-200';
                   default:
-                    return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+                    return 'bg-blue-50 text-blue-700 border-blue-200';
                 }
               };
 
               return (
-                <div key={log.id} className="p-5 flex items-start justify-between hover:bg-[#1A1A1A] transition-colors">
+                <div key={log.id} className="p-5 flex items-start justify-between hover:bg-stone-50 transition-colors">
                   <div className="space-y-1">
                     <div className="flex items-center gap-3">
                       <span className={`text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-widest ${eventBadgeStyle()}`}>
                         {log.event_type.replace(/_/g, ' ')}
                       </span>
-                      <span className="text-[10px] text-gray-500 font-mono">
+                      <span className="text-[10px] text-stone-400 font-mono">
                         {new Date(log.created_at).toLocaleString()}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-300">{log.reason || 'Administrative action recorded'}</p>
+                    <p className="text-xs text-stone-600">{log.reason || 'Administrative action recorded'}</p>
                   </div>
                   {log.actor_id && (
                     <div className="text-right">
-                      <p className="text-[9px] text-gray-500 uppercase tracking-widest">Authorized By</p>
-                      <p className="text-[10px] font-bold text-gray-400">{log.actor_name || 'Authorized Manager'}</p>
+                      <p className="text-[9px] text-stone-400 uppercase tracking-widest">Authorized By</p>
+                      <p className="text-[10px] font-bold text-stone-700">{log.actor_name || 'Authorized Manager'}</p>
                     </div>
                   )}
                 </div>
               );
             }) : (
-              <div className="p-10 text-center text-gray-600">
-                <p className="text-[10px] uppercase font-bold tracking-widest">No Administrative History Found</p>
+              <div className="p-10 text-center text-stone-400">
+                <p className="text-[10px] uppercase font-bold tracking-widest text-stone-400">No Administrative History Found</p>
               </div>
             )}
           </div>
@@ -498,30 +494,30 @@ export const StaffAccessManager: React.FC = () => {
 
         {/* IN-MODAL PIN RESET DIALOG */}
         {isResetPinModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-            <div className="w-full max-w-md bg-[#161616] border border-[#2A2A2A] rounded-3xl p-8 shadow-2xl relative space-y-6">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-md bg-white border border-stone-200 rounded-3xl p-8 shadow-2xl relative space-y-6 text-stone-900">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 text-red-400">
+                <div className="flex items-center gap-3 text-red-600">
                   <Key className="w-5 h-5" />
-                  <h3 className="font-bold text-lg text-white">Reset Terminal PIN</h3>
+                  <h3 className="font-bold text-lg text-stone-900">Reset Terminal PIN</h3>
                 </div>
                 <button 
                   type="button"
                   onClick={() => setIsResetPinModalOpen(false)}
-                  className="p-1 text-gray-500 hover:text-white transition-colors"
+                  className="p-1 text-stone-400 hover:text-stone-700 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <p className="text-xs text-gray-400 leading-relaxed">
-                Enter a new 6-digit numeric PIN for <strong className="text-white">{selectedStaff.full_name}</strong>.
+              <p className="text-xs text-stone-500 leading-relaxed">
+                Enter a new 6-digit numeric PIN for <strong className="text-stone-800">{selectedStaff.full_name}</strong>.
                 The PIN is securely hashed on the server using PBKDF2-SHA512 before storage.
               </p>
 
               <form onSubmit={handleConfirmResetPin} className="space-y-5">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">New 6-Digit PIN</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400">New 6-Digit PIN</label>
                   <div className="relative">
                     <input 
                       type={showNewPin ? 'text' : 'password'}
@@ -534,36 +530,36 @@ export const StaffAccessManager: React.FC = () => {
                         setResetPinError(null);
                       }}
                       placeholder="••••••"
-                      className="w-full h-12 bg-[#1F1F1F] border border-[#2E2E2E] rounded-xl px-4 text-center font-mono text-xl tracking-[0.4em] text-white focus:border-[#C85A32] outline-none transition-all placeholder:tracking-normal placeholder:text-sm placeholder:text-gray-600"
+                      className="w-full h-12 bg-stone-50 border border-stone-200 rounded-xl px-4 text-center font-mono text-xl tracking-[0.4em] text-stone-900 focus:border-[#C85A32] outline-none transition-all placeholder:tracking-normal placeholder:text-sm placeholder:text-stone-400"
                     />
                     <button 
                       type="button"
                       onClick={() => setShowNewPin(!showNewPin)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
                     >
                       {showNewPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                   {resetPinError && (
-                    <p className="text-xs text-red-400 flex items-center gap-1.5 mt-1">
+                    <p className="text-xs text-red-600 flex items-center gap-1.5 mt-1">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                       <span>{resetPinError}</span>
                     </p>
                   )}
                 </div>
 
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#2A2A2A]">
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-100">
                   <button
                     type="button"
                     onClick={() => setIsResetPinModalOpen(false)}
-                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-gray-400 hover:text-white transition-colors"
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-stone-500 hover:text-stone-700 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isSaving || newPinValue.length !== 6}
-                    className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#C85A32] hover:bg-[#A94725] text-white transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-lg shadow-[#C85A32]/20"
+                    className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#C85A32] hover:bg-[#A94725] text-white transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-md shadow-[#C85A32]/10"
                   >
                     {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                     <span>Confirm PIN Reset</span>
@@ -576,22 +572,22 @@ export const StaffAccessManager: React.FC = () => {
 
         {/* IN-MODAL CONFIRMATION DIALOG */}
         {confirmDialog && confirmDialog.isOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-            <div className="w-full max-w-md bg-[#161616] border border-[#2A2A2A] rounded-3xl p-8 shadow-2xl relative space-y-6">
-              <div className="flex items-center gap-3 text-amber-400">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-md bg-white border border-stone-200 rounded-3xl p-8 shadow-2xl relative space-y-6 text-stone-900">
+              <div className="flex items-center gap-3 text-amber-600">
                 <AlertTriangle className="w-5 h-5" />
-                <h3 className="font-bold text-lg text-white">{confirmDialog.title}</h3>
+                <h3 className="font-bold text-lg text-stone-900">{confirmDialog.title}</h3>
               </div>
 
-              <p className="text-xs text-gray-400 leading-relaxed">
+              <p className="text-xs text-stone-500 leading-relaxed">
                 {confirmDialog.message}
               </p>
 
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#2A2A2A]">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-100">
                 <button
                   type="button"
                   onClick={() => setConfirmDialog(null)}
-                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-gray-400 hover:text-white transition-colors cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-stone-500 hover:text-stone-700 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -599,10 +595,10 @@ export const StaffAccessManager: React.FC = () => {
                   type="button"
                   disabled={isSaving}
                   onClick={confirmDialog.onConfirm}
-                  className={`px-6 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-lg ${
+                  className={`px-6 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-md ${
                     confirmDialog.isDanger
-                      ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-900/20'
-                      : 'bg-[#C85A32] hover:bg-[#A94725] text-white shadow-[#C85A32]/20'
+                      ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-100'
+                      : 'bg-[#C85A32] hover:bg-[#A94725] text-white shadow-[#C85A32]/10'
                   }`}
                 >
                   {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -617,15 +613,15 @@ export const StaffAccessManager: React.FC = () => {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-500 text-stone-900">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-headline font-bold text-white tracking-tight">Staff & Access</h2>
-          <p className="text-gray-500 text-sm mt-1">Manage shop personnel, role permissions, and terminal credentials</p>
+          <h2 className="text-2xl font-headline font-bold text-stone-900 tracking-tight">Staff & Access</h2>
+          <p className="text-stone-500 text-sm mt-1">Manage shop personnel, role permissions, and terminal credentials</p>
         </div>
         <button 
           onClick={() => setIsAddingStaff(true)}
-          className="flex items-center gap-2 px-5 py-2.5 bg-[#C85A32] hover:bg-[#A94725] text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-[#C85A32]/20 cursor-pointer"
+          className="flex items-center gap-2 px-5 py-2.5 bg-[#C85A32] hover:bg-[#A94725] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-[#C85A32]/10 cursor-pointer"
         >
           <UserPlus className="w-4 h-4" />
           <span>Provision Staff</span>
@@ -637,31 +633,31 @@ export const StaffAccessManager: React.FC = () => {
           <button
             key={staff.id}
             onClick={() => handleSelectStaff(staff)}
-            className="group relative bg-[#121212] border border-[#282828] rounded-[2rem] p-6 flex items-center gap-5 transition-all hover:border-[#C85A32] hover:bg-[#1A1A1A] text-left cursor-pointer"
+            className="group relative bg-white border border-stone-200 rounded-[2rem] p-6 flex items-center gap-5 transition-all hover:border-[#C85A32] hover:shadow-md text-left cursor-pointer"
           >
-            <div className="w-14 h-14 rounded-2xl bg-[#1A1A1A] border border-[#282828] flex items-center justify-center shrink-0 group-hover:border-[#C85A32]/30 transition-colors">
+            <div className="w-14 h-14 rounded-2xl bg-stone-50 border border-stone-200 flex items-center justify-center shrink-0 group-hover:border-[#C85A32]/30 transition-colors">
               {staff.avatar_url ? (
                 <img src={staff.avatar_url} alt="" className="w-full h-full object-cover rounded-xl" />
               ) : (
-                <User className="w-7 h-7 text-gray-700 group-hover:text-[#C85A32]/60 transition-colors" />
+                <User className="w-7 h-7 text-stone-400 group-hover:text-[#C85A32]/60 transition-colors" />
               )}
             </div>
             
             <div className="min-w-0 flex-1">
-              <p className="font-bold text-white truncate">{staff.full_name}</p>
+              <p className="font-bold text-stone-900 truncate">{staff.full_name}</p>
               <div className="flex items-center gap-2 mt-1">
                 <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border ${
                   staff.role === 'manager' 
-                    ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' 
+                    ? 'bg-purple-50 text-purple-700 border-purple-200' 
                     : staff.role === 'senior_cashier'
-                    ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                    ? 'bg-blue-50 text-blue-700 border-blue-200'
                     : staff.role === 'owner' || staff.role === 'admin'
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                    : 'bg-gray-500/10 text-gray-400 border-gray-500/20'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-stone-100 text-stone-600 border-stone-200'
                 }`}>
                   {staff.role === 'senior_cashier' ? 'Senior Cashier' : staff.role.replace('_', ' ')}
                 </span>
-                <span className="text-[9px] font-mono text-gray-600 uppercase tracking-widest">{staff.cashier_code}</span>
+                <span className="text-[9px] font-mono text-stone-400 uppercase tracking-widest">{staff.cashier_code}</span>
               </div>
             </div>
 
@@ -722,42 +718,42 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-left-4 duration-300">
+    <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-left-4 duration-300 text-stone-900">
       <div className="flex items-center gap-4">
-        <button onClick={onBack} className="p-2 bg-[#1A1A1A] border border-[#282828] rounded-xl hover:text-white transition-colors cursor-pointer">
+        <button onClick={onBack} className="p-2 bg-stone-50 border border-stone-200 rounded-xl hover:text-[#C85A32] transition-colors cursor-pointer">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
-          <h2 className="text-2xl font-headline font-bold text-white tracking-tight">Provision New Staff</h2>
-          <p className="text-gray-500 text-sm">Register a new terminal operator with secure credentials</p>
+          <h2 className="text-2xl font-headline font-bold text-stone-900 tracking-tight">Provision New Staff</h2>
+          <p className="text-stone-500 text-sm">Register a new terminal operator with secure credentials</p>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-[#121212] border border-[#282828] rounded-[2.5rem] p-10 space-y-8 shadow-2xl">
+      <form onSubmit={handleSubmit} className="bg-white border border-stone-200 rounded-[2.5rem] p-10 space-y-8 shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Full Legal Name</label>
+            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Full Legal Name</label>
             <div className="relative">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
               <input 
                 required
                 type="text" 
                 value={formData.fullName}
                 onChange={e => setFormData({ ...formData, fullName: e.target.value })}
                 placeholder="e.g. Sipho Mokoena"
-                className="w-full h-12 bg-[#1A1A1A] border border-[#282828] rounded-xl pl-11 pr-4 text-sm text-white focus:border-[#C85A32] outline-none transition-all"
+                className="w-full h-12 bg-white border border-stone-200 rounded-xl pl-11 pr-4 text-sm text-stone-900 focus:border-[#C85A32] outline-none transition-all"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Operator Role</label>
+            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Operator Role</label>
             <div className="relative">
-              <Shield className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
+              <Shield className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
               <select 
                 value={formData.role}
                 onChange={e => setFormData({ ...formData, role: e.target.value as any })}
-                className="w-full h-12 bg-[#1A1A1A] border border-[#282828] rounded-xl pl-11 pr-4 text-sm text-white focus:border-[#C85A32] outline-none transition-all appearance-none cursor-pointer"
+                className="w-full h-12 bg-white border border-stone-200 rounded-xl pl-11 pr-4 text-sm text-stone-900 focus:border-[#C85A32] outline-none transition-all appearance-none cursor-pointer"
               >
                 <option value="cashier">Cashier</option>
                 <option value="senior_cashier">Senior Cashier</option>
@@ -767,24 +763,24 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Staff / Cashier Code</label>
+            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Staff / Cashier Code</label>
             <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600 font-bold text-xs uppercase">Code</span>
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 font-bold text-xs uppercase">Code</span>
               <input 
                 required
                 type="text" 
                 value={formData.cashierCode}
                 onChange={e => setFormData({ ...formData, cashierCode: e.target.value.toUpperCase() })}
                 placeholder="e.g. CSH-05"
-                className="w-full h-12 bg-[#1A1A1A] border border-[#282828] rounded-xl pl-16 pr-4 text-sm text-white font-mono focus:border-[#C85A32] outline-none transition-all"
+                className="w-full h-12 bg-white border border-stone-200 rounded-xl pl-16 pr-4 text-sm text-stone-900 font-mono focus:border-[#C85A32] outline-none transition-all"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Terminal PIN (Exactly 6 Digits)</label>
+            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Terminal PIN (Exactly 6 Digits)</label>
             <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
               <input 
                 required
                 type="password" 
@@ -792,24 +788,24 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 value={formData.pinCode}
                 onChange={e => setFormData({ ...formData, pinCode: e.target.value.replace(/\D/g, '') })}
                 placeholder="••••••"
-                className="w-full h-12 bg-[#1A1A1A] border border-[#282828] rounded-xl pl-11 pr-4 text-sm text-white font-mono tracking-widest focus:border-[#C85A32] outline-none transition-all"
+                className="w-full h-12 bg-white border border-stone-200 rounded-xl pl-11 pr-4 text-sm text-stone-900 font-mono tracking-widest focus:border-[#C85A32] outline-none transition-all"
               />
             </div>
           </div>
 
           <div className="md:col-span-2 space-y-2">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Work Email (Optional)</label>
+            <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Work Email (Optional)</label>
             <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
               <input 
                 type="email" 
                 value={formData.email}
                 onChange={e => setFormData({ ...formData, email: e.target.value })}
                 placeholder="staff@localmarketpos.co.za"
-                className="w-full h-12 bg-[#1A1A1A] border border-[#282828] rounded-xl pl-11 pr-4 text-sm text-white focus:border-[#C85A32] outline-none transition-all"
+                className="w-full h-12 bg-white border border-stone-200 rounded-xl pl-11 pr-4 text-sm text-stone-900 focus:border-[#C85A32] outline-none transition-all"
               />
             </div>
-            <p className="text-[10px] text-gray-500 px-1 italic">If omitted, a generic system email will be assigned based on cashier code.</p>
+            <p className="text-[10px] text-stone-400 px-1 italic">If omitted, a generic system email will be assigned based on cashier code.</p>
           </div>
         </div>
 
@@ -817,14 +813,14 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <button
             type="button"
             onClick={onBack}
-            className="px-8 py-3 text-sm font-bold text-gray-400 hover:text-white transition-colors cursor-pointer"
+            className="px-8 py-3 text-sm font-bold text-stone-400 hover:text-stone-700 transition-colors cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isProvisioning}
-            className="px-10 py-3 bg-[#C85A32] hover:bg-[#A94725] text-white text-sm font-bold rounded-xl transition-all shadow-xl shadow-[#C85A32]/20 disabled:opacity-50 cursor-pointer"
+            className="px-10 py-3 bg-[#C85A32] hover:bg-[#A94725] text-white text-sm font-bold rounded-xl transition-all shadow-md shadow-[#C85A32]/10 disabled:opacity-50 cursor-pointer"
           >
             {isProvisioning ? (
               <span className="flex items-center gap-2">
