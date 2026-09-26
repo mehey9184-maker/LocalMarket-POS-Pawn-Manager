@@ -245,6 +245,14 @@ export const BuyPawn: React.FC = () => {
   }, [step, txType, itemData, newIdentity, selectedIdentity, draftId, user, shopProfile?.id]);
 
   const handleContinueDraft = (draft: WorkflowDraft) => {
+    if (draft.workflowType === 'buy' && !hasPermission('sellerAcquisitions')) {
+      showToast('Permission Denied', 'Senior Cashier or higher authority required for Buy From Person acquisitions.', 'error');
+      return;
+    }
+    if (draft.workflowType === 'pawn' && !hasPermission('pawn')) {
+      showToast('Permission Denied', 'Senior Cashier or higher authority required for Pawn loans.', 'error');
+      return;
+    }
     setDraftId(draft.id);
     setTxType(draft.workflowType);
     setStep(draft.step as WorkflowStep);
@@ -362,6 +370,14 @@ export const BuyPawn: React.FC = () => {
 
   // Handlers
   const handleSelectTxType = (type: 'existing' | 'buy' | 'pawn') => {
+    if (type === 'buy' && !hasPermission('sellerAcquisitions')) {
+      showToast('Permission Denied', 'Senior Cashier or higher authority required for Buy From Person acquisitions.', 'error');
+      return;
+    }
+    if (type === 'pawn' && !hasPermission('pawn')) {
+      showToast('Permission Denied', 'Senior Cashier or higher authority required for Pawn loans.', 'error');
+      return;
+    }
     setTxType(type);
     setSelectedIdentity(null);
     setIsCreatingIdentity(false);
@@ -679,6 +695,14 @@ export const BuyPawn: React.FC = () => {
 
   const handleFinalize = async () => {
     if (!selectedIdentity || !txType) return;
+    if (txType === 'buy' && !hasPermission('sellerAcquisitions')) {
+      showToast('Permission Denied', 'Senior Cashier or higher authority required for Buy From Person acquisitions.', 'error');
+      return;
+    }
+    if (txType === 'pawn' && !hasPermission('pawn')) {
+      showToast('Permission Denied', 'Senior Cashier or higher authority required for Pawn loans.', 'error');
+      return;
+    }
     if (!shopProfile?.id) {
       showToast('Missing Shop Context', 'Unable to complete transaction without an active shop profile.', 'error');
       return;

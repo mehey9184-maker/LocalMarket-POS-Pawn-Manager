@@ -31,7 +31,7 @@ export const LoanContext = createContext<LoanContextType | undefined>(undefined)
 export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { queueSyncAction } = useSync();
   const { updateItem } = useInventory();
-  const { shopId } = useAuth();
+  const { shopId, isAtLeastManager, isAtLeastSeniorCashier } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
 
   const rawLoans = useLiveQuery(
@@ -178,6 +178,7 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const transferOverdueToFloor = async (ticketNumber: string, retailPrice: number) => {
     if (!shopId) return { success: false, error: 'No active shop context.' };
+    if (!isAtLeastSeniorCashier) return { success: false, error: 'Unauthorized: Senior Cashier or Manager authority required.' };
     return await db.transaction('rw', db.loans, db.inventory, db.syncLogs, async () => {
       const loan = await db.loans.where('shopId').equals(shopId).and(l => l.ticketNumber === ticketNumber).first();
       if (!loan) return { success: false, error: 'Loan not found' };
@@ -205,6 +206,8 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const approveForfeiture = async (id: string, retailPrice: number) => {
+    if (!shopId) return { success: false, error: 'No active shop context.' };
+    if (!isAtLeastManager) return { success: false, error: 'Unauthorized: Manager or Owner authority required to approve forfeiture.' };
     return await db.transaction('rw', db.loans, db.inventory, db.syncLogs, async () => {
       const loan = await db.loans.get(id);
       if (!loan || loan.shopId !== shopId) return { success: false, error: 'Loan not found' };
@@ -239,6 +242,8 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const rejectForfeiture = async (id: string) => {
+    if (!shopId) return { success: false, error: 'No active shop context.' };
+    if (!isAtLeastManager) return { success: false, error: 'Unauthorized: Manager or Owner authority required to reject forfeiture.' };
     return await db.transaction('rw', db.loans, db.inventory, db.syncLogs, async () => {
       const loan = await db.loans.get(id);
       if (!loan || loan.shopId !== shopId) return { success: false, error: 'Loan not found' };
@@ -255,6 +260,7 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const batchTransferOverdue = async () => {
     if (!shopId) return { success: false, count: 0, error: 'No active shop context.' };
+    if (!isAtLeastSeniorCashier) return { success: false, count: 0, error: 'Unauthorized: Senior Cashier or Manager authority required.' };
     const now = new Date().toISOString().split('T')[0];
     const overdueLoans = await db.loans
       .where('shopId').equals(shopId)
@@ -273,6 +279,8 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const batchApproveForfeitures = async (ids: string[]) => {
+    if (!shopId) return { success: false, count: 0, error: 'No active shop context.' };
+    if (!isAtLeastManager) return { success: false, count: 0, error: 'Unauthorized: Manager or Owner authority required.' };
     let count = 0;
     for (const id of ids) {
       const loan = await db.loans.get(id);
