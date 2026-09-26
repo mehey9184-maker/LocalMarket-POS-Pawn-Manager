@@ -80,6 +80,10 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateLoan = async (id: string, updates: Partial<PawnLoan>) => {
+    const loan = await db.loans.get(id);
+    if (!loan || loan.shopId !== shopId) {
+      throw new Error('Access Denied: Loan record does not belong to this shop.');
+    }
     await db.loans.update(id, updates);
     await queueSyncAction('loans', id, 'update', updates);
   };
@@ -94,6 +98,11 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return await db.transaction('rw', db.loans, db.inventory, db.syncLogs, async () => {
       const loan = await db.loans.where('shopId').equals(shopId).and(l => l.ticketNumber === ticketNumber).first();
       if (!loan) return { success: false, error: 'Loan not found' };
+
+      const item = await db.inventory.get(loan.itemId);
+      if (!item || item.shopId !== shopId) {
+        return { success: false, error: 'Access Denied: Loan item does not belong to this shop.' };
+      }
 
       const now = new Date().toISOString();
       const updatedHistory = [
@@ -159,6 +168,10 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const archiveLoan = async (id: string) => {
+    const loan = await db.loans.get(id);
+    if (!loan || loan.shopId !== shopId) {
+      throw new Error('Access Denied: Loan record does not belong to this shop.');
+    }
     await db.loans.update(id, { status: 'Archived' });
     await queueSyncAction('loans', id, 'update', { status: 'Archived' });
   };
@@ -168,6 +181,11 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return await db.transaction('rw', db.loans, db.inventory, db.syncLogs, async () => {
       const loan = await db.loans.where('shopId').equals(shopId).and(l => l.ticketNumber === ticketNumber).first();
       if (!loan) return { success: false, error: 'Loan not found' };
+
+      const item = await db.inventory.get(loan.itemId);
+      if (!item || item.shopId !== shopId) {
+        return { success: false, error: 'Access Denied: Loan item does not belong to this shop.' };
+      }
 
       const updates = { 
         status: 'Pending Forfeit' as LoanStatus,
@@ -258,7 +276,7 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let count = 0;
     for (const id of ids) {
       const loan = await db.loans.get(id);
-      if (loan) {
+      if (loan && loan.shopId === shopId) {
         const res = await approveForfeiture(id, (loan as any).retailPrice || loan.principal * 2);
         if (res.success) count++;
       }

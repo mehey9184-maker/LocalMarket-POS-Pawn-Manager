@@ -24,6 +24,7 @@ import { useSaps } from './SapsContext';
 import { useSync } from './SyncContext';
 import { useAuth } from './AuthContext';
 import { db } from '../db';
+import { runMigration } from '../db/migration';
 
 export type NavTab = 'landing' | 'auth' | 'shop-setup' | 'home' | 'sell' | 'buy-pawn' | 'inventory' | 'customers' | 'profile' | 'vault' | 'saps';
 
@@ -251,6 +252,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setBusinessRules(DEFAULT_BUSINESS_RULES);
       return;
     }
+
+    // Trigger legacy migration if not already completed, claiming data for this shopId
+    runMigration(currentUserProfile.shop_id).catch(err => {
+      console.error('[AppContext] Legacy migration failed:', err);
+    });
 
     const sKey = `lm_shop_profile_${currentUserProfile.shop_id}`;
     const rKey = `lm_business_rules_${currentUserProfile.shop_id}`;

@@ -60,6 +60,10 @@ export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const updateSeller = async (id: string, updates: Partial<Seller>) => {
+    const seller = await db.sellers.get(id);
+    if (!seller || seller.shopId !== shopId) {
+      throw new Error('Access Denied: Seller record does not belong to this shop.');
+    }
     await db.sellers.update(id, updates);
     await queueSyncAction('sellers', id, 'update', updates);
   };
@@ -117,6 +121,10 @@ export const SellerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const updateSellerTransactionStatus = async (txId: string, status: SellerTransactionStatus, paymentStatus?: SellerPaymentStatus) => {
+    const tx = await db.sellerTransactions.get(txId);
+    if (!tx || tx.shopId !== shopId) {
+      throw new Error('Access Denied: Seller transaction does not belong to this shop.');
+    }
     const updates: any = { status };
     if (paymentStatus) updates.paymentStatus = paymentStatus;
     await db.sellerTransactions.update(txId, updates);

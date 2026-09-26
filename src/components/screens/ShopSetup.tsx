@@ -77,7 +77,7 @@ export const ShopSetup: React.FC = () => {
             <div className="space-y-6">
               {/* Primary Field */}
               <div className="space-y-2">
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Shop Name</label>
+                <label className="block text-xs font-bold text-gray-600 uppercase tracking-widest pl-1">Shop Name</label>
                 <input 
                   required
                   autoFocus
@@ -103,7 +103,7 @@ export const ShopSetup: React.FC = () => {
                 <div className="space-y-6 pt-2 animate-in fade-in zoom-in-95 duration-300">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Shop Code</label>
+                      <label className="block text-xs font-bold text-gray-600 uppercase tracking-widest pl-1">Shop Code</label>
                       <input 
                         type="text"
                         value={shopCode}
@@ -113,7 +113,7 @@ export const ShopSetup: React.FC = () => {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Store Phone</label>
+                      <label className="block text-xs font-bold text-gray-600 uppercase tracking-widest pl-1">Store Phone</label>
                       <input 
                         type="tel"
                         value={phone}
@@ -125,7 +125,7 @@ export const ShopSetup: React.FC = () => {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Physical Address</label>
+                    <label className="block text-xs font-bold text-gray-600 uppercase tracking-widest pl-1">Physical Address</label>
                     <textarea 
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
@@ -137,7 +137,7 @@ export const ShopSetup: React.FC = () => {
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">City</label>
+                      <label className="block text-xs font-bold text-gray-600 uppercase tracking-widest pl-1">City</label>
                       <input 
                         type="text"
                         value={city}
@@ -146,7 +146,7 @@ export const ShopSetup: React.FC = () => {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Province</label>
+                      <label className="block text-xs font-bold text-gray-600 uppercase tracking-widest pl-1">Province</label>
                       <input 
                         type="text"
                         value={province}
@@ -155,7 +155,7 @@ export const ShopSetup: React.FC = () => {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest pl-1">Postal</label>
+                      <label className="block text-xs font-bold text-gray-600 uppercase tracking-widest pl-1">Postal</label>
                       <input 
                         type="text"
                         value={postalCode}

@@ -68,8 +68,13 @@ export const AuthPage: React.FC = () => {
         const { data, error } = await authApi.signUp(email, password, fullName, 'owner');
         if (error) throw error;
         
-        showToast('Check your email', 'We sent a verification link to your inbox.', 'success');
-        setIsSignUp(false);
+        if (data?.session) {
+          showToast('Account Created', 'Welcome to LocalMarket POS.', 'success');
+          // Session will be picked up by AuthContext
+        } else {
+          showToast('Verification Required', 'Please check your email to confirm your account.', 'info');
+          setIsSignUp(false);
+        }
       } else {
         console.log('[Auth] Attempting Operator Sign In for:', email);
         const { data, error } = await authApi.signIn(email, password);
@@ -140,9 +145,9 @@ export const AuthPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-xs text-gray-500 font-mono">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>Connecting to LocalMarket Cloud</span>
+            <div className="flex items-center gap-2 text-xs text-gray-400 font-medium">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+              <span>Cloud Connection Active</span>
             </div>
           </div>
         </div>

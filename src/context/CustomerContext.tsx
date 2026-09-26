@@ -55,6 +55,10 @@ export const CustomerProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const updateCustomer = async (id: string, updates: Partial<Customer>) => {
+    const customer = await db.customers.get(id);
+    if (!customer || customer.shopId !== shopId) {
+      throw new Error('Access Denied: Customer record does not belong to this shop.');
+    }
     await db.customers.update(id, updates);
     await queueSyncAction('customers', id, 'update', updates);
   };

@@ -19,7 +19,6 @@ import {
 export const CompositeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   useEffect(() => {
     const init = async () => {
-      await runMigration();
       // Isolate demo fixtures: only seed if explicitly configured via environment flag
       if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ENABLE_DEMO_SEED === 'true') {
         await seedDatabase(

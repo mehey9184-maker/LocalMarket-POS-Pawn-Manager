@@ -504,10 +504,16 @@ export const SyncService = {
           console.log(`[SyncService] Audited and quarantined ${quarantineCount} legacy/synthetic records.`);
         }
 
-        const pendingLogs = await db.syncLogs
-          .where('status')
-          .anyOf('pending', 'failed')
-          .sortBy('createdAt');
+        const pendingLogs = shopId 
+          ? await db.syncLogs
+              .where('shopId')
+              .equals(shopId)
+              .and(log => log.status === 'pending' || log.status === 'failed')
+              .sortBy('createdAt')
+          : await db.syncLogs
+              .where('status')
+              .anyOf('pending', 'failed')
+              .sortBy('createdAt');
 
         const total = pendingLogs.length;
         if (total === 0) return { processed: 0, successful: 0, failed: 0 };

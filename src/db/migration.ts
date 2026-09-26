@@ -31,12 +31,19 @@ export async function cleanupSyntheticSyncLogs() {
   }
 }
 
-export async function runMigration() {
+export async function runMigration(quarantineShopId?: string) {
   await cleanupSyntheticSyncLogs();
   const isMigrated = localStorage.getItem('lm_dexie_migration_complete');
   if (isMigrated === 'true') return;
 
-  console.log('Starting data migration from localStorage to Dexie...');
+  // If we have a target shopId, we can perform the migration. 
+  // Otherwise, we wait until a shopId is available to avoid unassigned data leakage.
+  if (!quarantineShopId) {
+    console.log('[Migration] Waiting for authoritative shop context before claiming legacy data.');
+    return;
+  }
+
+  console.log(`Starting data migration from localStorage to Dexie (Quarantine: ${quarantineShopId})...`);
 
   try {
     const getLocal = (key: string) => {
@@ -55,24 +62,22 @@ export async function runMigration() {
     const saps = getLocal('lm_saps') as SapsEntry[] | null;
     const sales = getLocal('lm_sales') as SaleTransaction[] | null;
 
-    // RULE: For legacy data, assign to 'legacy-unassigned' to prevent leakage.
-    // Do NOT guess or assign to current shop unless proven.
-    const LEGACY_SCOPE = 'legacy-unassigned';
+    const SCOPE = quarantineShopId;
 
     if (inventory && inventory.length > 0) {
-      await db.inventory.bulkPut(inventory.map(item => ({ ...item, shopId: item.shopId || LEGACY_SCOPE })));
+      await db.inventory.bulkPut(inventory.map(item => ({ ...item, shopId: item.shopId || SCOPE })));
     }
     if (customers && customers.length > 0) {
-      await db.customers.bulkPut(customers.map(item => ({ ...item, shopId: item.shopId || LEGACY_SCOPE })));
+      await db.customers.bulkPut(customers.map(item => ({ ...item, shopId: item.shopId || SCOPE })));
     }
     if (loans && loans.length > 0) {
-      await db.loans.bulkPut(loans.map(item => ({ ...item, shopId: item.shopId || LEGACY_SCOPE })));
+      await db.loans.bulkPut(loans.map(item => ({ ...item, shopId: item.shopId || SCOPE })));
     }
     if (saps && saps.length > 0) {
-      await db.saps.bulkPut(saps.map(item => ({ ...item, shopId: item.shopId || LEGACY_SCOPE })));
+      await db.saps.bulkPut(saps.map(item => ({ ...item, shopId: item.shopId || SCOPE })));
     }
     if (sales && sales.length > 0) {
-      await db.sales.bulkPut(sales.map(item => ({ ...item, shopId: item.shopId || LEGACY_SCOPE })));
+      await db.sales.bulkPut(sales.map(item => ({ ...item, shopId: item.shopId || SCOPE })));
     }
 
     localStorage.setItem('lm_dexie_migration_complete', 'true');

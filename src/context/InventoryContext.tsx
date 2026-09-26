@@ -58,6 +58,10 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const updateItem = async (id: string, updates: Partial<InventoryItem>) => {
+    const item = await db.inventory.get(id);
+    if (!item || item.shopId !== shopId) {
+      throw new Error('Access Denied: Inventory item does not belong to this shop.');
+    }
     await db.inventory.update(id, updates);
     await queueSyncAction('inventory', id, 'update', updates);
   };
@@ -84,7 +88,12 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
 
     // Update local Dexie once authorized / confirmed
-    await db.inventory.update(id, { retailPrice: newPrice });
+    const item = await db.inventory.get(id);
+    if (item && item.shopId === shopId) {
+      await db.inventory.update(id, { retailPrice: newPrice });
+    } else if (item) {
+      return { success: false, error: 'Access Denied: Inventory item does not belong to this shop.' };
+    }
 
     // If offline, queue sync action
     if (!isOnline || !isSupabaseConfigured()) {
@@ -95,7 +104,9 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const getItem = async (id: string) => {
-    return await db.inventory.get(id);
+    const item = await db.inventory.get(id);
+    if (item && item.shopId === shopId) return item;
+    return undefined;
   };
 
   const getInventoryByStatus = (status: ItemStatus) => {

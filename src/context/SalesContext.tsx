@@ -262,13 +262,18 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           };
         }
 
-        // RPC succeeded: commit changes to local Dexie for instant UI sync & offline cache
-        await db.transaction('rw', db.sales, db.inventory, db.syncLogs, async () => {
-          await db.sales.put(saleRecord);
-          for (const ci of normalizedCart) {
+      // RPC succeeded: commit changes to local Dexie for instant UI sync & offline cache
+      await db.transaction('rw', db.sales, db.inventory, db.syncLogs, async () => {
+        await db.sales.put(saleRecord);
+        for (const ci of normalizedCart) {
+          const item = await db.inventory.get(ci.item.id);
+          if (item && item.shopId === shopId) {
             await db.inventory.update(ci.item.id, { status: 'Sold' });
+          } else if (item) {
+            throw new Error(`Inventory violation: Item ${ci.item.sku} does not belong to this shop.`);
           }
-        });
+        }
+      });
 
         // Record completed sync log
         await queueSyncAction('sales', saleId, 'create', saleRecord);
@@ -286,7 +291,12 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await db.transaction('rw', db.sales, db.inventory, db.syncLogs, async () => {
           await db.sales.put(saleRecord);
           for (const ci of normalizedCart) {
-            await db.inventory.update(ci.item.id, { status: 'Sold' });
+            const item = await db.inventory.get(ci.item.id);
+            if (item && item.shopId === shopId) {
+              await db.inventory.update(ci.item.id, { status: 'Sold' });
+            } else if (item) {
+              throw new Error(`Inventory violation: Item ${ci.item.sku} does not belong to this shop.`);
+            }
           }
         });
 
@@ -454,9 +464,14 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
 
         if (params.approved) {
-          await db.inventory.update(req.itemId, {
-            status: 'Retail Floor'
-          });
+          const item = await db.inventory.get(req.itemId);
+          if (item && item.shopId === shopId) {
+            await db.inventory.update(req.itemId, {
+              status: 'Retail Floor'
+            });
+          } else if (item) {
+            throw new Error('Access Denied: Refunded item does not belong to this shop.');
+          }
         }
       });
 
@@ -474,9 +489,14 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
 
         if (params.approved) {
-          await db.inventory.update(req.itemId, {
-            status: 'Retail Floor'
-          });
+          const item = await db.inventory.get(req.itemId);
+          if (item && item.shopId === shopId) {
+            await db.inventory.update(req.itemId, {
+              status: 'Retail Floor'
+            });
+          } else if (item) {
+            throw new Error('Access Denied: Refunded item does not belong to this shop.');
+          }
         }
       });
 
