@@ -116,7 +116,7 @@ export interface InventoryItem {
   serialOrImei: string;
   condition: ItemCondition;
   acquisitionType: AcquisitionType;
-  costBasis: number;
+  costBasis?: number;
   retailPrice: number;
   vaultLocation?: string;
   stockLocation?: string;

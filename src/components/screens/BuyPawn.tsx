@@ -628,7 +628,7 @@ export const BuyPawn: React.FC = () => {
       serialOrImei: itemData.serialOrImei.trim() || 'N/A',
       condition: itemData.condition,
       acquisitionType: 'Existing Stock',
-      costBasis: costBasisNum as any,
+      costBasis: costBasisNum,
       retailPrice: retailPriceNum,
       status: existingStockStatus,
       stockLocation: itemData.stockLocation.trim() || 'Main Floor Display',
@@ -1167,7 +1167,7 @@ export const BuyPawn: React.FC = () => {
     setSelectedIdentity(null);
     setIsCreatingIdentity(false);
     setAgreedOffer(0);
-    setCostBasisInput('0');
+    setCostBasisInput('');
     setRetailPriceInput('0');
     setExistingStockStatus('Retail Floor');
     setResult(null);

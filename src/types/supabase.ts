@@ -213,7 +213,7 @@ export interface Database {
           serial_or_imei: string | null;
           condition: ItemCondition;
           acquisition_type: string;
-          cost_basis: number;
+          cost_basis: number | null;
           retail_price: number;
           vault_location: string | null;
           status: ItemStatus;
@@ -242,7 +242,7 @@ export interface Database {
           serial_or_imei?: string | null;
           condition?: ItemCondition;
           acquisition_type?: string;
-          cost_basis?: number;
+          cost_basis?: number | null;
           retail_price?: number;
           vault_location?: string | null;
           status?: ItemStatus;
@@ -271,7 +271,7 @@ export interface Database {
           serial_or_imei?: string | null;
           condition?: ItemCondition;
           acquisition_type?: string;
-          cost_basis?: number;
+          cost_basis?: number | null;
           retail_price?: number;
           vault_location?: string | null;
           status?: ItemStatus;
