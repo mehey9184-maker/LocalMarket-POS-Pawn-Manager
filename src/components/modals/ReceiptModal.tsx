@@ -115,6 +115,13 @@ export const ReceiptModal: React.FC = () => {
           <div className="w-full bg-white text-black p-5 rounded-lg shadow-xl font-mono text-xs space-y-3 border border-gray-300">
             {/* Store Banner */}
             <div className="text-center border-b border-black/20 pb-2 space-y-0.5">
+              {shopProfile?.logo_url || (shopProfile?.metadata as any)?.logo_url ? (
+                <img 
+                  src={shopProfile.logo_url || (shopProfile.metadata as any).logo_url} 
+                  alt="" 
+                  className="h-10 mx-auto mb-1 object-contain"
+                />
+              ) : null}
               <h2 className="font-black text-sm uppercase tracking-wider">{shopProfile?.shop_name?.toUpperCase() || 'LOCALMARKET'}</h2>
               <p className="text-[10px] text-gray-700">Official POS Terminal</p>
               <p className="text-[9px] text-gray-600">{shopProfile?.address || 'Address Pending'}</p>

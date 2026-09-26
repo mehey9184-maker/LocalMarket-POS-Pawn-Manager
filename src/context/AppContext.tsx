@@ -45,6 +45,8 @@ export interface ShopProfile {
   currency: string;
   receipt_header?: string;
   receipt_footer?: string;
+  logo_url?: string;
+  metadata?: any;
   businessRules?: BusinessRules;
 }
 

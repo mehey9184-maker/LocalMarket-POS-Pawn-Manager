@@ -52,6 +52,13 @@ export const ContractModal: React.FC = () => {
           <div className="bg-white text-black p-6 rounded-xl shadow-2xl font-serif text-xs space-y-4 border border-gray-300">
             {/* Header */}
             <div className="text-center border-b-2 border-black pb-3 space-y-1">
+              {shopProfile?.logo_url || (shopProfile?.metadata as any)?.logo_url ? (
+                <img 
+                  src={shopProfile.logo_url || (shopProfile.metadata as any).logo_url} 
+                  alt="" 
+                  className="h-12 mx-auto mb-1 object-contain"
+                />
+              ) : null}
               <h2 className="font-black text-base uppercase tracking-wider font-sans">{shopProfile?.shop_name || 'Not configured'}</h2>
               <p className="text-[10px] text-gray-700 font-sans">
                 {shopProfile?.registration_number ? `Reg: ${shopProfile.registration_number}` : 'Business Registration: Not configured'} 

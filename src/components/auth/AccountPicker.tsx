@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { authApi } from '../../services/supabaseApi';
 import { ProfileRow } from '../../types/supabase';
-import { Loader2, ArrowLeft, Key, ShieldCheck, Lock } from 'lucide-react';
+import { Loader2, ArrowLeft, Key, ShieldCheck, Lock, X } from 'lucide-react';
 
 export const AccountPicker: React.FC = () => {
   const { 
@@ -22,6 +23,31 @@ export const AccountPicker: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
+
+  // Close modal on Escape key press
+  useEffect(() => {
+    if (!isAccountPickerOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsAccountPickerOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAccountPickerOpen, setIsAccountPickerOpen]);
+
+  // Reset local state when picker closes
+  useEffect(() => {
+    if (!isAccountPickerOpen) {
+      setSelectedStaff(null);
+      setPin('');
+      setError(null);
+      setLockoutUntil(null);
+      setRemainingSeconds(0);
+    }
+  }, [isAccountPickerOpen]);
 
   if (!isAccountPickerOpen) return null;
 
@@ -171,106 +197,128 @@ export const AccountPicker: React.FC = () => {
       .substring(0, 2);
   };
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white/95 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="w-full max-w-2xl px-6">
+  const activeStaff = users.filter(u => u.is_active && u.role !== 'admin');
+
+  const content = (
+    <div 
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md overflow-y-auto animate-auth-fade"
+      onClick={() => setIsAccountPickerOpen(false)}
+    >
+      <div 
+        className="w-full max-w-2xl bg-white text-gray-900 border border-stone-200 rounded-3xl p-6 sm:p-8 shadow-2xl relative my-auto max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={() => setIsAccountPickerOpen(false)}
+          className="absolute top-5 right-5 p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+          aria-label="Close Account Switcher"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
         {!selectedStaff ? (
           <div className="text-center">
-            <h1 className="font-headline font-bold text-4xl text-gray-900 mb-2 tracking-tight">Welcome back</h1>
-            <p className="text-gray-500 mb-12">Who is using this terminal?</p>
+            <h1 className="font-headline font-bold text-3xl sm:text-4xl text-stone-900 mb-2 tracking-tight">
+              Switch Account
+            </h1>
+            <p className="text-stone-500 mb-8 text-sm">Select staff member for this terminal session</p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {users.filter(u => u.is_active && u.role !== 'admin').map((staff) => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+              {activeStaff.map((staff) => (
                 <button
                   key={staff.id}
                   onClick={() => handleSelectStaff(staff)}
-                  className={`group relative bg-white border border-gray-200 rounded-2xl p-6 flex flex-col items-center gap-4 transition-all hover:border-[#c85a32] hover:bg-gray-50 hover:shadow-lg hover:shadow-gray-200/50 ${
-                    staff.id === currentProfile?.id ? 'ring-2 ring-[#c85a32] border-transparent' : ''
+                  className={`group relative bg-stone-50 border rounded-2xl p-5 flex flex-col items-center gap-3 transition-all hover:border-[#C85A32] hover:bg-white hover:shadow-md cursor-pointer ${
+                    staff.id === currentProfile?.id ? 'ring-2 ring-[#C85A32] border-transparent bg-white shadow-xs' : 'border-stone-200'
                   }`}
                 >
-                  <div className="w-16 h-16 rounded-full bg-gray-100 border-2 border-gray-200 flex items-center justify-center group-hover:border-[#c85a32]/50 transition-colors overflow-hidden">
+                  <div className="w-14 h-14 rounded-full bg-stone-200 border-2 border-stone-300 flex items-center justify-center group-hover:border-[#C85A32]/50 transition-colors overflow-hidden shrink-0">
                     {staff.avatar_url ? (
                       <img src={staff.avatar_url} alt={staff.full_name} className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-xl font-bold text-gray-500 group-hover:text-gray-700 transition-colors">
+                      <span className="text-lg font-bold text-stone-600 group-hover:text-stone-900 transition-colors">
                         {getInitials(staff.full_name)}
                       </span>
                     )}
                   </div>
                   
-                  <div className="text-center">
-                    <p className="font-bold text-gray-900 truncate max-w-[140px]">{staff.full_name}</p>
-                    <p className="text-xs text-gray-500 uppercase tracking-widest mt-1 font-mono">{getRoleLabel(staff.role)}</p>
+                  <div className="text-center w-full min-w-0">
+                    <p className="font-bold text-stone-900 truncate text-sm">{staff.full_name}</p>
+                    <p className="text-[10px] text-stone-500 uppercase tracking-widest mt-0.5 font-mono">{getRoleLabel(staff.role)}</p>
                   </div>
 
                   {staff.id === currentProfile?.id && (
-                    <div className="absolute top-3 right-3 flex items-center gap-1 bg-[#c85a32]/10 px-2 py-0.5 rounded-full border border-[#c85a32]/20">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#c85a32] animate-pulse"></div>
-                      <span className="text-[9px] font-bold text-[#c85a32] uppercase">Active</span>
+                    <div className="absolute top-2.5 right-2.5 flex items-center gap-1 bg-[#C85A32]/10 px-2 py-0.5 rounded-full border border-[#C85A32]/20">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#C85A32] animate-pulse"></div>
+                      <span className="text-[9px] font-bold text-[#C85A32] uppercase">Active</span>
                     </div>
                   )}
                 </button>
               ))}
             </div>
 
-            <button
-              onClick={() => { setIsAccountPickerOpen(false); logout(); }}
-              className="mt-6 text-xs text-red-600 hover:text-red-700 font-semibold uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
-            >
-              Sign Out / Start Over
-            </button>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4 border-t border-stone-200">
+              <button
+                onClick={() => { setIsAccountPickerOpen(false); logout(); }}
+                className="text-xs text-red-600 hover:text-red-700 font-semibold uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Sign Out Terminal
+              </button>
 
-            <button
-              onClick={() => setIsAccountPickerOpen(false)}
-              className="mt-6 text-sm text-gray-500 hover:text-gray-900 transition-colors"
-            >
-              Cancel and return to terminal
-            </button>
+              <span className="hidden sm:inline text-stone-300">•</span>
+
+              <button
+                onClick={() => setIsAccountPickerOpen(false)}
+                className="text-xs text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
+              >
+                Cancel &amp; return to terminal
+              </button>
+            </div>
           </div>
         ) : (
-          <div className="max-w-md mx-auto bg-white border border-gray-200 rounded-3xl p-8 shadow-xl animate-in zoom-in-95 duration-200">
+          <div className="max-w-md mx-auto">
             <button
               onClick={handleBack}
-              className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors mb-8 group cursor-pointer"
+              className="flex items-center gap-2 text-xs font-semibold text-stone-500 hover:text-stone-900 transition-colors mb-6 group cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
               <span>Back to staff list</span>
             </button>
 
-            <div className="flex flex-col items-center text-center mb-8">
-              <div className="w-20 h-20 rounded-full bg-gray-100 border-2 border-gray-200 flex items-center justify-center mb-4 overflow-hidden shadow-sm">
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="w-16 h-16 rounded-full bg-stone-100 border-2 border-stone-200 flex items-center justify-center mb-3 overflow-hidden shadow-xs">
                 {selectedStaff.avatar_url ? (
                   <img src={selectedStaff.avatar_url} alt={selectedStaff.full_name} className="w-full h-full object-cover" />
                 ) : (
-                  <span className="text-2xl font-bold text-gray-500">{getInitials(selectedStaff.full_name)}</span>
+                  <span className="text-xl font-bold text-stone-600">{getInitials(selectedStaff.full_name)}</span>
                 )}
               </div>
-              <h2 className="font-headline font-bold text-2xl text-gray-900 tracking-tight">{selectedStaff.full_name}</h2>
-              <p className="text-sm text-gray-500 mt-1">Please enter your 6-digit terminal PIN</p>
+              <h2 className="font-headline font-bold text-2xl text-stone-900 tracking-tight">{selectedStaff.full_name}</h2>
+              <p className="text-xs text-stone-500 mt-1">Enter your 6-digit terminal PIN</p>
             </div>
 
-            <div className="space-y-6">
+            <div className="space-y-5">
               {/* LOCKOUT DISPLAY BANNER */}
               {isLocked && (
                 <div
                   role="alert"
                   aria-live="polite"
-                  className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center space-y-3 animate-in fade-in zoom-in-95 duration-200"
+                  className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center space-y-2 animate-auth-fade"
                 >
-                  <div className="w-10 h-10 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
-                    <Lock className="w-5 h-5" />
+                  <div className="w-8 h-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
+                    <Lock className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-amber-900">Too many failed attempts</h4>
-                    <p className="text-xs text-amber-700 mt-0.5">
+                    <h4 className="font-bold text-xs text-amber-900">Too many failed attempts</h4>
+                    <p className="text-[11px] text-amber-700 mt-0.5">
                       Account temporarily locked for security
                     </p>
                   </div>
                   <div className="pt-1">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-stone-500 block mb-1">
                       Try again in
                     </span>
-                    <div className="inline-block bg-white border border-amber-200 rounded-xl px-5 py-1.5 font-mono text-2xl font-bold tracking-wider text-amber-700 shadow-inner">
+                    <div className="inline-block bg-white border border-amber-200 rounded-xl px-4 py-1 font-mono text-xl font-bold tracking-wider text-amber-700 shadow-inner">
                       {formatTime(remainingSeconds)}
                     </div>
                   </div>
@@ -279,7 +327,7 @@ export const AccountPicker: React.FC = () => {
 
               {/* PIN INPUT */}
               <div className="relative">
-                <Key className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${isLocked ? 'text-gray-300' : 'text-gray-400'}`} />
+                <Key className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${isLocked ? 'text-stone-300' : 'text-stone-400'}`} />
                 <input
                   type="password"
                   disabled={isLocked || isAuthenticating}
@@ -289,19 +337,19 @@ export const AccountPicker: React.FC = () => {
                   placeholder={isLocked ? '••••••' : '6-Digit PIN'}
                   autoFocus={!isLocked}
                   aria-label="6-Digit Terminal PIN"
-                  className={`w-full h-14 border rounded-xl pl-12 pr-4 text-center text-2xl tracking-[0.5em] font-mono transition-all outline-none ${
+                  className={`w-full h-12 border rounded-xl pl-12 pr-4 text-center text-xl tracking-[0.5em] font-mono transition-all outline-none ${
                     isLocked
-                      ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-60'
-                      : 'bg-[#F8F9FA] border-gray-200 text-gray-900 focus:border-[#c85a32] focus:ring-1 focus:ring-[#c85a32] placeholder:text-gray-400'
+                      ? 'bg-stone-100 border-stone-200 text-stone-400 cursor-not-allowed opacity-60'
+                      : 'bg-stone-50 border-stone-200 text-stone-900 focus:border-[#C85A32] focus:bg-white focus:ring-2 focus:ring-[#C85A32]/20 placeholder:text-stone-400'
                   }`}
                 />
               </div>
 
               {/* STANDARD NON-LOCKOUT ERROR */}
               {!isLocked && error && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 animate-shake">
-                  <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5">
-                    <span className="text-[10px] font-bold text-white">!</span>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2.5 animate-auth-fade">
+                  <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5 text-white font-bold text-[10px]">
+                    !
                   </div>
                   <p className="text-xs text-red-600 font-medium leading-relaxed">{error}</p>
                 </div>
@@ -312,37 +360,37 @@ export const AccountPicker: React.FC = () => {
                 onClick={handleLogin}
                 disabled={isLocked || isAuthenticating || pin.length !== 6}
                 aria-disabled={isLocked || isAuthenticating || pin.length !== 6}
-                className={`w-full h-14 font-bold rounded-xl flex items-center justify-center gap-3 transition-all ${
+                className={`w-full h-12 font-bold rounded-xl flex items-center justify-center gap-2.5 text-sm transition-all ${
                   isLocked
-                    ? 'bg-gray-100 border border-gray-200 text-gray-400 cursor-not-allowed opacity-60'
-                    : 'bg-[#c85a32] hover:bg-[#b84e27] disabled:bg-gray-200 disabled:text-gray-400 text-white shadow-sm active:scale-[0.98] cursor-pointer'
+                    ? 'bg-stone-100 border border-stone-200 text-stone-400 cursor-not-allowed opacity-60'
+                    : 'bg-[#C85A32] hover:bg-[#B84E27] disabled:bg-stone-200 disabled:text-stone-400 text-white shadow-xs active:scale-[0.98] cursor-pointer'
                 }`}
               >
                 {isAuthenticating ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 ) : isLocked ? (
                   <>
-                    <Lock className="w-5 h-5 text-gray-400" />
+                    <Lock className="w-4 h-4 text-stone-400" />
                     <span>Locked ({formatTime(remainingSeconds)})</span>
                   </>
                 ) : (
                   <>
-                    <ShieldCheck className="w-5 h-5" />
+                    <ShieldCheck className="w-4 h-4" />
                     <span>Authorize Terminal</span>
                   </>
                 )}
               </button>
               
-              <div className="flex justify-center gap-1 mt-4">
+              <div className="flex justify-center gap-1.5 mt-3">
                 {[...Array(6)].map((_, i) => (
                   <div
                     key={i}
-                    className={`w-3 h-3 rounded-full border transition-all duration-200 ${
+                    className={`w-2.5 h-2.5 rounded-full border transition-all duration-200 ${
                       isLocked
-                        ? 'bg-transparent border-gray-200'
+                        ? 'bg-transparent border-stone-200'
                         : i < pin.length
-                        ? 'bg-[#c85a32] border-[#c85a32] scale-110'
-                        : 'bg-transparent border-gray-300'
+                        ? 'bg-[#C85A32] border-[#C85A32] scale-110'
+                        : 'bg-transparent border-stone-300'
                     }`}
                   ></div>
                 ))}
@@ -357,4 +405,6 @@ export const AccountPicker: React.FC = () => {
       </div>
     </div>
   );
+
+  return createPortal(content, document.body);
 };
