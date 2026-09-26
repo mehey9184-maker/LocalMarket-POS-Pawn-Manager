@@ -148,7 +148,8 @@ export const AccountPicker: React.FC = () => {
 
   const isLocked = remainingSeconds > 0;
 
-  const getRoleLabel = (role: string) => {
+  const getRoleLabel = (role: string | null | undefined) => {
+    if (!role) return 'Staff';
     switch (role) {
       case 'owner': return 'Owner';
       case 'manager': return 'Manager';
@@ -203,9 +204,11 @@ export const AccountPicker: React.FC = () => {
     }
   };
 
-  const getInitials = (name: string) => {
+  const getInitials = (name: string | null | undefined) => {
+    if (!name) return 'ST';
     return name
       .split(' ')
+      .filter(Boolean)
       .map(n => n[0])
       .join('')
       .toUpperCase()
@@ -218,7 +221,7 @@ export const AccountPicker: React.FC = () => {
     <div 
       className={isSwitchingAccount 
         ? "fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-stone-50 p-6 animate-auth-fade"
-        : "fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md overflow-y-auto animate-auth-fade"
+        : "fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-stone-50/95 backdrop-blur-md p-6 overflow-y-auto animate-auth-fade"
       }
       onClick={() => !isSwitchingAccount && setIsAccountPickerOpen(false)}
     >
@@ -531,5 +534,6 @@ export const AccountPicker: React.FC = () => {
     </div>
   );
 
+  if (typeof document === 'undefined') return null;
   return createPortal(content, document.body);
 };
