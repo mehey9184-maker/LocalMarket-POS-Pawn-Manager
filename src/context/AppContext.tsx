@@ -510,8 +510,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     receiptType: ReceiptDelivery,
     customerMobile?: string
   ): Promise<SaleTransaction> => {
-    const subtotal = total;
-    const vatAmount = total * 0.15;
+    const isVatRegistered = Boolean(shopProfile?.vat_number && shopProfile.vat_number.trim().length > 0);
+    const vatRate = isVatRegistered ? 0.15 : 0;
+    const vatAmount = isVatRegistered ? (total - (total / (1 + vatRate))) : 0;
+    const subtotal = total - vatAmount;
+
     const res = await completeAtomicCheckout({
       cart: [...cart],
       subtotal,

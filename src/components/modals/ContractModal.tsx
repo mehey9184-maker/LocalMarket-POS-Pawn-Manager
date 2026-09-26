@@ -17,7 +17,15 @@ export const ContractModal: React.FC = () => {
   };
 
   const handleWhatsApp = () => {
-    showToast('Contract Dispatched', `Legal agreement link sent to ${loan.customerMobile}`, 'success');
+    const cleanNum = loan.customerMobile?.replace(/\D/g, '') || '';
+    const text = encodeURIComponent(`LocalMarket Statutory Agreement for Ticket ${loan.ticketNumber}. Amount: R${loan.principal}. Expiry: ${loan.expiryDate}`);
+    const url = cleanNum ? `https://wa.me/${cleanNum}?text=${text}` : `https://wa.me/?text=${text}`;
+    const win = window.open(url, '_blank');
+    if (win) {
+      showToast('Opening WhatsApp', `Launching WhatsApp handoff for ticket ${loan.ticketNumber}...`, 'info');
+    } else {
+      showToast('Popup Blocked', 'Please allow popups to open WhatsApp.', 'amber');
+    }
   };
 
   return (

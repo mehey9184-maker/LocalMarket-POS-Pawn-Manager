@@ -72,6 +72,7 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const createLoan = async (loanData: Omit<PawnLoan, 'id'>) => {
     if (!shopId) throw new Error('Cannot create loan without active shop context.');
+    if (!isAtLeastSeniorCashier) throw new Error('Unauthorized: Senior Cashier or higher authority required for pawn operations.');
     const id = crypto.randomUUID();
     const newLoan = { ...loanData, id, shopId };
     await db.loans.add(newLoan);
@@ -80,6 +81,7 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateLoan = async (id: string, updates: Partial<PawnLoan>) => {
+    if (!isAtLeastSeniorCashier) throw new Error('Unauthorized: Senior Cashier or higher authority required for pawn operations.');
     const loan = await db.loans.get(id);
     if (!loan || loan.shopId !== shopId) {
       throw new Error('Access Denied: Loan record does not belong to this shop.');
@@ -95,6 +97,7 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const redeemLoan = async (ticketNumber: string, amount: number) => {
     if (!shopId) return { success: false, error: 'No active shop context.' };
+    if (!isAtLeastSeniorCashier) return { success: false, error: 'Unauthorized: Senior Cashier or higher authority required for pawn operations.' };
     return await db.transaction('rw', db.loans, db.inventory, db.syncLogs, async () => {
       const loan = await db.loans.where('shopId').equals(shopId).and(l => l.ticketNumber === ticketNumber).first();
       if (!loan) return { success: false, error: 'Loan not found' };
@@ -136,6 +139,7 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const extendLoan = async (ticketNumber: string, fee: number) => {
     if (!shopId) return { success: false, error: 'No active shop context.' };
+    if (!isAtLeastSeniorCashier) return { success: false, error: 'Unauthorized: Senior Cashier or higher authority required for pawn operations.' };
     return await db.transaction('rw', db.loans, db.syncLogs, async () => {
       const loan = await db.loans.where('shopId').equals(shopId).and(l => l.ticketNumber === ticketNumber).first();
       if (!loan) return { success: false, error: 'Loan not found' };
@@ -168,6 +172,7 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const archiveLoan = async (id: string) => {
+    if (!isAtLeastSeniorCashier) throw new Error('Unauthorized: Senior Cashier or higher authority required for pawn operations.');
     const loan = await db.loans.get(id);
     if (!loan || loan.shopId !== shopId) {
       throw new Error('Access Denied: Loan record does not belong to this shop.');

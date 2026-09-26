@@ -16,6 +16,23 @@ import {
   sellerReversalsApi,
   shopProfilesApi 
 } from './supabaseApi';
+import { storageService } from './storageService';
+
+async function ensureRemoteImage(imageUrl: string | undefined | null, shopId: string, itemId: string): Promise<string> {
+  if (!imageUrl || !imageUrl.startsWith('data:image/')) {
+    return imageUrl || '';
+  }
+  try {
+    const res = await storageService.uploadItemImage(imageUrl, shopId, itemId);
+    if (res.imageUrl && !res.imageUrl.startsWith('data:image/')) {
+      await db.inventory.update(itemId, { imageUrl: res.imageUrl });
+      return res.imageUrl;
+    }
+  } catch (err) {
+    console.warn('Failed to upload image to storage during sync, clearing base64 from cloud payload:', err);
+  }
+  return '';
+}
 
 let activeSyncPromise: Promise<{ processed: number; successful: number; failed: number }> | null = null;
 
@@ -162,7 +179,8 @@ export const SyncService = {
               throw new Error(priceRes.error || 'Server rejected offline price update');
             }
           } else {
-            const row = shopItemsApi.mapInventoryItemToRow(payload, shopId);
+            const cleanImageUrl = await ensureRemoteImage(payload.imageUrl, shopId, log.entityId);
+            const row = shopItemsApi.mapInventoryItemToRow({ ...payload, imageUrl: cleanImageUrl }, shopId);
             await shopItemsApi.upsertItem(row);
           }
           break;
@@ -182,11 +200,17 @@ export const SyncService = {
 
         case 'buyAcquisition': {
           const payload = log.payload;
+          const sanitizedItems = await Promise.all(
+            (payload.items || []).map(async (item: any) => ({
+              ...item,
+              image_url: await ensureRemoteImage(item.image_url, shopId, item.id || log.entityId)
+            }))
+          );
           const rpcRes = await sellerTransactionsApi.completeBuyAcquisitionRpc({
             transactionId: payload.transactionId || log.entityId,
             transactionNumber: payload.transactionNumber,
             sellerId: payload.sellerId,
-            items: payload.items,
+            items: sanitizedItems,
             totalAmount: payload.totalAmount,
             paymentMethod: payload.paymentMethod,
             paymentStatus: payload.paymentStatus,
@@ -207,6 +231,7 @@ export const SyncService = {
 
         case 'pawnIntake': {
           const payload = log.payload;
+          const cleanImageUrl = await ensureRemoteImage(payload.itemImageUrl, shopId, payload.itemId || log.entityId);
           const rpcRes = await pawnLoansApi.completePawnIntakeRpc({
             loanId: payload.loanId || log.entityId,
             ticketNumber: payload.ticketNumber,
@@ -219,7 +244,7 @@ export const SyncService = {
             itemModel: payload.itemModel,
             serialOrImei: payload.serialOrImei,
             condition: payload.condition,
-            itemImageUrl: payload.itemImageUrl,
+            itemImageUrl: cleanImageUrl,
             specs: payload.specs,
             stockLocation: payload.stockLocation,
             internalNote: payload.internalNote,

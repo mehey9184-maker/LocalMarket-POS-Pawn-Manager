@@ -34,8 +34,9 @@ const InventoryRow: React.FC<{
   onPrint: (item: InventoryItem) => void;
   onPOS: () => void;
   onReverse: (item: any) => void;
+  canViewCostBasis?: boolean;
   style?: React.CSSProperties;
-}> = ({ item, onPrint, onPOS, onReverse, style }) => {
+}> = ({ item, onPrint, onPOS, onReverse, canViewCostBasis = true, style }) => {
   const profit = (item.retailPrice || 0) - (item.costBasis || 0);
   const marginPct = item.retailPrice ? Math.round((profit / item.retailPrice) * 100) : 0;
   const isReversible = item.status !== 'Sold' && item.status !== 'Returned';
@@ -65,7 +66,7 @@ const InventoryRow: React.FC<{
       </div>
 
       <div className="w-28 px-4 py-2 font-mono font-semibold text-gray-700 text-xs">
-        R {item.costBasis.toFixed(2)}
+        {canViewCostBasis ? `R ${item.costBasis.toFixed(2)}` : '•••'}
       </div>
 
       <div className="w-28 px-4 py-2 font-mono font-bold text-gray-900 text-xs">
@@ -73,14 +74,18 @@ const InventoryRow: React.FC<{
       </div>
 
       <div className="w-32 px-4 py-2">
-        <div className="flex items-center gap-1.5">
-          <span className="font-mono text-[11px] font-bold text-emerald-700">R {profit.toFixed(0)}</span>
-          <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
-            marginPct >= 40 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
-          }`}>
-            +{marginPct}%
-          </span>
-        </div>
+        {canViewCostBasis ? (
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-[11px] font-bold text-emerald-700">R {profit.toFixed(0)}</span>
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
+              marginPct >= 40 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+            }`}>
+              +{marginPct}%
+            </span>
+          </div>
+        ) : (
+          <span className="text-gray-400 font-mono text-xs">•••</span>
+        )}
       </div>
 
       <div className="w-32 px-4 py-2">
@@ -133,7 +138,8 @@ const InventoryRow: React.FC<{
 
 export const OutrightBuysLedger: React.FC = () => {
   const { showToast, setActiveTab, currentUserProfile, shopProfile } = useApp();
-  const { isManager, isOwner, users } = useAuth();
+  const { isManager, isOwner, users, isAtLeastSeniorCashier, hasPermission } = useAuth();
+  const canViewCostBasis = isOwner || isManager || isAtLeastSeniorCashier || hasPermission('reports');
   const { inventory } = useInventory();
   const { sapsEntries } = useSaps();
   const { reverseSellerAcquisition } = useSellers();
@@ -160,9 +166,9 @@ export const OutrightBuysLedger: React.FC = () => {
       );
       return {
         ...item,
-        sellerName: sapsMatch ? sapsMatch.customerName : 'Walk-in Seller (Verified)',
-        sellerIdNumber: sapsMatch ? sapsMatch.customerIdNumber : 'RSA ID Verified',
-        sapsRef: sapsMatch ? sapsMatch.entryNumber : 'SAPS-2026-REG',
+        sellerName: sapsMatch ? sapsMatch.customerName : 'Seller Unassigned',
+        sellerIdNumber: sapsMatch ? sapsMatch.customerIdNumber : 'ID Unrecorded',
+        sapsRef: sapsMatch ? sapsMatch.entryNumber : 'SAPS-REG-PENDING',
         sellerTransactionId: (item as any).sellerTransactionId // May be present if modern relational
       };
     });
@@ -265,7 +271,9 @@ export const OutrightBuysLedger: React.FC = () => {
             <span>Capital Invested</span>
             <DollarSign className="w-4 h-4 text-[#C85A32]" />
           </div>
-          <div className="text-xl sm:text-2xl font-black font-mono text-gray-900">R {metrics.totalCost.toLocaleString('en-ZA')}</div>
+          <div className="text-xl sm:text-2xl font-black font-mono text-gray-900">
+            {canViewCostBasis ? `R ${metrics.totalCost.toLocaleString('en-ZA')}` : '•••'}
+          </div>
           <p className="text-[10px] text-gray-500 mt-1 font-mono">{metrics.totalCount} items purchased</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs">
@@ -281,8 +289,10 @@ export const OutrightBuysLedger: React.FC = () => {
             <span>Projected Profit</span>
             <TrendingUp className="w-4 h-4 text-blue-600" />
           </div>
-          <div className="text-xl sm:text-2xl font-black font-mono text-emerald-700">R {metrics.totalProfit.toLocaleString('en-ZA')}</div>
-          <p className="text-[10px] text-blue-600 mt-1 font-mono">{metrics.avgMargin.toFixed(1)}% blended margin</p>
+          <div className="text-xl sm:text-2xl font-black font-mono text-emerald-700">
+            {canViewCostBasis ? `R ${metrics.totalProfit.toLocaleString('en-ZA')}` : '•••'}
+          </div>
+          <p className="text-[10px] text-blue-600 mt-1 font-mono">{canViewCostBasis ? `${metrics.avgMargin.toFixed(1)}% blended margin` : '•••'}</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
@@ -351,6 +361,7 @@ export const OutrightBuysLedger: React.FC = () => {
                       onPrint={handlePrintBarcode} 
                       onPOS={() => setActiveTab('sell')}
                       onReverse={handleStartReversal}
+                      canViewCostBasis={canViewCostBasis}
                       style={style}
                     />
                   )}

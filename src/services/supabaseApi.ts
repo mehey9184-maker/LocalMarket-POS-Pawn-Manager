@@ -575,7 +575,7 @@ export const shopItemsApi = {
       stockLocation: (row as any).stock_location || undefined,
       status: row.status,
       daysInVault: row.days_in_vault,
-      imageUrl: row.image_url || 'https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=600&q=80',
+      imageUrl: row.image_url || '',
       specs: row.specs || undefined,
       pawnTicketId: row.pawn_ticket_id || undefined,
       addedAt: row.added_at,

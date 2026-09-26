@@ -126,7 +126,7 @@ export const BuyPawn: React.FC = () => {
     model: '',
     serialOrImei: '',
     condition: 'Good' as ItemCondition,
-    imageUrl: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&q=80&w=300&h=300',
+    imageUrl: '',
     stockLocation: 'Main Floor Display',
     internalNote: '',
     sourceNote: 'Item was already owned by the shop before LocalMarket onboarding'
@@ -434,7 +434,6 @@ export const BuyPawn: React.FC = () => {
         if (Number(retailPriceInput) === 0) {
           const defaultPrice = itemData.category === 'Fine Jewelry & Gold' ? 3500 : 1500;
           setRetailPriceInput(String(defaultPrice));
-          setCostBasisInput(String(Math.round(defaultPrice * 0.5)));
         }
         setStep('valuation');
       } else {
@@ -681,7 +680,7 @@ export const BuyPawn: React.FC = () => {
       model: '',
       serialOrImei: '',
       condition: 'Good',
-      imageUrl: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&q=80&w=300&h=300',
+      imageUrl: '',
       stockLocation: 'Main Floor Display',
       internalNote: '',
       sourceNote: 'Item was already owned by the shop before LocalMarket onboarding'
@@ -1154,7 +1153,7 @@ export const BuyPawn: React.FC = () => {
       model: '',
       serialOrImei: '',
       condition: 'Good',
-      imageUrl: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&q=80&w=300&h=300',
+      imageUrl: '',
       stockLocation: 'Main Floor Display',
       internalNote: '',
       sourceNote: 'Item was already owned by the shop before LocalMarket onboarding'
@@ -2479,7 +2478,17 @@ export const BuyPawn: React.FC = () => {
                     )}
 
                     <button
-                      onClick={() => showToast('Digital Receipt Sent', 'Receipt sent via WhatsApp', 'info')}
+                      onClick={() => {
+                        const mobile = selectedIdentity?.mobile?.replace(/\D/g, '') || '';
+                        const msg = encodeURIComponent(`LocalMarket Transaction Receipt #${result.assetTag} - ${result.item?.title || 'Transaction'}. Thank you!`);
+                        const url = mobile ? `https://wa.me/${mobile}?text=${msg}` : `https://wa.me/?text=${msg}`;
+                        const win = window.open(url, '_blank');
+                        if (win) {
+                          showToast('Opening WhatsApp', 'Launching WhatsApp handoff...', 'info');
+                        } else {
+                          showToast('Popup Blocked', 'Please allow popups to open WhatsApp.', 'amber');
+                        }
+                      }}
                       className="py-3 px-4 rounded-xl border border-gray-200 text-gray-800 font-semibold text-xs flex items-center justify-center gap-2 hover:bg-gray-50 transition shadow-xs sm:col-span-2"
                     >
                       <Smartphone className="w-4 h-4" />

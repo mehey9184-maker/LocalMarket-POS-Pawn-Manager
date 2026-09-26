@@ -19,7 +19,7 @@ export const ReceiptModal: React.FC = () => {
         ticketNo: sale.receiptNumber,
         items: sale.items.map(ci => ({
           title: ci.item.title,
-          price: ci.item.retailPrice * ci.quantity,
+          price: (ci.overridePrice ?? ci.item.retailPrice) * ci.quantity,
           sn: ci.item.sku // Using SKU as placeholder for SN if not explicit
         })),
         subtotal: sale.total - sale.vatAmount,
@@ -57,18 +57,21 @@ export const ReceiptModal: React.FC = () => {
     }
 
     const storeName = shopProfile?.shop_name || 'LocalMarket';
+    const isVatRegistered = Boolean(shopProfile?.vat_number && shopProfile.vat_number.trim().length > 0);
     const itemsList = sale.items
-      .map(ci => `• ${ci.item.title} (x${ci.quantity}) - R ${(ci.item.retailPrice * ci.quantity).toFixed(2)}`)
+      .map(ci => {
+        const effectivePrice = ci.overridePrice ?? ci.item.retailPrice;
+        return `• ${ci.item.title} (x${ci.quantity}) - R ${(effectivePrice * ci.quantity).toFixed(2)}`;
+      })
       .join('\n');
 
     const message = 
-      `*${storeName.toUpperCase()} — TAX INVOICE / RECEIPT*\n` +
+      `*${storeName.toUpperCase()} — ${isVatRegistered ? 'TAX INVOICE' : 'RECEIPT'}*\n` +
       `Receipt No: ${sale.receiptNumber}\n` +
       `Date: ${sale.timestamp}\n` +
       `Cashier: ${sale.cashier}\n\n` +
       `*ITEMS PURCHASED:*\n${itemsList}\n\n` +
-      `Subtotal (excl. VAT): R ${(sale.total - sale.vatAmount).toFixed(2)}\n` +
-      `VAT (15%): R ${sale.vatAmount.toFixed(2)}\n` +
+      (isVatRegistered ? `Subtotal (excl. VAT): R ${(sale.total - sale.vatAmount).toFixed(2)}\nVAT (15%): R ${sale.vatAmount.toFixed(2)}\n` : `Subtotal: R ${sale.total.toFixed(2)}\n`) +
       `*TOTAL PAID: R ${sale.total.toFixed(2)}*\n` +
       `Tender Method: ${sale.tenderMethod.toUpperCase()}\n` +
       `${sale.change > 0 ? `Change Given: R ${sale.change.toFixed(2)}\n` : ''}\n` +
@@ -116,7 +119,9 @@ export const ReceiptModal: React.FC = () => {
               <p className="text-[10px] text-gray-700">Official POS Terminal</p>
               <p className="text-[9px] text-gray-600">{shopProfile?.address || 'Address Pending'}</p>
               <p className="text-[9px] text-gray-600">SHG Reg: {shopProfile?.saps_dealer_license || 'PENDING'}</p>
-              <p className="text-[9px] font-bold text-black uppercase mt-1">TAX INVOICE / KWITANSI</p>
+              <p className="text-[9px] font-bold text-black uppercase mt-1">
+                {shopProfile?.vat_number ? 'TAX INVOICE / KWITANSI' : 'OFFICIAL RECEIPT / KWITANSI'}
+              </p>
             </div>
 
             {/* Slip Meta */}
@@ -145,32 +150,44 @@ export const ReceiptModal: React.FC = () => {
                 <span>Item</span>
                 <span>Total</span>
               </div>
-              {sale.items.map(ci => (
-                <div key={ci.item.id} className="text-[11px] leading-tight">
-                  <div className="flex justify-between">
-                    <span className="font-bold truncate max-w-[200px]">{ci.item.title}</span>
-                    <span className="font-bold">
-                      R {(ci.item.retailPrice * ci.quantity).toFixed(2)}
-                    </span>
+              {sale.items.map(ci => {
+                const effectivePrice = ci.overridePrice ?? ci.item.retailPrice;
+                return (
+                  <div key={ci.item.id} className="text-[11px] leading-tight">
+                    <div className="flex justify-between">
+                      <span className="font-bold truncate max-w-[200px]">{ci.item.title}</span>
+                      <span className="font-bold">
+                        R {(effectivePrice * ci.quantity).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[9px] text-gray-600">
+                      <span>SKU: {ci.item.sku} ({ci.quantity} x R {effectivePrice.toFixed(2)})</span>
+                      <span>{ci.item.acquisitionType === 'Forfeited' ? 'Pawn Forfeit' : 'Second-Hand'}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-[9px] text-gray-600">
-                    <span>SKU: {ci.item.sku} ({ci.quantity} x R {ci.item.retailPrice.toFixed(2)})</span>
-                    <span>{ci.item.acquisitionType === 'Forfeited' ? 'Pawn Forfeit' : 'Second-Hand'}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Totals */}
             <div className="space-y-1 text-xs border-b border-black/20 pb-2">
-              <div className="flex justify-between text-gray-700">
-                <span>Subtotal (Excl. VAT):</span>
-                <span>R {(sale.total - sale.vatAmount).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-gray-700">
-                <span>RSA VAT (15% Included):</span>
-                <span>R {sale.vatAmount.toFixed(2)}</span>
-              </div>
+              {sale.vatAmount > 0 ? (
+                <>
+                  <div className="flex justify-between text-gray-700">
+                    <span>Subtotal (Excl. VAT):</span>
+                    <span>R {(sale.total - sale.vatAmount).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-700">
+                    <span>RSA VAT (15% Included):</span>
+                    <span>R {sale.vatAmount.toFixed(2)}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between text-gray-700">
+                  <span>Subtotal:</span>
+                  <span>R {sale.total.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-sm font-black text-black pt-1 border-t border-black/20">
                 <span>TOTAL PAID:</span>
                 <span>R {sale.total.toFixed(2)}</span>
