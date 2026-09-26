@@ -22,9 +22,8 @@ interface SyncContextType {
   ) => Promise<void>;
 }
 
-const isUuidOrTestShop = (id: string | null | undefined): boolean => {
+const isUuid = (id: string | null | undefined): boolean => {
   if (!id) return false;
-  if (id === 'shop-101') return true;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 };
 
@@ -51,7 +50,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
     auditQueue();
   }, []);
 
-  const isReadyForAutoSync = isQueueAudited && !authLoading && !!user && !!shopId && isUuidOrTestShop(shopId);
+  const isReadyForAutoSync = isQueueAudited && !authLoading && !!user && !!shopId && isUuid(shopId);
   const currentShopId = shopId;
 
   const allLogs = (useLiveQuery(
@@ -122,7 +121,7 @@ export const SyncProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const triggerSync = useCallback(async () => {
     if (isSyncing || !isOnline || !isSupabaseConfigured()) return;
-    if (!currentShopId || !isUuidOrTestShop(currentShopId)) {
+    if (!currentShopId || !isUuid(currentShopId)) {
       console.warn('[SyncContext] Aborting sync: shop context is invalid or not yet established.');
       return;
     }

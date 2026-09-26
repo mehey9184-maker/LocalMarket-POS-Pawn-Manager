@@ -294,14 +294,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [cart]);
 
   const updateBusinessRules = useCallback(async (updates: Partial<BusinessRules>, reason?: string) => {
+    const isOwner = currentUserProfile?.role === 'owner' || currentUserProfile?.role === 'admin';
+    if (!isOwner) {
+      showToast('Unauthorized', 'Owner authority required to modify business rules.', 'error');
+      return;
+    }
+
     const nextRules = { ...businessRules, ...updates };
     const targetShopId = currentUserProfile?.shop_id;
     if (!targetShopId) return;
 
-    const isOwner = currentUserProfile?.role === 'owner';
-
     // 1. Online: when authenticated as owner, attempt server persistence first
-    if (navigator.onLine && isOwner) {
+    if (navigator.onLine) {
       try {
         const res = await shopProfilesApi.updateShopBusinessRulesRpc(nextRules, reason);
         if (res.success) {
@@ -325,7 +329,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // 2. Offline / Fallback:
+    // 2. Offline / Fallback (Owner ONLY):
     // Update local state/cache for offline operational continuity
     setBusinessRules(nextRules);
     localStorage.setItem(`lm_business_rules_${targetShopId}`, JSON.stringify(nextRules));
@@ -346,14 +350,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [businessRules, currentUserProfile, queueSyncAction, showToast]);
 
   const updateShopProfile = useCallback(async (updates: Partial<ShopProfile>) => {
+    const canManage = currentUserProfile?.role === 'owner' || currentUserProfile?.role === 'manager' || currentUserProfile?.role === 'admin';
+    if (!canManage) {
+      showToast('Unauthorized', 'Manager or Owner authority required to update store profile.', 'error');
+      return;
+    }
+
     const next = { ...shopProfile, ...updates };
     const targetShopId = currentUserProfile?.shop_id;
     if (!targetShopId) return;
 
-    const canManage = currentUserProfile?.role === 'owner' || currentUserProfile?.role === 'manager';
-
     // 1. Online: when authenticated with management privileges, attempt server persistence first
-    if (navigator.onLine && canManage) {
+    if (navigator.onLine) {
       try {
         const payload: any = {};
         if (updates.shop_name !== undefined) payload.shop_name = updates.shop_name;

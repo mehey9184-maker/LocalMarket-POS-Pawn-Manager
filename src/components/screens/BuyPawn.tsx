@@ -159,7 +159,11 @@ export const BuyPawn: React.FC = () => {
         file.name
       );
       setItemData(prev => ({ ...prev, imageUrl: uploadRes.imageUrl }));
-      showToast('Photo Attached', 'Item photograph attached successfully.', 'success');
+      if (uploadRes.imageUrl?.startsWith('data:image/') || uploadRes.storageKey?.startsWith('local/')) {
+        showToast('Photo Attached Locally', 'Photograph attached locally — cloud upload pending.', 'info');
+      } else {
+        showToast('Photo Uploaded', 'Photograph uploaded to Backblaze B2 storage.', 'success');
+      }
     } catch (err: any) {
       showToast('Upload Error', err?.message || 'Could not process photograph', 'error');
     } finally {
@@ -175,7 +179,7 @@ export const BuyPawn: React.FC = () => {
 
   // Valuation & Pricing State
   const [agreedOffer, setAgreedOffer] = useState<number>(0); // Payout / Principal
-  const [costBasisInput, setCostBasisInput] = useState<string>('0');
+  const [costBasisInput, setCostBasisInput] = useState<string>('');
   const [retailPriceInput, setRetailPriceInput] = useState<string>('0');
   const [suggestedRetail, setSuggestedRetail] = useState<number>(0);
   const [existingStockStatus, setExistingStockStatus] = useState<ItemStatus>('Retail Floor');
@@ -611,7 +615,8 @@ export const BuyPawn: React.FC = () => {
   // 1. FINALISE EXISTING STOCK (No Seller, No Customer, No SAPS Form 21, No Pawn Loan)
   const handleFinalizeExistingStock = async () => {
     const sku = generateUniqueSku(s => inventory.some(i => i.sku === s));
-    const costBasisNum = parseFloat(costBasisInput) || 0;
+    const rawCost = costBasisInput.trim();
+    const costBasisNum = rawCost !== '' && !isNaN(parseFloat(rawCost)) ? parseFloat(rawCost) : undefined;
     const retailPriceNum = parseFloat(retailPriceInput) || 0;
 
     const newItemPayload: Omit<InventoryItem, 'id' | 'addedAt'> = {
@@ -623,7 +628,7 @@ export const BuyPawn: React.FC = () => {
       serialOrImei: itemData.serialOrImei.trim() || 'N/A',
       condition: itemData.condition,
       acquisitionType: 'Existing Stock',
-      costBasis: costBasisNum,
+      costBasis: costBasisNum as any,
       retailPrice: retailPriceNum,
       status: existingStockStatus,
       stockLocation: itemData.stockLocation.trim() || 'Main Floor Display',
@@ -1069,6 +1074,26 @@ export const BuyPawn: React.FC = () => {
           if (rpcRes.success) {
             syncLogStatus = 'completed';
             syncedAt = new Date().toISOString();
+            if (rpcRes.data) {
+              const serverLoan = Array.isArray(rpcRes.data) ? rpcRes.data[0] : rpcRes.data;
+              if (serverLoan && typeof serverLoan === 'object') {
+                if (serverLoan.monthly_interest !== undefined && serverLoan.monthly_interest !== null) {
+                  loanRecord.monthlyInterest = Number(serverLoan.monthly_interest);
+                }
+                if (serverLoan.monthly_storage_admin_fee !== undefined && serverLoan.monthly_storage_admin_fee !== null) {
+                  loanRecord.monthlyStorageAdminFee = Number(serverLoan.monthly_storage_admin_fee);
+                }
+                if (serverLoan.total_redemption_amount !== undefined && serverLoan.total_redemption_amount !== null) {
+                  loanRecord.totalRedemptionAmount = Number(serverLoan.total_redemption_amount);
+                }
+                if (serverLoan.expiry_date) {
+                  loanRecord.expiryDate = String(serverLoan.expiry_date);
+                }
+                if (serverLoan.days_remaining !== undefined && serverLoan.days_remaining !== null) {
+                  loanRecord.daysRemaining = Number(serverLoan.days_remaining);
+                }
+              }
+            }
           } else {
             const isNetworkError = (msg?: string) => {
               if (!msg) return false;
@@ -1886,6 +1911,15 @@ export const BuyPawn: React.FC = () => {
                               alt="Item Intake Preview"
                               className="w-full h-full object-cover rounded-xl"
                             />
+                            {itemData.imageUrl.startsWith('data:image/') ? (
+                              <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-xs">
+                                Attached Locally (Upload Pending)
+                              </span>
+                            ) : (
+                              <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-xs">
+                                Uploaded to Storage
+                              </span>
+                            )}
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center text-white text-xs font-semibold gap-1.5">
                               <Upload className="w-4 h-4" />
                               <span>Replace photo</span>

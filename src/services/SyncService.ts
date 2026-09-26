@@ -29,22 +29,15 @@ async function ensureRemoteImage(imageUrl: string | undefined | null, shopId: st
       return res.imageUrl;
     }
   } catch (err) {
-    console.warn('Failed to upload image to storage during sync, clearing base64 from cloud payload:', err);
+    console.warn('Failed to upload image to storage during sync:', err);
   }
-  return '';
+  throw new Error('Photo upload to Backblaze B2 is pending/failed; holding cloud sync until image is uploaded.');
 }
 
 let activeSyncPromise: Promise<{ processed: number; successful: number; failed: number }> | null = null;
 
 const isUuid = (id: string | null | undefined): boolean => {
   if (!id) return false;
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(id);
-};
-
-const isUuidOrTestShop = (id: string | null | undefined): boolean => {
-  if (!id) return false;
-  if (id === 'shop-101') return true;
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(id);
 };
@@ -108,7 +101,7 @@ export const SyncService = {
       return { success: false, error: 'Supabase is not configured' };
     }
 
-    if (!shopId || !isUuidOrTestShop(shopId)) {
+    if (!shopId || !isUuid(shopId)) {
       return { success: false, error: 'DETERMINISTIC_RECOVERABLE: Missing or invalid authoritative shop context for synchronization.' };
     }
 
@@ -522,7 +515,7 @@ export const SyncService = {
       return activeSyncPromise;
     }
 
-    if (!shopId || !isUuidOrTestShop(shopId)) {
+    if (!shopId || !isUuid(shopId)) {
       console.error('[SyncService] Aborting sync: shopId is mandatory.');
       return { processed: 0, successful: 0, failed: 0 };
     }
