@@ -80,6 +80,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isSwitchingRef = useRef(false);
   isSwitchingRef.current = switchState !== 'idle';
 
+  const switchOperationRef = useRef(false);
+
   const fetchProfile = async (userId: string) => {
     const requestId = ++profileRequestSeq.current;
     try {
@@ -495,6 +497,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'A switch is already in progress' };
     }
 
+    if (switchOperationRef.current) {
+      return { success: false, error: 'A switch is already in progress' };
+    }
+
+    switchOperationRef.current = true;
+
     setSwitchState('authenticating');
     setSwitchError(null);
     setSwitchTarget({
@@ -526,6 +534,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSwitchState('error');
       setSwitchError(errMsg);
       return { success: false, error: errMsg };
+    } finally {
+      switchOperationRef.current = false;
     }
   };
 
@@ -533,19 +543,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!switchTarget) {
       return { success: false, error: 'No active switch target to retry' };
     }
+    if (switchOperationRef.current) {
+      return { success: false, error: 'A switch is already in progress' };
+    }
+
+    switchOperationRef.current = true;
     setSwitchError(null);
-    return await completeSwitchSteps(
-      switchTarget.targetStaffId,
-      switchTarget.targetShopId,
-      switchTarget.cashierCode
-    );
+    try {
+      return await completeSwitchSteps(
+        switchTarget.targetStaffId,
+        switchTarget.targetShopId,
+        switchTarget.cashierCode
+      );
+    } finally {
+      switchOperationRef.current = false;
+    }
   };
 
   const cancelSwitchAccount = async () => {
-    setSwitchState('idle');
-    setSwitchTarget(null);
-    setSwitchError(null);
-    await logout(); // Logout of partial session completely to secure terminal
+    if (switchOperationRef.current) {
+      console.warn("Cancel ignored: switch operation in progress");
+      return;
+    }
+    switchOperationRef.current = true;
+    try {
+      // Keep switchState as 'error' during the async logout to block the terminal, per Issue 2
+      await logout();
+    } finally {
+      switchOperationRef.current = false;
+    }
   };
 
   const resetSwitchState = () => {
