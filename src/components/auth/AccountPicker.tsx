@@ -57,6 +57,34 @@ export const AccountPicker: React.FC = () => {
     }
   }, [isAccountPickerOpen]);
 
+  // Timer effect that counts down once per second and cleans up on unmount or zero
+  useEffect(() => {
+    if (!lockoutUntil) {
+      setRemainingSeconds(0);
+      return;
+    }
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const diff = Math.max(0, Math.ceil((lockoutUntil - now) / 1000));
+      setRemainingSeconds(diff);
+
+      if (diff <= 0) {
+        setLockoutUntil(null);
+        setError(null);
+        if (selectedStaff) {
+          try {
+            sessionStorage.removeItem(`pin_lockout_${selectedStaff.id}`);
+          } catch {}
+        }
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutUntil, selectedStaff]);
+
   if (!isAccountPickerOpen) return null;
 
   // Format seconds as MM:SS
@@ -117,34 +145,6 @@ export const AccountPicker: React.FC = () => {
     setLockoutUntil(null);
     setRemainingSeconds(0);
   };
-
-  // Timer effect that counts down once per second and cleans up on unmount or zero
-  useEffect(() => {
-    if (!lockoutUntil) {
-      setRemainingSeconds(0);
-      return;
-    }
-
-    const updateTimer = () => {
-      const now = Date.now();
-      const diff = Math.max(0, Math.ceil((lockoutUntil - now) / 1000));
-      setRemainingSeconds(diff);
-
-      if (diff <= 0) {
-        setLockoutUntil(null);
-        setError(null);
-        if (selectedStaff) {
-          try {
-            sessionStorage.removeItem(`pin_lockout_${selectedStaff.id}`);
-          } catch {}
-        }
-      }
-    };
-
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [lockoutUntil, selectedStaff]);
 
   const isLocked = remainingSeconds > 0;
 
