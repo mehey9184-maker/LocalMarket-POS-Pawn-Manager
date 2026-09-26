@@ -29,8 +29,24 @@ export function useTerminalSession() {
     }
 
     try {
-      const localSession = await terminalService.getCurrentLocalSession();
+      let localSession = await terminalService.getCurrentLocalSession();
       if (currentSeq !== initSeq.current) return;
+
+      if (localSession) {
+        const isIdentityMatch = 
+          localSession.userId === user.id &&
+          localSession.shopId === profile.shop_id &&
+          localSession.deviceId === terminalService.getDeviceId();
+
+        if (!isIdentityMatch) {
+          console.warn("Stale local terminal session detected. Discarding session belonging to user:", localSession.userId);
+          await terminalService.clearLocalSession();
+          if (currentSeq === initSeq.current) {
+            setSession(null);
+          }
+          localSession = null;
+        }
+      }
 
       if (localSession && localSession.status === 'active') {
         // Render local session immediately so UI never hangs on network latency

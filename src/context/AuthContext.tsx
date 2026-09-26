@@ -357,6 +357,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    try {
+      const { terminalService } = await import('../services/terminalService');
+      await terminalService.clearLocalSession();
+    } catch (err) {
+      console.warn('Failed to clear local terminal session during logout:', err);
+    }
     await authApi.signOut();
     setSession(null);
     setUser(null);
