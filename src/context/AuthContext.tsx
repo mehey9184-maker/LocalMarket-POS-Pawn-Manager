@@ -514,9 +514,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const stepRes = await completeSwitchSteps(params.targetStaffId, params.targetShopId, params.cashierCode);
       if (!stepRes.success) {
-        setSwitchState('idle');
-        setSwitchTarget(null);
-        await authApi.signOut(); // logout of partial session completely to secure terminal
+        // Do NOT immediately destroy the recovery state, remain authenticated to target to allow retry, per Requirement 6
         return { success: false, error: stepRes.error };
       }
 
@@ -524,10 +522,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     } catch (err: any) {
       console.error("Account switch pipeline failed:", err);
-      setSwitchState('idle');
-      setSwitchTarget(null);
-      await authApi.signOut(); // logout of partial session completely to secure terminal
-      return { success: false, error: err?.message || 'Authentication failed' };
+      const errMsg = err?.message || 'Authentication failed';
+      setSwitchState('error');
+      setSwitchError(errMsg);
+      return { success: false, error: errMsg };
     }
   };
 

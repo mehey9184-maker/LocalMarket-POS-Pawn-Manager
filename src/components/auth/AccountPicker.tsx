@@ -15,7 +15,12 @@ export const AccountPicker: React.FC = () => {
     logout,
     isSwitchingAccount,
     resetSwitchState,
-    switchAccountWithPin
+    switchAccountWithPin,
+    switchState,
+    switchError,
+    switchTarget,
+    retrySwitchAccount,
+    cancelSwitchAccount
   } = useAuth();
 
   const { showToast } = useApp();
@@ -218,33 +223,110 @@ export const AccountPicker: React.FC = () => {
       onClick={() => !isSwitchingAccount && setIsAccountPickerOpen(false)}
     >
       {isSwitchingAccount ? (
-        <div className="text-center space-y-6 flex flex-col items-center max-w-md w-full animate-auth-fade">
-          <div className="w-24 h-24 rounded-full bg-white border border-stone-200 flex items-center justify-center overflow-hidden shadow-md">
-            {(selectedStaff || currentProfile)?.avatar_url ? (
-              <img src={(selectedStaff || currentProfile)?.avatar_url || undefined} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-3xl font-bold text-stone-600">
-                {getInitials((selectedStaff || currentProfile)?.full_name || 'Staff')}
-              </span>
-            )}
-          </div>
-          
-          <div className="space-y-3">
-            <h1 className="font-headline font-bold text-3xl text-stone-900 tracking-tight">
-              Switching account
-            </h1>
-            <p className="text-stone-600 text-base">
-              Signing you in as <span className="font-bold">{(selectedStaff || currentProfile)?.full_name}</span>…
-            </p>
-            <p className="text-stone-400 text-sm mt-1">
-              Please wait while this terminal is secured.
-            </p>
-          </div>
+        switchState === 'error' ? (
+          <div className="text-center space-y-6 flex flex-col items-center max-w-md w-full animate-auth-fade" onClick={(e) => e.stopPropagation()}>
+            <div className="w-20 h-20 rounded-full bg-red-50 border border-red-100 flex items-center justify-center shrink-0 text-[#C85A32] shadow-sm">
+              <Lock className="w-10 h-10 text-[#C85A32]" />
+            </div>
 
-          <div className="flex justify-center pt-6">
-            <Loader2 className="w-10 h-10 text-[#C85A32] animate-spin" />
+            <div className="space-y-3">
+              <h1 className="font-headline font-bold text-2xl text-stone-900 tracking-tight">
+                We couldn't finish switching accounts
+              </h1>
+              <div className="text-sm text-stone-600 space-y-1">
+                <p>Signing in as:</p>
+                <p className="font-bold text-stone-900 text-base">{switchTarget?.staffName || selectedStaff?.full_name || 'Operator'}</p>
+              </div>
+              <div className="bg-red-50/50 border border-red-100 rounded-2xl p-4 mt-2 max-w-sm mx-auto text-left">
+                <p className="text-xs text-[#C85A32] font-semibold uppercase tracking-wider mb-1">Error Details</p>
+                <p className="text-xs text-stone-600 font-medium leading-relaxed">
+                  {switchError || 'An unexpected error occurred during terminal session security.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 w-full pt-6">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const res = await retrySwitchAccount();
+                    if (res && res.success) {
+                      showToast('Welcome Back', `Logged in as ${switchTarget?.staffName || selectedStaff?.full_name || 'Operator'}`, 'success');
+                      setIsAccountPickerOpen(false);
+                      setSelectedStaff(null);
+                      setPin('');
+                      setLockoutUntil(null);
+                      setRemainingSeconds(0);
+                      resetSwitchState();
+                    } else {
+                      showToast('Switch Failed', res?.error || 'Failed to complete switch', 'error');
+                    }
+                  } catch (err: any) {
+                    showToast('Retry Failed', err.message || 'Verification failed again', 'error');
+                  }
+                }}
+                disabled={isAuthenticating}
+                className="flex-1 bg-[#C85A32] hover:bg-[#B84E27] disabled:bg-stone-200 disabled:text-stone-400 text-white font-bold h-12 rounded-xl transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isAuthenticating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <span>Retry Switch</span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await cancelSwitchAccount();
+                    setIsAccountPickerOpen(false);
+                    setSelectedStaff(null);
+                    setPin('');
+                  } catch (err: any) {
+                    showToast('Error', err.message || 'Failed to cancel', 'error');
+                  }
+                }}
+                disabled={isAuthenticating}
+                className="flex-1 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-700 font-semibold h-12 rounded-xl border border-stone-200 transition-colors cursor-pointer"
+              >
+                Cancel &amp; Sign Out
+              </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="text-center space-y-6 flex flex-col items-center max-w-md w-full animate-auth-fade">
+            <div className="w-24 h-24 rounded-full bg-white border border-stone-200 flex items-center justify-center overflow-hidden shadow-md">
+              {(selectedStaff || currentProfile)?.avatar_url ? (
+                <img src={(selectedStaff || currentProfile)?.avatar_url || undefined} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-3xl font-bold text-stone-600">
+                  {getInitials((selectedStaff || currentProfile)?.full_name || 'Staff')}
+                </span>
+              )}
+            </div>
+            
+            <div className="space-y-3">
+              <h1 className="font-headline font-bold text-3xl text-stone-900 tracking-tight">
+                Switching account
+              </h1>
+              <p className="text-stone-600 text-base">
+                Signing you in as <span className="font-bold">{(selectedStaff || currentProfile)?.full_name}</span>…
+              </p>
+              <p className="text-stone-400 text-sm mt-1">
+                {switchState === 'authenticating' && 'Authorizing terminal access…'}
+                {switchState === 'loading_profile' && 'Loading operator profile…'}
+                {switchState === 'acquiring_terminal' && 'Securing this terminal…'}
+                {switchState === 'ready' && 'Terminal secured successfully.'}
+                {switchState === 'idle' && 'Please wait while this terminal is secured.'}
+              </p>
+            </div>
+
+            <div className="flex justify-center pt-6">
+              <Loader2 className="w-10 h-10 text-[#C85A32] animate-spin" />
+            </div>
+          </div>
+        )
       ) : (
         <div 
           className="w-full max-w-2xl bg-white text-gray-900 border border-stone-200 rounded-3xl p-6 sm:p-8 shadow-2xl relative my-auto max-h-[90vh] overflow-y-auto"
