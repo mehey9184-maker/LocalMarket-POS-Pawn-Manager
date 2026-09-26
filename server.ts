@@ -538,36 +538,56 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
   app.post("/api/auth/login-with-pin", async (req, res) => {
     try {
       const { cashierCode, pin } = req.body;
+      console.log(`[PIN Login] Initiated login check for cashierCode: ${cashierCode}`);
+
       if (!cashierCode || !pin) {
+        console.warn(`[PIN Login] Missing cashierCode or pin. CashierCode exists: ${!!cashierCode}, PIN exists: ${!!pin}`);
         return res.status(400).json({ success: false, error: "Cashier code and PIN are required." });
       }
       if (!/^\d{6}$/.test(String(pin))) {
+        console.warn(`[PIN Login] PIN format mismatch for cashierCode: ${cashierCode}`);
         return res.status(400).json({ success: false, error: "PIN must be exactly 6 numeric digits." });
       }
 
       const adminSupabase = getSupabaseAdminClient();
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+      const serviceKeyPresent = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const urlHost = supabaseUrl ? new URL(supabaseUrl).hostname : "not-configured";
+      console.log(`[PIN Login] Admin client initialization check: adminSupabasePresent=${!!adminSupabase}, urlHost=${urlHost}, serviceKeyPresent=${serviceKeyPresent}`);
+
       if (!adminSupabase) {
+        console.error(`[PIN Login] Backend admin service-role client unavailable.`);
         return res.status(503).json({ success: false, error: "Backend admin service not configured." });
       }
 
       // 1. Find profile by cashier code
+      console.log(`[PIN Login] Querying profiles table for cashier_code: ${cashierCode}`);
       const { data: profile, error: profileErr } = await adminSupabase
         .from("profiles")
         .select("*, shop:shop_profiles(*)")
         .eq("cashier_code", cashierCode)
         .maybeSingle();
 
-      if (profileErr || !profile) {
-        // Generic error to avoid account enumeration
+      if (profileErr) {
+        console.error(`[PIN Login] Profile query failed for cashierCode: ${cashierCode}. Error:`, profileErr.message);
         return res.status(401).json({ success: false, error: "Invalid credentials." });
       }
 
+      if (!profile) {
+        console.warn(`[PIN Login] No profile found for cashierCode: ${cashierCode}`);
+        return res.status(401).json({ success: false, error: "Invalid credentials." });
+      }
+
+      console.log(`[PIN Login] Profile found. targetStaffId: ${profile.id}, Role: ${profile.role}, ShopId: ${profile.shop_id}, is_active: ${profile.is_active}, email: ${profile.email}`);
+
       if (!profile.is_active) {
+        console.warn(`[PIN Login] Profile is deactivated for user: ${profile.id}`);
         return res.status(403).json({ success: false, error: "Account is deactivated." });
       }
 
       // 1b. Prevent Owner password replacement via PIN mechanism
       if (profile.role === 'owner' || profile.role === 'admin') {
+        console.warn(`[PIN Login] Prevented PIN authentication bypass attempt for high-privilege account: ${profile.id} (${profile.role})`);
         return res.status(403).json({ 
           success: false, 
           error: "Owner/Admin accounts must authenticate via email and password for terminal security. Please use 'Sign Out' to return to the login screen." 
@@ -575,14 +595,21 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       }
 
       // 2. Atomic Brute Force Lockout Check & Attempt Reservation
+      console.log(`[PIN Login] Checking lockout status for user ID: ${profile.id}`);
       const { data: lockoutData, error: lockoutErr } = await adminSupabase.rpc('check_pin_lockout', {
         p_user_id: profile.id
       });
 
+      if (lockoutErr) {
+        console.error(`[PIN Login] Lockout check RPC failed for user: ${profile.id}. Error:`, lockoutErr.message);
+      }
+
       if (!lockoutErr && lockoutData) {
+        console.log(`[PIN Login] Lockout check RPC results:`, lockoutData);
         if (lockoutData.locked) {
           const remainingMinutes = Number(lockoutData.remaining_minutes) || 15;
           const remainingSeconds = Number(lockoutData.remaining_seconds) || (remainingMinutes * 60);
+          console.warn(`[PIN Login] User ${profile.id} is locked. Remaining seconds: ${remainingSeconds}`);
           return res.status(429).json({
             success: false,
             locked: true,
@@ -592,6 +619,7 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
           });
         }
         if (lockoutData.attempt_admitted === false) {
+          console.warn(`[PIN Login] Attempt not admitted for user ${profile.id} due to lockout constraint.`);
           return res.status(429).json({
             success: false,
             locked: true,
@@ -605,55 +633,78 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       // 3. Verify PIN
       let isPinValid = false;
       if (profile.pin_hash) {
+        console.log(`[PIN Login] Verifying PIN against pin_hash for user: ${profile.id}`);
         isPinValid = verifyPinHash(pin, profile.pin_hash);
       } else if (profile.pin_code && String(profile.pin_code) === String(pin)) {
+        console.log(`[PIN Login] Verifying PIN against legacy pin_code for user: ${profile.id}, migrating to secure pin_hash`);
         isPinValid = true;
         const newHash = hashPin(pin);
-        await adminSupabase.from('profiles').update({
+        const { error: migrationErr } = await adminSupabase.from('profiles').update({
           pin_hash: newHash,
           pin_code: null
         }).eq('id', profile.id);
+        
+        if (migrationErr) {
+          console.error(`[PIN Login] PIN migration failed for user ${profile.id}:`, migrationErr.message);
+        } else {
+          console.log(`[PIN Login] Legacy PIN migrated to secure hash for user ${profile.id}`);
+        }
+      } else {
+        console.warn(`[PIN Login] Profile has neither pin_hash nor legacy pin_code configured for user: ${profile.id}`);
       }
 
       // 4. Atomically record attempt result
-      await adminSupabase.rpc('record_pin_attempt', {
+      console.log(`[PIN Login] Recording PIN attempt for user ID: ${profile.id}, success: ${isPinValid}`);
+      const { error: recordErr } = await adminSupabase.rpc('record_pin_attempt', {
         p_user_id: profile.id,
         p_success: isPinValid
       });
+      if (recordErr) {
+        console.error(`[PIN Login] Failed to record PIN attempt for user ${profile.id}:`, recordErr.message);
+      }
 
       if (!isPinValid) {
+        console.warn(`[PIN Login] Invalid PIN entered for cashierCode: ${cashierCode}`);
         return res.status(401).json({ success: false, error: "Invalid PIN." });
       }
 
       // 5. Check Schedule Enforcement
+      console.log(`[PIN Login] Verifying schedule enforcement for user: ${profile.id}`);
       const scheduleCheck = verifyStaffSchedule(profile, profile.shop);
+      console.log(`[PIN Login] Schedule check result: allowed=${scheduleCheck.allowed}, error=${scheduleCheck.error || "none"}`);
       if (!scheduleCheck.allowed) {
+        console.warn(`[PIN Login] Login rejected by schedule constraint for user: ${profile.id}`);
         return res.status(403).json({ success: false, error: scheduleCheck.error });
       }
 
       // 6. Establish Real Supabase Session
+      console.log(`[PIN Login] Updating Supabase Auth password with admin bypass for user: ${profile.id}`);
       const tempPassword = crypto.randomBytes(16).toString('hex') + "A1!";
       const { error: updateAuthErr } = await adminSupabase.auth.admin.updateUserById(profile.id, {
         password: tempPassword
       });
 
       if (updateAuthErr) {
-        console.error("Auth update failed during PIN login:", updateAuthErr);
+        console.error(`[PIN Login] Auth password update failed for user ${profile.id}:`, updateAuthErr.message);
         return res.status(500).json({ success: false, error: "Failed to establish secure session." });
       }
+      console.log(`[PIN Login] Auth password updated successfully for user ${profile.id}`);
 
       // Sign in on server to get session
+      console.log(`[PIN Login] Signing in with password to Supabase Auth. Email: ${profile.email}`);
       const { data: authData, error: signInErr } = await adminSupabase.auth.signInWithPassword({
         email: profile.email!,
         password: tempPassword
       });
 
       if (signInErr || !authData.session) {
-        console.error("Auth signin failed during PIN login:", signInErr);
+        console.error(`[PIN Login] Sign-in with password failed for email ${profile.email}. Error:`, signInErr?.message || "No session returned");
         return res.status(500).json({ success: false, error: "Session establishment failed." });
       }
+      console.log(`[PIN Login] Supabase Auth sign-in succeeded. Obtained session. User ID in session: ${authData.session.user.id}`);
 
       // Audit login
+      console.log(`[PIN Login] Logging staff audit event: STAFF_LOGIN_PIN for user: ${profile.id}`);
       await logStaffAudit(adminSupabase, {
         shopId: profile.shop_id!,
         actorId: profile.id,
@@ -662,6 +713,7 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         reason: 'Staff terminal activation'
       });
 
+      console.log(`[PIN Login] Successful terminal activation for cashierCode: ${cashierCode}, User ID: ${profile.id}`);
       return res.json({ 
         success: true, 
         session: authData.session,
@@ -669,7 +721,7 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       });
 
     } catch (err: any) {
-      console.error("Login with PIN error:", err);
+      console.error("[PIN Login] Unhandled exception during login-with-pin:", err);
       return res.status(500).json({ success: false, error: "Internal server error during login." });
     }
   });

@@ -526,11 +526,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     pin: string;
     staffName: string;
   }): Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }> => {
+    console.log(`[Client Switch] Initiated switchAccountWithPin for staffName: ${params.staffName}, targetStaffId: ${params.targetStaffId}, cashierCode: ${params.cashierCode}`);
+
     if (switchState !== 'idle' && switchState !== 'error') {
+      console.warn(`[Client Switch] Rejected: switchState is not idle/error. Current state: ${switchState}`);
       return { success: false, error: 'A switch is already in progress' };
     }
 
     if (switchOperationRef.current) {
+      console.warn(`[Client Switch] Rejected: switchOperationRef.current is true`);
       return { success: false, error: 'A switch is already in progress' };
     }
 
@@ -546,15 +550,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     try {
+      console.log(`[Client Switch] Calling authApi.loginWithPin for cashierCode: ${params.cashierCode}`);
       const res = await authApi.loginWithPin(params.cashierCode, params.pin);
+      console.log(`[Client Switch] loginWithPin result success: ${res.success}, error: ${res.error || 'none'}`);
+
       if (!res.success) {
+        console.warn(`[Client Switch] loginWithPin failed. Resetting state to idle.`);
         setSwitchState('idle');
         setSwitchTarget(null);
         return res;
       }
 
       // Verify the authenticated user is really the target, per Point 3
+      console.log(`[Client Switch] PIN login succeeded on server. Checking current active user...`);
       const currentUser = await authApi.getUser();
+      console.log(`[Client Switch] Current user check: id = ${currentUser?.id || 'none'}`);
+
       if (!currentUser || currentUser.id !== params.targetStaffId) {
         console.error("Authenticated user mismatch after PIN login. Expected:", params.targetStaffId, "Got:", currentUser?.id);
         const errMessage = `Security mismatch: Authenticated identity does not match ${params.staffName}.`;
@@ -563,12 +574,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: errMessage };
       }
 
+      console.log(`[Client Switch] Identity match verified. Invoking completeSwitchSteps...`);
       const stepRes = await completeSwitchSteps(params.targetStaffId, params.targetShopId, params.cashierCode);
+      console.log(`[Client Switch] completeSwitchSteps result success: ${stepRes.success}, error: ${stepRes.error || 'none'}`);
+
       if (!stepRes.success) {
         // Do NOT immediately destroy the recovery state, remain authenticated to target to allow retry, per Requirement 6
         return { success: false, error: stepRes.error };
       }
 
+      console.log(`[Client Switch] Switch process completed successfully.`);
       return { success: true };
 
     } catch (err: any) {

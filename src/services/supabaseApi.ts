@@ -155,12 +155,16 @@ export const authApi = {
 
   async loginWithPin(cashierCode: string, pin: string): Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }> {
     try {
+      console.log(`[Client PIN Login] Initiating login POST for cashierCode: ${cashierCode}`);
       const result = await apiPost<{ success: boolean; locked?: boolean; remainingSeconds?: number; session?: any; error?: string }>(
         '/api/auth/login-with-pin',
         { cashierCode, pin }
       );
 
+      console.log(`[Client PIN Login] POST completed. status: ${result.status}, ok: ${result.ok}, data.success: ${result.data?.success}, hasSession: ${!!result.data?.session}`);
+
       if (!result.ok || !result.data?.success) {
+        console.warn(`[Client PIN Login] POST login failed. Error: ${result.data?.error || result.error || 'unknown'}`);
         return {
           success: false,
           locked: result.data?.locked,
@@ -171,26 +175,35 @@ export const authApi = {
 
       const supabase = getSupabase();
       if (!supabase) {
+        console.error(`[Client PIN Login] Supabase client is not initialized in browser context.`);
         return { success: false, error: 'Supabase client is not initialized.' };
       }
 
       if (!result.data?.session) {
+        console.error(`[Client PIN Login] No session object found in successful response.`);
         return { success: false, error: 'Session was not returned by the login endpoint.' };
       }
 
       try {
+        console.log(`[Client PIN Login] Installing Supabase session on client client-side...`);
         const { error: sessionErr } = await supabase.auth.setSession(result.data.session);
         if (sessionErr) {
-          console.error('Supabase setSession failed:', sessionErr);
+          console.error('[Client PIN Login] Supabase setSession failed:', sessionErr.message);
           return { success: false, error: `Failed to install session: ${sessionErr.message}` };
         }
+        console.log(`[Client PIN Login] Supabase session installed successfully.`);
       } catch (e: any) {
-        console.error('Supabase setSession exception:', e);
+        console.error('[Client PIN Login] Supabase setSession threw exception:', e);
         return { success: false, error: `Failed to install session: ${e?.message || 'Unknown error'}` };
       }
 
+      // Check final identity
+      const verifyUser = await supabase.auth.getUser();
+      console.log(`[Client PIN Login] User verified after setSession. ID: ${verifyUser.data.user?.id || 'none'}, Email: ${verifyUser.data.user?.email || 'none'}`);
+
       return { success: true };
     } catch (err: any) {
+      console.error('[Client PIN Login] Unexpected error during loginWithPin:', err);
       return { success: false, error: err.message || 'Connection error during PIN login' };
     }
   }
