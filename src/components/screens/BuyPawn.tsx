@@ -6,7 +6,7 @@ import { useLoans } from '../../context/LoanContext';
 import { useCustomers } from '../../context/CustomerContext';
 import { useSellers } from '../../context/SellerContext';
 import { useSaps } from '../../context/SapsContext';
-import { ItemCondition, InventoryItem, PawnLoan, Customer, Seller, ItemStatus } from '../../types';
+import { ItemCondition, InventoryItem, PawnLoan, Customer, Seller, ItemStatus, SapsEntry } from '../../types';
 import { roundRetailPrice, calculatePawnFees } from '../../utils/pricingRules';
 import { generateUniqueSku, generateUniqueTransactionNumber, generateUniquePawnTicket } from '../../utils/identifierGenerator';
 import { marketIntelligenceApi } from '../../services/marketIntelligenceApi';
@@ -171,25 +171,24 @@ export const BuyPawn: React.FC = () => {
   }, [capturedRsaIdScan, step, txType, customers, sellers, showToast]);
 
   // --- DRAFT CONTINUITY ---
-  const currentShopId = shopProfile?.id || user?.user_metadata?.shop_id || 'default-shop';
   const [activeDrafts, setActiveDrafts] = useState<WorkflowDraft[]>([]);
   const [draftId, setDraftId] = useState<string>(() => crypto.randomUUID());
 
   useEffect(() => {
-    if (user && currentShopId) {
-      draftService.getActiveDrafts(user.id, currentShopId).then(drafts => {
+    if (user && shopProfile?.id) {
+      draftService.getActiveDrafts(user.id, shopProfile.id).then(drafts => {
         const relevant = drafts.filter(d => d.workflowType === 'buy' || d.workflowType === 'pawn');
         setActiveDrafts(relevant);
       });
     }
-  }, [user, currentShopId]);
+  }, [user, shopProfile?.id]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (step !== 'completion' && txType && user && currentShopId) {
+      if (step !== 'completion' && txType && user && shopProfile?.id) {
         draftService.saveDraft({
           id: draftId,
-          shopId: currentShopId,
+          shopId: shopProfile.id,
           userId: user.id,
           workflowType: txType,
           step: step,
@@ -198,7 +197,7 @@ export const BuyPawn: React.FC = () => {
       }
     }, 2000);
     return () => clearTimeout(timer);
-  }, [step, txType, itemData, newIdentity, selectedIdentity, draftId, user, currentShopId]);
+  }, [step, txType, itemData, newIdentity, selectedIdentity, draftId, user, shopProfile?.id]);
 
   const handleContinueDraft = (draft: WorkflowDraft) => {
     setDraftId(draft.id);
@@ -212,7 +211,9 @@ export const BuyPawn: React.FC = () => {
   };
 
   const handleDiscardDraft = (id: string) => {
-    draftService.discardDraft(id, currentShopId);
+    if (shopProfile?.id) {
+      draftService.discardDraft(id, shopProfile.id);
+    }
     setActiveDrafts(activeDrafts.filter(d => d.id !== id));
   };
   // ------------------------
@@ -587,6 +588,10 @@ export const BuyPawn: React.FC = () => {
       item: createdItem
     });
 
+    if (shopProfile?.id) {
+      await draftService.closeDraft(draftId, shopProfile.id);
+    }
+
     setStep('completion');
     showToast('Stock Added', `${createdItem.title} added to ${existingStockStatus}`, 'success');
   };
@@ -629,6 +634,11 @@ export const BuyPawn: React.FC = () => {
 
   const handleFinalize = async () => {
     if (!selectedIdentity || !txType) return;
+    if (!shopProfile?.id) {
+      showToast('Missing Shop Context', 'Unable to complete transaction without an active shop profile.', 'error');
+      return;
+    }
+    const currentShopId = shopProfile.id;
 
     // If there's a current item not in basket, add it first or validate it
     let finalBasket = [...basketItems];
@@ -647,7 +657,7 @@ export const BuyPawn: React.FC = () => {
     }
 
     const transactionId = crypto.randomUUID();
-    const existingTxList = await db.sellerTransactions.toArray();
+    const existingTxList = await db.sellerTransactions.where('shopId').equals(currentShopId).toArray();
     const existingTxSet = new Set(existingTxList.map(t => t.transactionNumber));
     const transactionNumber = generateUniqueTransactionNumber(tn => existingTxSet.has(tn));
     const totalPayout = finalBasket.reduce((sum, i) => sum + i.agreedOffer, 0);
@@ -658,10 +668,10 @@ export const BuyPawn: React.FC = () => {
       const complianceStatus = seller.verified ? 'VERIFIED' : 'PENDING';
       const inventoryItemsToAdd: InventoryItem[] = [];
       const transactionItemsToAdd: any[] = [];
-      const sapsEntriesToAdd: any[] = [];
+      const sapsEntriesToAdd: SapsEntry[] = [];
       const rpcItemsPayload: any[] = [];
 
-      const currentInventory = await db.inventory.toArray();
+      const currentInventory = await db.inventory.where('shopId').equals(currentShopId).toArray();
       const existingSkuSet = new Set(currentInventory.map(i => i.sku));
 
       for (const bItem of finalBasket) {
@@ -674,6 +684,7 @@ export const BuyPawn: React.FC = () => {
 
         const invItem: InventoryItem = {
           id: itemId,
+          shopId: currentShopId,
           sku,
           title: bItem.title,
           category: bItem.category,
@@ -699,7 +710,7 @@ export const BuyPawn: React.FC = () => {
         transactionItemsToAdd.push({
           id: crypto.randomUUID(),
           sellerTransactionId: transactionId,
-          shopId: shopProfile.id,
+          shopId: currentShopId,
           itemId,
           itemSku: sku,
           itemTitle: bItem.title,
@@ -712,6 +723,7 @@ export const BuyPawn: React.FC = () => {
 
         sapsEntriesToAdd.push({
           id: sapsId,
+          shopId: currentShopId,
           entryNumber: sapsEntryNo,
           timestamp: nowIso,
           customerId: seller.id,
@@ -727,7 +739,7 @@ export const BuyPawn: React.FC = () => {
           considerationPaid: bItem.agreedOffer,
           officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
           policeStationRef: shopProfile.saps_dealer_license || 'SAPS License',
-          verificationStatus: complianceStatus,
+          verificationStatus: complianceStatus as any,
           barcodeRef: sku
         });
 
@@ -753,7 +765,7 @@ export const BuyPawn: React.FC = () => {
 
       const txRecord = {
         id: transactionId,
-        shopId: shopProfile.id || 'default-shop',
+        shopId: currentShopId,
         sellerId: seller.id,
         transactionNumber,
         totalProposedPayout: totalPayout,
@@ -779,7 +791,7 @@ export const BuyPawn: React.FC = () => {
         sapsRef: transactionNumber,
         officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
         policeStationRef: shopProfile.saps_dealer_license || '',
-        shopId: shopProfile.id
+        shopId: currentShopId
       };
 
       let syncLogStatus: 'completed' | 'pending' = 'pending';
@@ -819,6 +831,7 @@ export const BuyPawn: React.FC = () => {
         await db.saps.bulkAdd(sapsEntriesToAdd);
 
         await db.syncLogs.add({
+          shopId: currentShopId,
           entityType: 'buyAcquisition',
           entityId: transactionId,
           action: 'create',
@@ -847,9 +860,9 @@ export const BuyPawn: React.FC = () => {
 
     if (txType === 'pawn' && pawnCalculations) {
       const pCustomer = selectedIdentity as Customer;
-      const allLoans = await db.loans.toArray();
+      const allLoans = await db.loans.where('shopId').equals(currentShopId).toArray();
       const ticketNumber = generateUniquePawnTicket(t => allLoans.some(l => l.ticketNumber === t));
-      const currentInventory = await db.inventory.toArray();
+      const currentInventory = await db.inventory.where('shopId').equals(currentShopId).toArray();
       const sku = generateUniqueSku(s => currentInventory.some(i => i.sku === s));
 
       const loanId = crypto.randomUUID();
@@ -861,6 +874,7 @@ export const BuyPawn: React.FC = () => {
 
       const invItem: InventoryItem = {
         id: itemId,
+        shopId: currentShopId,
         sku,
         title: itemData.title,
         category: itemData.category,
@@ -886,6 +900,7 @@ export const BuyPawn: React.FC = () => {
 
       const loanRecord: PawnLoan = {
         id: loanId,
+        shopId: currentShopId,
         ticketNumber,
         customerId: pCustomer.id,
         customerName: pCustomer.fullName,
@@ -919,8 +934,9 @@ export const BuyPawn: React.FC = () => {
         }]
       };
 
-      const sapsRecord = {
+      const sapsRecord: SapsEntry = {
         id: sapsId,
+        shopId: currentShopId,
         entryNumber: sapsEntryNo,
         timestamp: nowIso,
         customerId: pCustomer.id,
@@ -972,7 +988,7 @@ export const BuyPawn: React.FC = () => {
         sapsEntryId: sapsId,
         sapsEntryNumber: sapsEntryNo,
         history: loanRecord.history,
-        shopId: shopProfile.id
+        shopId: currentShopId
       };
 
       let syncLogStatus: 'completed' | 'pending' = 'pending';
@@ -1011,6 +1027,7 @@ export const BuyPawn: React.FC = () => {
         await db.saps.add(sapsRecord);
 
         await db.syncLogs.add({
+          shopId: currentShopId,
           entityType: 'pawnIntake',
           entityId: loanId,
           action: 'create',
