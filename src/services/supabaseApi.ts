@@ -170,13 +170,23 @@ export const authApi = {
       }
 
       const supabase = getSupabase();
-      if (supabase && result.data?.session) {
-        try {
-          const { error: sessionErr } = await supabase.auth.setSession(result.data.session);
-          if (sessionErr) console.warn('Supabase setSession warning:', sessionErr);
-        } catch (e) {
-          console.warn('Supabase setSession error:', e);
+      if (!supabase) {
+        return { success: false, error: 'Supabase client is not initialized.' };
+      }
+
+      if (!result.data?.session) {
+        return { success: false, error: 'Session was not returned by the login endpoint.' };
+      }
+
+      try {
+        const { error: sessionErr } = await supabase.auth.setSession(result.data.session);
+        if (sessionErr) {
+          console.error('Supabase setSession failed:', sessionErr);
+          return { success: false, error: `Failed to install session: ${sessionErr.message}` };
         }
+      } catch (e: any) {
+        console.error('Supabase setSession exception:', e);
+        return { success: false, error: `Failed to install session: ${e?.message || 'Unknown error'}` };
       }
 
       return { success: true };

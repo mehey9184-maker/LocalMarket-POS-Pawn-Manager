@@ -457,16 +457,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Failed to acquire terminal session. Terminal is not authorized.');
       }
 
-      // Verify stored local session
+      // Verify stored local session and device ID
       const newSession = await terminalService.getCurrentLocalSession();
       if (
         !newSession ||
         newSession.shopId !== targetShopId ||
         newSession.userId !== targetStaffId ||
         newSession.userName !== freshProfile.full_name ||
-        newSession.status !== 'active'
+        newSession.status !== 'active' ||
+        newSession.deviceId !== terminalService.getDeviceId()
       ) {
         throw new Error('Failed to verify local terminal session integrity.');
+      }
+
+      // Check atomic invariants (Requirement 4)
+      const finalUser = await authApi.getUser();
+      const finalProfile = await profilesApi.getCurrentProfile();
+
+      if (!finalUser || finalUser.id !== targetStaffId) {
+        throw new Error('Atomic verification failed: Supabase user ID mismatch.');
+      }
+      if (!finalProfile || finalProfile.id !== targetStaffId) {
+        throw new Error('Atomic verification failed: Profile ID mismatch.');
+      }
+      if (finalProfile.shop_id !== targetShopId) {
+        throw new Error('Atomic verification failed: Profile shop ID mismatch.');
+      }
+      if (finalProfile.cashier_code !== cashierCode) {
+        throw new Error('Atomic verification failed: Profile cashier code mismatch.');
+      }
+      if (finalProfile.is_active !== true) {
+        throw new Error('Atomic verification failed: Target profile is not active.');
+      }
+      if (!currentUser || currentUser.id !== targetStaffId) {
+        throw new Error('Atomic verification failed: React user queue mismatch.');
+      }
+      if (!freshProfile || freshProfile.id !== targetStaffId) {
+        throw new Error('Atomic verification failed: React profile queue mismatch.');
       }
 
       // Pre-load the new shop's active staff list so the Account Picker shows correct members immediately
@@ -524,6 +551,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSwitchState('idle');
         setSwitchTarget(null);
         return res;
+      }
+
+      // Verify the authenticated user is really the target, per Point 3
+      const currentUser = await authApi.getUser();
+      if (!currentUser || currentUser.id !== params.targetStaffId) {
+        console.error("Authenticated user mismatch after PIN login. Expected:", params.targetStaffId, "Got:", currentUser?.id);
+        const errMessage = `Security mismatch: Authenticated identity does not match ${params.staffName}.`;
+        setSwitchState('error');
+        setSwitchError(errMessage);
+        return { success: false, error: errMessage };
       }
 
       const stepRes = await completeSwitchSteps(params.targetStaffId, params.targetShopId, params.cashierCode);
