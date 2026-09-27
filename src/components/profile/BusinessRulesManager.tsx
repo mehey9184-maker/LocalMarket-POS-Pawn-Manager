@@ -3,6 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { BusinessRules, BusinessRuleAuditLog } from '../../types';
 import { shopProfilesApi } from '../../services/supabaseApi';
+import { useOperationProgress } from '../../hooks/useOperationProgress';
+import { OperationProgressScreen } from '../common/OperationProgressScreen';
 import { 
   ShieldAlert, 
   Clock, 
@@ -20,8 +22,9 @@ import {
 } from 'lucide-react';
 
 export const BusinessRulesManager: React.FC = () => {
-  const { businessRules, updateBusinessRules, showToast, shopProfile } = useApp();
+  const { businessRules, updateBusinessRules, showToast, shopProfile, isOnline } = useApp();
   const { role, isOwner } = useAuth();
+  const progress = useOperationProgress();
   
   const [localRules, setLocalRules] = useState<BusinessRules>(businessRules);
   const [changeReason, setChangeReason] = useState('');
@@ -54,18 +57,58 @@ export const BusinessRulesManager: React.FC = () => {
     }
 
     setIsSaving(true);
-    try {
-      await updateBusinessRules(localRules, changeReason);
-      setChangeReason('');
-      
-      // Refresh audit logs
-      if (shopProfile.id) {
-        const logs = await shopProfilesApi.getBusinessRuleAuditLogs(shopProfile.id);
-        setAuditLogs(logs as any);
+    await progress.runSequence({
+      title: 'Saving Business Rules',
+      subtitle: "We're taking care of your financial rules.",
+      isOffline: !isOnline,
+      steps: [
+        { id: 'prep', label: 'Preparing business rule modifications' },
+        { id: 'rates', label: `Setting interest (${localRules.pawnMonthlyInterestRate}%) & markup (${localRules.defaultRetailMarkupMultiplier}x)` },
+        { id: 'audit', label: `Recording reason: "${changeReason}"` },
+        { id: 'save', label: isOnline ? 'Saving authoritative rules to server' : 'Saving rules on this device' },
+        { id: 'finish', label: 'Finishing business rules update' }
+      ],
+      execute: async (runner) => {
+        runner.startStep('prep');
+        await new Promise(r => setTimeout(r, 100));
+        runner.completeStep('prep');
+
+        runner.startStep('rates');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('rates');
+
+        runner.startStep('audit');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('audit');
+
+        runner.startStep('save');
+        await updateBusinessRules(localRules, changeReason);
+        runner.completeStep('save');
+
+        runner.startStep('finish');
+        if (shopProfile.id) {
+          const logs = await shopProfilesApi.getBusinessRuleAuditLogs(shopProfile.id);
+          setAuditLogs(logs as any);
+        }
+        runner.completeStep('finish');
+
+        return true;
+      },
+      successTitle: 'Business Rules Committed',
+      successMessage: isOnline
+        ? 'Authoritative rates and loan caps updated.'
+        : 'Rules saved locally on this terminal. Cloud sync queued.',
+      onSuccess: () => {
+        setChangeReason('');
+        setIsSaving(false);
+      },
+      onError: () => {
+        setIsSaving(false);
+      },
+      onClose: () => {
+        setIsSaving(false);
       }
-    } finally {
-      setIsSaving(false);
-    }
+    });
   };
 
   const handleChange = (field: keyof BusinessRules, value: any) => {
@@ -331,6 +374,9 @@ export const BusinessRulesManager: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* BUSINESS RULES SAVE PROGRESS */}
+      <OperationProgressScreen state={progress.state} />
     </div>
   );
 };

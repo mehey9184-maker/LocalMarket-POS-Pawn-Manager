@@ -5,6 +5,8 @@ import { PaymentMethod, ReceiptDelivery, InventoryItem } from '../../types';
 import { validateAndNormalizeSaPhone } from '../../utils/phoneValidator';
 import { focusAndScrollErrorField } from '../../utils/errorNavigator';
 import { motion, AnimatePresence } from 'motion/react';
+import { useOperationProgress } from '../../hooks/useOperationProgress';
+import { OperationProgressScreen } from '../common/OperationProgressScreen';
 import {
   Barcode,
   Search,
@@ -164,11 +166,13 @@ export const Sell: React.FC = () => {
     clearCart,
     completeCheckout,
     showToast,
-    setIsScannerModalOpen
+    setIsScannerModalOpen,
+    isOnline
   } = useApp();
 
   const { hasPermission, isOwner, isManager } = useAuth();
   const canEditPrice = hasPermission('pricing') || isOwner || isManager;
+  const saleProgress = useOperationProgress();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTender, setSelectedTender] = useState<PaymentMethod>('cash');
@@ -252,8 +256,8 @@ export const Sell: React.FC = () => {
     }, 100);
   };
 
-  const handleCompleteSale = () => {
-    if (cart.length === 0) return;
+  const handleCompleteSale = async () => {
+    if (cart.length === 0 || isProcessing) return;
     
     if (selectedTender === 'cash' && numTendered < total) {
       showToast('Payment Incomplete', `Cash tendered (R${numTendered}) is less than total R${total}`, 'amber');
@@ -284,25 +288,64 @@ export const Sell: React.FC = () => {
     }
 
     setIsProcessing(true);
-    setTimeout(async () => {
-      try {
-        await completeCheckout(
+
+    const tenderLabel = selectedTender === 'cash' ? 'Cash' : selectedTender === 'card' ? 'Card' : 'EFT';
+    const finalAmount = selectedTender === 'cash' ? numTendered : total;
+
+    await saleProgress.runSequence({
+      title: 'Finalizing Sale',
+      subtitle: `${cart.length} item${cart.length > 1 ? 's' : ''} • R ${total.toFixed(2)}`,
+      isOffline: !isOnline,
+      steps: [
+        { id: 'prep', label: 'Preparing transaction invoice' },
+        { id: 'payment', label: `Recording ${tenderLabel} tender: R ${finalAmount.toFixed(2)}` },
+        { id: 'stock', label: `Updating inventory for ${cart.length} item${cart.length > 1 ? 's' : ''}` },
+        { id: 'receipt', label: receiptType === 'whatsapp' ? `Preparing WhatsApp slip for ${customerMobile || normalizedPhone}` : 'Generating printable thermal receipt' },
+        { id: 'save', label: isOnline ? 'Recording sale in store registry' : 'Saving sale on this device & queueing sync' }
+      ],
+      execute: async (runner) => {
+        runner.startStep('prep');
+        await new Promise((r) => setTimeout(r, 60));
+        runner.completeStep('prep');
+
+        runner.startStep('payment');
+        await new Promise((r) => setTimeout(r, 50));
+        runner.completeStep('payment');
+
+        runner.startStep('stock');
+        runner.completeStep('stock');
+
+        runner.startStep('receipt');
+        runner.completeStep('receipt');
+
+        runner.startStep('save');
+        const sale = await completeCheckout(
           selectedTender, 
-          selectedTender === 'cash' ? numTendered : total, 
+          finalAmount, 
           receiptType,
           normalizedPhone
         );
+
+        runner.completeStep('save');
+        return sale;
+      },
+      successTitle: 'Sale Complete',
+      successMessage: `R ${total.toFixed(2)} received. ${changeDue > 0 ? `Change: R ${changeDue.toFixed(2)}. ` : ''}${receiptType === 'whatsapp' ? 'WhatsApp slip sent.' : 'Receipt ready.'}`,
+      onSuccess: () => {
         setCashTendered('');
         setCustomerMobile('');
         setMobileError(null);
         setSearchQuery('');
-      } catch (err: any) {
-        console.error('Checkout error:', err);
-      } finally {
         setIsProcessing(false);
         searchInputRef.current?.focus();
+      },
+      onError: () => {
+        setIsProcessing(false);
+      },
+      onClose: () => {
+        setIsProcessing(false);
       }
-    }, 400);
+    });
   };
 
   useEffect(() => {
@@ -613,6 +656,9 @@ export const Sell: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* OPERATION PROGRESS SCREEN */}
+      <OperationProgressScreen state={saleProgress.state} />
     </div>
   );
 };

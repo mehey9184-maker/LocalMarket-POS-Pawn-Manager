@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { ProfileRow } from '../../types/supabase';
+import { useOperationProgress } from '../../hooks/useOperationProgress';
+import { OperationProgressScreen } from '../common/OperationProgressScreen';
 import { 
   User, 
   Shield, 
@@ -24,7 +26,8 @@ import {
 
 export const StaffAccessManager: React.FC = () => {
   const { users, updateStaffProfile, resetStaffPin, isOwner, isManager } = useAuth();
-  const { showToast } = useApp();
+  const { showToast, isOnline } = useApp();
+  const staffProgress = useOperationProgress();
   const [selectedStaff, setSelectedStaff] = useState<ProfileRow | null>(null);
   const [isAddingStaff, setIsAddingStaff] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -88,15 +91,42 @@ export const StaffAccessManager: React.FC = () => {
     const newPerms = { ...currentPerms, [field]: value };
     
     setIsSaving(true);
-    const res = await updateStaffProfile(selectedStaff.id, { permissions: newPerms }, `Permissions updated: ${field}=${value}`);
-    if (res.success) {
-      setSelectedStaff({ ...selectedStaff, permissions: newPerms });
-      showToast('Permissions Updated', `Access for ${selectedStaff.full_name} has been modified.`, 'success');
-      await loadAuditLogs(selectedStaff.id);
-    } else {
-      showToast('Update Failed', res.error || 'Could not update permissions.', 'error');
-    }
-    setIsSaving(false);
+    await staffProgress.runSequence({
+      title: 'Updating Permissions',
+      subtitle: `Modifying operational access for ${selectedStaff.full_name}`,
+      isOffline: !isOnline,
+      steps: [
+        { id: 'prep', label: 'Preparing access policy' },
+        { id: 'policy', label: `Setting ${field} to ${value ? 'granted' : 'revoked'}` },
+        { id: 'save', label: isOnline ? 'Applying permissions on server' : 'Saving permissions locally' },
+        { id: 'finish', label: 'Finalizing access control' }
+      ],
+      execute: async (runner) => {
+        runner.startStep('prep');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('prep');
+
+        runner.startStep('policy');
+        await new Promise(r => setTimeout(r, 60));
+        runner.completeStep('policy');
+
+        runner.startStep('save');
+        const res = await updateStaffProfile(selectedStaff.id, { permissions: newPerms }, `Permissions updated: ${field}=${value}`);
+        if (!res.success) throw new Error(res.error || 'Could not update permissions.');
+        runner.completeStep('save');
+
+        runner.startStep('finish');
+        setSelectedStaff({ ...selectedStaff, permissions: newPerms });
+        await loadAuditLogs(selectedStaff.id);
+        runner.completeStep('finish');
+        return true;
+      },
+      successTitle: 'Permissions Updated',
+      successMessage: `Access rules for ${selectedStaff.full_name} are active.`,
+      onSuccess: () => setIsSaving(false),
+      onError: () => setIsSaving(false),
+      onClose: () => setIsSaving(false),
+    });
   };
 
   const handleUpdateSchedule = async (updates: any) => {
@@ -105,15 +135,42 @@ export const StaffAccessManager: React.FC = () => {
     const newSchedule = { ...currentSchedule, ...updates };
     
     setIsSaving(true);
-    const res = await updateStaffProfile(selectedStaff.id, { schedule: newSchedule }, 'Work schedule modified');
-    if (res.success) {
-      setSelectedStaff({ ...selectedStaff, schedule: newSchedule });
-      showToast('Schedule Updated', `Working hours for ${selectedStaff.full_name} modified.`, 'success');
-      await loadAuditLogs(selectedStaff.id);
-    } else {
-      showToast('Update Failed', res.error || 'Could not update schedule.', 'error');
-    }
-    setIsSaving(false);
+    await staffProgress.runSequence({
+      title: 'Updating Schedule',
+      subtitle: `Modifying work shifts for ${selectedStaff.full_name}`,
+      isOffline: !isOnline,
+      steps: [
+        { id: 'prep', label: 'Calculating shift timetable' },
+        { id: 'sched', label: 'Applying weekly working hours' },
+        { id: 'save', label: isOnline ? 'Saving schedule to server' : 'Saving schedule on this device' },
+        { id: 'finish', label: 'Finalizing schedule updates' }
+      ],
+      execute: async (runner) => {
+        runner.startStep('prep');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('prep');
+
+        runner.startStep('sched');
+        await new Promise(r => setTimeout(r, 60));
+        runner.completeStep('sched');
+
+        runner.startStep('save');
+        const res = await updateStaffProfile(selectedStaff.id, { schedule: newSchedule }, 'Work schedule modified');
+        if (!res.success) throw new Error(res.error || 'Could not update schedule.');
+        runner.completeStep('save');
+
+        runner.startStep('finish');
+        setSelectedStaff({ ...selectedStaff, schedule: newSchedule });
+        await loadAuditLogs(selectedStaff.id);
+        runner.completeStep('finish');
+        return true;
+      },
+      successTitle: 'Schedule Updated',
+      successMessage: `Working hours for ${selectedStaff.full_name} have been updated.`,
+      onSuccess: () => setIsSaving(false),
+      onError: () => setIsSaving(false),
+      onClose: () => setIsSaving(false),
+    });
   };
 
   const handleUpdateRole = (newRole: string) => {
@@ -127,17 +184,44 @@ export const StaffAccessManager: React.FC = () => {
       message: `Are you sure you want to promote/change ${selectedStaff.full_name}'s role to ${displayTarget}? This immediately updates their operational permissions.`,
       actionLabel: 'Confirm Role Change',
       onConfirm: async () => {
-        setIsSaving(true);
-        const res = await updateStaffProfile(selectedStaff.id, { role: newRole as any }, `Role changed to ${newRole}`);
-        if (res.success) {
-          setSelectedStaff({ ...selectedStaff, role: newRole as any });
-          showToast('Role Updated', `Profile role updated to ${displayTarget}.`, 'success');
-          await loadAuditLogs(selectedStaff.id);
-        } else {
-          showToast('Update Failed', res.error || 'Could not update role.', 'error');
-        }
-        setIsSaving(false);
         setConfirmDialog(null);
+        setIsSaving(true);
+        await staffProgress.runSequence({
+          title: 'Updating Staff Role',
+          subtitle: `Changing role for ${selectedStaff.full_name}`,
+          isOffline: !isOnline,
+          steps: [
+            { id: 'prep', label: 'Validating role transition' },
+            { id: 'role', label: `Assigning role: ${displayTarget}` },
+            { id: 'save', label: isOnline ? 'Updating role authorization on server' : 'Saving role change locally' },
+            { id: 'finish', label: 'Finalizing role assignment' }
+          ],
+          execute: async (runner) => {
+            runner.startStep('prep');
+            await new Promise(r => setTimeout(r, 80));
+            runner.completeStep('prep');
+
+            runner.startStep('role');
+            await new Promise(r => setTimeout(r, 60));
+            runner.completeStep('role');
+
+            runner.startStep('save');
+            const res = await updateStaffProfile(selectedStaff.id, { role: newRole as any }, `Role changed to ${newRole}`);
+            if (!res.success) throw new Error(res.error || 'Could not update role.');
+            runner.completeStep('save');
+
+            runner.startStep('finish');
+            setSelectedStaff({ ...selectedStaff, role: newRole as any });
+            await loadAuditLogs(selectedStaff.id);
+            runner.completeStep('finish');
+            return true;
+          },
+          successTitle: 'Role Updated',
+          successMessage: `${selectedStaff.full_name} is now designated as ${displayTarget}.`,
+          onSuccess: () => setIsSaving(false),
+          onError: () => setIsSaving(false),
+          onClose: () => setIsSaving(false),
+        });
       }
     });
   };
@@ -151,20 +235,46 @@ export const StaffAccessManager: React.FC = () => {
       return;
     }
 
-    setIsSaving(true);
     setResetPinError(null);
+    setIsResetPinModalOpen(false);
+    setIsSaving(true);
 
-    const res = await resetStaffPin(selectedStaff.id, newPinValue, 'Terminal PIN reset by authorized administrator');
-    if (res.success) {
-      showToast('PIN Reset Successfully', `New 6-digit terminal PIN active for ${selectedStaff.full_name}.`, 'success');
-      setIsResetPinModalOpen(false);
-      setNewPinValue('');
-      await loadAuditLogs(selectedStaff.id);
-    } else {
-      setResetPinError(res.error || 'Failed to reset terminal PIN.');
-      showToast('Reset Failed', res.error || 'Could not reset PIN.', 'error');
-    }
-    setIsSaving(false);
+    await staffProgress.runSequence({
+      title: 'Resetting Terminal PIN',
+      subtitle: `Securing access credentials for ${selectedStaff.full_name}`,
+      isOffline: !isOnline,
+      steps: [
+        { id: 'prep', label: 'Verifying administrator authorization' },
+        { id: 'pin', label: 'Securing new 6-digit PIN' },
+        { id: 'save', label: isOnline ? 'Saving credentials securely' : 'Saving PIN securely on this device' },
+        { id: 'finish', label: 'Finalizing security credentials' }
+      ],
+      execute: async (runner) => {
+        runner.startStep('prep');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('prep');
+
+        runner.startStep('pin');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('pin');
+
+        runner.startStep('save');
+        const res = await resetStaffPin(selectedStaff.id, newPinValue, 'Terminal PIN reset by authorized administrator');
+        if (!res.success) throw new Error(res.error || 'Could not reset PIN.');
+        runner.completeStep('save');
+
+        runner.startStep('finish');
+        setNewPinValue('');
+        await loadAuditLogs(selectedStaff.id);
+        runner.completeStep('finish');
+        return true;
+      },
+      successTitle: 'PIN Reset Successfully',
+      successMessage: `New 6-digit terminal PIN active for ${selectedStaff.full_name}.`,
+      onSuccess: () => setIsSaving(false),
+      onError: () => setIsSaving(false),
+      onClose: () => setIsSaving(false),
+    });
   };
 
   const handleToggleActive = () => {
@@ -180,21 +290,51 @@ export const StaffAccessManager: React.FC = () => {
       actionLabel: willDeactivate ? 'Deactivate Account' : 'Reactivate Account',
       isDanger: willDeactivate,
       onConfirm: async () => {
-        setIsSaving(true);
-        const res = await updateStaffProfile(
-          selectedStaff.id, 
-          { is_active: !willDeactivate }, 
-          willDeactivate ? 'Staff account deactivated' : 'Staff account reactivated'
-        );
-        if (res.success) {
-          setSelectedStaff({ ...selectedStaff, is_active: !willDeactivate });
-          showToast('Status Updated', `Account status changed successfully.`, 'success');
-          await loadAuditLogs(selectedStaff.id);
-        } else {
-          showToast('Update Failed', res.error || 'Could not change status.', 'error');
-        }
-        setIsSaving(false);
         setConfirmDialog(null);
+        setIsSaving(true);
+
+        await staffProgress.runSequence({
+          title: willDeactivate ? 'Deactivating Account' : 'Reactivating Account',
+          subtitle: `Updating terminal access for ${selectedStaff.full_name}`,
+          isOffline: !isOnline,
+          steps: [
+            { id: 'prep', label: 'Checking access policy' },
+            { id: 'status', label: willDeactivate ? 'Revoking login authorizations' : 'Restoring login authorizations' },
+            { id: 'save', label: isOnline ? 'Updating status on server' : 'Saving status on this computer' },
+            { id: 'finish', label: 'Finalizing account status' }
+          ],
+          execute: async (runner) => {
+            runner.startStep('prep');
+            await new Promise(r => setTimeout(r, 80));
+            runner.completeStep('prep');
+
+            runner.startStep('status');
+            await new Promise(r => setTimeout(r, 60));
+            runner.completeStep('status');
+
+            runner.startStep('save');
+            const res = await updateStaffProfile(
+              selectedStaff.id, 
+              { is_active: !willDeactivate }, 
+              willDeactivate ? 'Staff account deactivated' : 'Staff account reactivated'
+            );
+            if (!res.success) throw new Error(res.error || 'Could not change status.');
+            runner.completeStep('save');
+
+            runner.startStep('finish');
+            setSelectedStaff({ ...selectedStaff, is_active: !willDeactivate });
+            await loadAuditLogs(selectedStaff.id);
+            runner.completeStep('finish');
+            return true;
+          },
+          successTitle: 'Status Updated',
+          successMessage: willDeactivate 
+            ? `${selectedStaff.full_name}'s account has been deactivated.`
+            : `${selectedStaff.full_name}'s account is now active.`,
+          onSuccess: () => setIsSaving(false),
+          onError: () => setIsSaving(false),
+          onClose: () => setIsSaving(false),
+        });
       }
     });
   };
@@ -628,6 +768,9 @@ export const StaffAccessManager: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* OPERATION PROGRESS SCREEN FOR SELECTED STAFF */}
+        <OperationProgressScreen state={staffProgress.state} />
       </div>
     );
   }
@@ -691,13 +834,17 @@ export const StaffAccessManager: React.FC = () => {
           </button>
         ))}
       </div>
+
+      {/* OPERATION PROGRESS SCREEN FOR MAIN STAFF LIST */}
+      <OperationProgressScreen state={staffProgress.state} />
     </div>
   );
 };
 
 const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { provisionStaff, isOwner } = useAuth();
-  const { showToast } = useApp();
+  const { showToast, isOnline } = useApp();
+  const provisionProgress = useOperationProgress();
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [formData, setFormData] = useState({
     fullName: '',
@@ -717,24 +864,70 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
 
     setIsProvisioning(true);
-    try {
-      const res = await provisionStaff({
-        fullName: formData.fullName.trim(),
-        role: formData.role,
-        cashierCode: formData.cashierCode.trim(),
-        pinCode: formData.pinCode.trim() || undefined,
-        email: formData.email.trim() || undefined,
-      });
+    const roleDisplay = formData.role === 'senior_cashier' ? 'Senior Cashier' : formData.role.charAt(0).toUpperCase() + formData.role.slice(1);
 
-      if (res.success) {
-        showToast('Provisioning Successful', `Staff account for ${formData.fullName} created.`, 'success');
+    await provisionProgress.runSequence({
+      title: 'Creating Staff Account',
+      subtitle: `Setting up terminal profile for ${formData.fullName}`,
+      isOffline: !isOnline,
+      steps: [
+        { id: 'prep', label: 'Preparing operator credentials' },
+        { id: 'account', label: `Creating ${roleDisplay} profile: ${formData.fullName}` },
+        { id: 'perms', label: `Assigning cashier code: ${formData.cashierCode.toUpperCase()}` },
+        { id: 'pin', label: formData.pinCode ? 'Securing 6-digit terminal PIN' : 'Configuring default security PIN' },
+        { id: 'save', label: isOnline ? 'Saving account on server' : 'Saving account locally on this terminal' },
+        { id: 'finish', label: 'Finishing staff setup' }
+      ],
+      execute: async (runner) => {
+        runner.startStep('prep');
+        await new Promise(r => setTimeout(r, 100));
+        runner.completeStep('prep');
+
+        runner.startStep('account');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('account');
+
+        runner.startStep('perms');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('perms');
+
+        runner.startStep('pin');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('pin');
+
+        runner.startStep('save');
+        const res = await provisionStaff({
+          fullName: formData.fullName.trim(),
+          role: formData.role,
+          cashierCode: formData.cashierCode.trim(),
+          pinCode: formData.pinCode.trim() || undefined,
+          email: formData.email.trim() || undefined,
+        });
+
+        if (!res.success) {
+          throw new Error(res.error || 'Failed to create staff account.');
+        }
+        runner.completeStep('save');
+
+        runner.startStep('finish');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('finish');
+
+        return res;
+      },
+      successTitle: 'Staff Account Created',
+      successMessage: `${formData.fullName}'s account is ready to use.`,
+      onSuccess: () => {
+        setIsProvisioning(false);
         onBack();
-      } else {
-        showToast('Provisioning Failed', res.error || 'Failed to create account.', 'error');
+      },
+      onError: () => {
+        setIsProvisioning(false);
+      },
+      onClose: () => {
+        setIsProvisioning(false);
       }
-    } finally {
-      setIsProvisioning(false);
-    }
+    });
   };
 
   return (
@@ -853,6 +1046,9 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </button>
         </div>
       </form>
+
+      {/* PROVISIONING OPERATION PROGRESS SCREEN */}
+      <OperationProgressScreen state={provisionProgress.state} />
     </div>
   );
 };

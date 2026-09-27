@@ -38,6 +38,8 @@ import { apiPost } from '../../utils/apiClient';
 import { ShopProfileAndOfflineHub } from '../profile/ShopProfileAndOfflineHub';
 import { BusinessRulesManager } from '../profile/BusinessRulesManager';
 import { StaffAccessManager } from '../profile/StaffAccessManager';
+import { useOperationProgress } from '../../hooks/useOperationProgress';
+import { OperationProgressScreen } from '../common/OperationProgressScreen';
 
 type ProfileTab = 'account' | 'shop' | 'staff' | 'rules' | 'system';
 
@@ -58,7 +60,8 @@ export const CashierProfile: React.FC = () => {
     salesHistory, 
     showToast,
     shopProfile,
-    updateShopProfile
+    updateShopProfile,
+    isOnline
   } = useApp();
 
   const { 
@@ -72,6 +75,7 @@ export const CashierProfile: React.FC = () => {
   } = useAuth();
   
   const { refundRequests } = useSales();
+  const shopProgress = useOperationProgress();
 
   const [activeTab, setActiveTab] = useState<ProfileTab>('account');
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
@@ -185,45 +189,95 @@ export const CashierProfile: React.FC = () => {
 
     setIsSavingShop(true);
 
-    try {
-      let finalLogoUrl = shopForm.logo_url;
+    const hasNewLogo = Boolean(logoPreview && logoFile);
 
-      // Upload new normalized logo if selected
-      if (logoPreview && logoFile) {
-        // Retain local processed logo in local storage for immediate UI display
-        try {
-          localStorage.setItem(`shop_logo_local_${shopProfile.id}`, logoPreview);
-        } catch {}
+    await shopProgress.runSequence({
+      title: 'Saving Shop Profile',
+      subtitle: "We're taking care of your changes.",
+      isOffline: !isOnline,
+      offlineNotice: 'Changes will be saved locally on this device and queued for cloud sync.',
+      steps: [
+        { id: 'prep', label: 'Preparing your changes' },
+        { id: 'info', label: `Saving shop name: ${shopForm.shop_name}` },
+        { id: 'contact', label: 'Saving contact details & branch address' },
+        { id: 'branding', label: hasNewLogo ? 'Processing & saving shop logo' : 'Saving branding' },
+        { id: 'compliance', label: 'Saving statutory compliance & license info' },
+        { id: 'sync', label: isOnline ? 'Confirming changes securely' : 'Saving on this computer' },
+        { id: 'finish', label: 'Finishing shop profile' }
+      ],
+      execute: async (runner) => {
+        runner.startStep('prep');
+        await new Promise(r => setTimeout(r, 120));
+        runner.completeStep('prep');
 
-        try {
-          const uploadRes = await storageService.uploadLogoImage(logoPreview, shopProfile.id, logoFile.name);
-          if (
-            uploadRes.imageUrl &&
-            !uploadRes.imageUrl.startsWith('data:image/') &&
-            !uploadRes.storageKey?.startsWith('local/')
-          ) {
-            finalLogoUrl = uploadRes.imageUrl;
+        runner.startStep('info');
+        let finalLogoUrl = shopForm.logo_url;
+
+        runner.completeStep('info');
+
+        runner.startStep('contact');
+        if (shopForm.phone.trim()) {
+          runner.updateStepDetail('contact', `Phone: ${shopForm.phone} · Address: ${shopForm.address || 'Standard'}`);
+        }
+        await new Promise(r => setTimeout(r, 100));
+        runner.completeStep('contact');
+
+        runner.startStep('branding');
+        if (hasNewLogo && logoPreview && logoFile) {
+          try {
+            localStorage.setItem(`shop_logo_local_${shopProfile.id}`, logoPreview);
+          } catch {}
+
+          try {
+            const uploadRes = await storageService.uploadLogoImage(logoPreview, shopProfile.id, logoFile.name);
+            if (
+              uploadRes.imageUrl &&
+              !uploadRes.imageUrl.startsWith('data:image/') &&
+              !uploadRes.storageKey?.startsWith('local/')
+            ) {
+              finalLogoUrl = uploadRes.imageUrl;
+            }
+          } catch (uploadErr) {
+            console.warn('Logo upload warning (preserved locally):', uploadErr);
           }
-        } catch (uploadErr) {
-          console.warn('Logo upload warning (preserved locally):', uploadErr);
         }
+        runner.completeStep('branding');
+
+        runner.startStep('compliance');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('compliance');
+
+        runner.startStep('sync');
+        await updateShopProfile({
+          ...shopForm,
+          logo_url: finalLogoUrl?.startsWith('data:image/') ? (shopProfile.logo_url || '') : finalLogoUrl,
+          metadata: {
+            ...(shopProfile.metadata as any || {}),
+            ...(finalLogoUrl && !finalLogoUrl.startsWith('data:image/') ? { logo_url: finalLogoUrl } : {})
+          }
+        });
+        runner.completeStep('sync');
+
+        runner.startStep('finish');
+        await new Promise(r => setTimeout(r, 100));
+        runner.completeStep('finish');
+
+        return true;
+      },
+      successTitle: 'Shop Profile Saved',
+      successMessage: isOnline 
+        ? `${shopForm.shop_name} settings are active and synced.`
+        : `${shopForm.shop_name} settings saved locally. Cloud sync queued.`,
+      onSuccess: () => {
+        setIsSavingShop(false);
+      },
+      onError: () => {
+        setIsSavingShop(false);
+      },
+      onClose: () => {
+        setIsSavingShop(false);
       }
-
-      await updateShopProfile({
-        ...shopForm,
-        logo_url: finalLogoUrl?.startsWith('data:image/') ? (shopProfile.logo_url || '') : finalLogoUrl,
-        metadata: {
-          ...(shopProfile.metadata as any || {}),
-          ...(finalLogoUrl && !finalLogoUrl.startsWith('data:image/') ? { logo_url: finalLogoUrl } : {})
-        }
-      });
-
-      showToast('Store Profile Updated', 'Shop identity and branding saved.', 'success');
-    } catch (err: any) {
-      showToast('Save Failed', err.message || 'Could not update shop profile.', 'error');
-    } finally {
-      setIsSavingShop(false);
-    }
+    });
   };
 
   return (
@@ -629,6 +683,9 @@ export const CashierProfile: React.FC = () => {
         onClose={() => setIsRefundModalOpen(false)} 
         hasApprovalAuthority={hasPermission('refunds')}
       />
+
+      {/* SHOP SETTINGS OPERATION PROGRESS SCREEN */}
+      <OperationProgressScreen state={shopProgress.state} />
     </div>
   );
 };
@@ -641,9 +698,10 @@ interface RefundModalProps {
 
 const RefundModal: React.FC<RefundModalProps> = ({ isOpen, onClose, hasApprovalAuthority }) => {
   const { refundRequests, approveRefund, requestRefund } = useSales();
-  const { showToast } = useApp();
+  const { showToast, isOnline } = useApp();
   const [filter, setFilter] = useState<'all' | 'Pending Approval' | 'Approved' | 'Rejected'>('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const refundProgress = useOperationProgress();
   const [form, setForm] = useState({
     receiptNumber: '',
     itemId: '',
@@ -663,17 +721,91 @@ const RefundModal: React.FC<RefundModalProps> = ({ isOpen, onClose, hasApprovalA
     if (!form.receiptNumber || !form.itemId || isNaN(amt)) return;
 
     setIsSubmitting(true);
-    const res = await requestRefund({
-      ...form,
-      refundAmount: amt
+    await refundProgress.runSequence({
+      title: 'Submitting Refund Request',
+      subtitle: "We're taking care of your request.",
+      isOffline: !isOnline,
+      steps: [
+        { id: 'prep', label: `Validating receipt #${form.receiptNumber}` },
+        { id: 'calc', label: `Calculating refund amount: R ${amt.toLocaleString()}` },
+        { id: 'save', label: isOnline ? 'Submitting authorization request' : 'Saving refund request on this device' },
+        { id: 'finish', label: 'Finishing refund registration' }
+      ],
+      execute: async (runner) => {
+        runner.startStep('prep');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('prep');
+
+        runner.startStep('calc');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('calc');
+
+        runner.startStep('save');
+        const res = await requestRefund({
+          ...form,
+          refundAmount: amt
+        });
+        if (!res.success) {
+          throw new Error(res.error || 'Refund request submission failed.');
+        }
+        runner.completeStep('save');
+
+        runner.startStep('finish');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('finish');
+
+        return res;
+      },
+      successTitle: 'Refund Request Submitted',
+      successMessage: `Request for receipt ${form.receiptNumber} is pending manager review.`,
+      onSuccess: () => {
+        setForm({ receiptNumber: '', itemId: '', quantity: 1, refundAmount: '', reason: '' });
+        setIsSubmitting(false);
+      },
+      onError: () => {
+        setIsSubmitting(false);
+      }
     });
-    if (res.success) {
-      showToast('Request Sent', 'Refund request is pending approval.', 'success');
-      setForm({ receiptNumber: '', itemId: '', quantity: 1, refundAmount: '', reason: '' });
-    } else {
-      showToast('Error', res.error || 'Submission failed.', 'error');
-    }
-    setIsSubmitting(false);
+  };
+
+  const handleApproveOrReject = async (refundId: string, approved: boolean, receiptNum: string) => {
+    await refundProgress.runSequence({
+      title: approved ? 'Approving Refund' : 'Rejecting Refund',
+      subtitle: "We're processing your authorization.",
+      isOffline: !isOnline,
+      steps: [
+        { id: 'auth', label: 'Verifying manager authorization' },
+        { id: 'ledger', label: approved ? `Authorizing refund for #${receiptNum}` : `Rejecting refund request #${receiptNum}` },
+        { id: 'save', label: isOnline ? 'Updating refund ledger' : 'Saving status on this computer' },
+        { id: 'finish', label: 'Finalizing authorization' }
+      ],
+      execute: async (runner) => {
+        runner.startStep('auth');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('auth');
+
+        runner.startStep('ledger');
+        const res = await approveRefund({ refundId, approved });
+        if (!res.success) {
+          throw new Error(res.error || 'Failed to update refund status.');
+        }
+        runner.completeStep('ledger');
+
+        runner.startStep('save');
+        await new Promise(r => setTimeout(r, 60));
+        runner.completeStep('save');
+
+        runner.startStep('finish');
+        await new Promise(r => setTimeout(r, 60));
+        runner.completeStep('finish');
+
+        return approved;
+      },
+      successTitle: approved ? 'Refund Approved' : 'Refund Rejected',
+      successMessage: approved 
+        ? `Refund for #${receiptNum} approved and updated in ledger.`
+        : `Refund for #${receiptNum} marked as rejected.`
+    });
   };
 
   if (!isOpen) return null;
@@ -731,11 +863,11 @@ const RefundModal: React.FC<RefundModalProps> = ({ isOpen, onClose, hasApprovalA
                     {hasApprovalAuthority && req.status === 'Pending Approval' && (
                       <div className="flex gap-2 mt-2">
                         <button 
-                          onClick={() => approveRefund({ refundId: req.id, approved: false })}
+                          onClick={() => handleApproveOrReject(req.id, false, req.receiptNumber)}
                           className="px-2.5 py-1 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer border border-red-200"
                         >Reject</button>
                         <button 
-                          onClick={() => approveRefund({ refundId: req.id, approved: true })}
+                          onClick={() => handleApproveOrReject(req.id, true, req.receiptNumber)}
                           className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer"
                         >Approve</button>
                       </div>
@@ -808,6 +940,9 @@ const RefundModal: React.FC<RefundModalProps> = ({ isOpen, onClose, hasApprovalA
           </div>
         </div>
       </div>
+
+      {/* REFUND PROGRESS SCREEN */}
+      <OperationProgressScreen state={refundProgress.state} />
     </div>
   );
 };

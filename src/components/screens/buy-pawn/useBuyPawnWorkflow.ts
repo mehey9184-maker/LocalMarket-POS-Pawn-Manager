@@ -38,6 +38,7 @@ import {
 import { useBuyPawnImages } from './useBuyPawnImages';
 import { useBuyPawnDrafts } from './useBuyPawnDrafts';
 import { useBuyPawnMarketCheck } from './useBuyPawnMarketCheck';
+import { useOperationProgress } from '../../../hooks/useOperationProgress';
 
 const INITIAL_ITEM_DATA: ItemDraft = {
   title: '',
@@ -61,12 +62,13 @@ const INITIAL_NEW_IDENTITY: NewIdentityDraft = {
 };
 
 export function useBuyPawnWorkflow() {
-  const { showToast, businessRules, shopProfile, setActiveContractModal, capturedRsaIdScan } =
+  const { showToast, businessRules, shopProfile, setActiveContractModal, capturedRsaIdScan, isOnline } =
     useApp();
   const { user, hasPermission } = useAuth();
   const { addItem, inventory } = useInventory();
   const { customers, addCustomer, updateCustomer } = useCustomers();
   const { sellers, addSeller, updateSeller } = useSellers();
+  const finalizeProgress = useOperationProgress();
 
   // Workflow Core State
   const [basketItems, setBasketItems] = useState<BatchItem[]>([]);
@@ -414,71 +416,104 @@ export function useBuyPawnWorkflow() {
   // 1. FINALISE EXISTING STOCK (No Seller, No Customer, No SAPS Form 21, No Pawn Loan)
   const handleFinalizeExistingStock = useCallback(async () => {
     setIsFinalizing(true);
-    try {
-      if (itemData.imageUrl?.startsWith('data:image/') && navigator.onLine) {
-        try {
-          const remoteUrl = await images.waitForCurrentUpload();
-          if (remoteUrl) {
-            itemData.imageUrl = remoteUrl;
-            setItemData((prev) => ({ ...prev, imageUrl: remoteUrl }));
+    const sku = generateUniqueSku((s) => inventory.some((i) => i.sku === s));
+    const rawCost = costBasisInput.trim();
+    const costBasisNum =
+      rawCost !== '' && !isNaN(parseFloat(rawCost)) ? parseFloat(rawCost) : undefined;
+    const retailPriceNum = parseFloat(retailPriceInput) || 0;
+
+    await finalizeProgress.runSequence({
+      title: 'Adding Stock Item',
+      subtitle: `Registering ${itemData.title.trim() || 'Inventory Item'}`,
+      isOffline: !isOnline,
+      steps: [
+        { id: 'prep', label: 'Preparing inventory SKU & tags' },
+        { id: 'media', label: itemData.imageUrl ? 'Verifying item photography' : 'Preparing catalog metadata' },
+        { id: 'pricing', label: `Setting retail price: R ${retailPriceNum.toLocaleString()}` },
+        { id: 'save', label: isOnline ? 'Adding item to active inventory' : 'Saving stock item on this device' },
+        { id: 'finish', label: 'Finishing inventory intake' }
+      ],
+      execute: async (runner) => {
+        runner.startStep('prep');
+        await new Promise(r => setTimeout(r, 80));
+        runner.completeStep('prep');
+
+        runner.startStep('media');
+        if (itemData.imageUrl?.startsWith('data:image/') && navigator.onLine) {
+          try {
+            const remoteUrl = await images.waitForCurrentUpload();
+            if (remoteUrl) {
+              itemData.imageUrl = remoteUrl;
+              setItemData((prev) => ({ ...prev, imageUrl: remoteUrl }));
+            }
+          } catch {
+            // Keep the optimized local image
           }
-        } catch {
-          // Keep the optimized local image
         }
+        runner.completeStep('media');
+
+        runner.startStep('pricing');
+        const newItemPayload: Omit<InventoryItem, 'id' | 'addedAt'> = {
+          sku,
+          title: itemData.title.trim(),
+          category: itemData.category,
+          brand: itemData.brand.trim() || undefined,
+          model: itemData.model.trim() || undefined,
+          serialOrImei: itemData.serialOrImei.trim() || 'N/A',
+          condition: itemData.condition,
+          acquisitionType: 'Existing Stock',
+          costBasis: costBasisNum,
+          retailPrice: retailPriceNum,
+          status: existingStockStatus,
+          stockLocation: itemData.stockLocation.trim() || 'Main Floor Display',
+          imageUrl: itemData.imageUrl,
+          specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
+          sourceType: 'existing_stock',
+          sourceStatus: 'unknown',
+          sourceNote:
+            itemData.sourceNote || 'Item was already owned by the shop before LocalMarket onboarding',
+          internalNote: itemData.internalNote.trim() || undefined,
+        };
+        runner.completeStep('pricing');
+
+        runner.startStep('save');
+        const itemId = await addItem(newItemPayload);
+
+        const createdItem: InventoryItem = {
+          id: itemId,
+          addedAt: new Date().toISOString(),
+          ...newItemPayload,
+        };
+
+        setResult({
+          assetTag: sku,
+          item: createdItem,
+        });
+
+        if (shopProfile?.id) {
+          await drafts.closeDraft(shopProfile.id);
+        }
+        runner.completeStep('save');
+
+        runner.startStep('finish');
+        await new Promise(r => setTimeout(r, 60));
+        runner.completeStep('finish');
+
+        return createdItem;
+      },
+      successTitle: 'Stock Added Successfully',
+      successMessage: `${itemData.title.trim()} (${sku}) is ready for ${existingStockStatus}.`,
+      onSuccess: (createdItem) => {
+        setStep('completion');
+        setIsFinalizing(false);
+      },
+      onError: () => {
+        setIsFinalizing(false);
+      },
+      onClose: () => {
+        setIsFinalizing(false);
       }
-
-      const sku = generateUniqueSku((s) => inventory.some((i) => i.sku === s));
-      const rawCost = costBasisInput.trim();
-      const costBasisNum =
-        rawCost !== '' && !isNaN(parseFloat(rawCost)) ? parseFloat(rawCost) : undefined;
-      const retailPriceNum = parseFloat(retailPriceInput) || 0;
-
-      const newItemPayload: Omit<InventoryItem, 'id' | 'addedAt'> = {
-        sku,
-        title: itemData.title.trim(),
-        category: itemData.category,
-        brand: itemData.brand.trim() || undefined,
-        model: itemData.model.trim() || undefined,
-        serialOrImei: itemData.serialOrImei.trim() || 'N/A',
-        condition: itemData.condition,
-        acquisitionType: 'Existing Stock',
-        costBasis: costBasisNum,
-        retailPrice: retailPriceNum,
-        status: existingStockStatus,
-        stockLocation: itemData.stockLocation.trim() || 'Main Floor Display',
-        imageUrl: itemData.imageUrl,
-        specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
-        sourceType: 'existing_stock',
-        sourceStatus: 'unknown',
-        sourceNote:
-          itemData.sourceNote || 'Item was already owned by the shop before LocalMarket onboarding',
-        internalNote: itemData.internalNote.trim() || undefined,
-      };
-
-      const itemId = await addItem(newItemPayload);
-
-      const createdItem: InventoryItem = {
-        id: itemId,
-        addedAt: new Date().toISOString(),
-        ...newItemPayload,
-      };
-
-      setResult({
-        assetTag: sku,
-        item: createdItem,
-      });
-
-      if (shopProfile?.id) {
-        await drafts.closeDraft(shopProfile.id);
-      }
-
-      setStep('completion');
-      showToast('Stock Added', `${createdItem.title} added to ${existingStockStatus}`, 'success');
-    } catch (err: any) {
-      showToast('Intake Failed', err?.message || 'Failed to complete intake', 'error');
-    } finally {
-      setIsFinalizing(false);
-    }
+    });
   }, [
     inventory,
     costBasisInput,
@@ -488,7 +523,9 @@ export function useBuyPawnWorkflow() {
     addItem,
     shopProfile?.id,
     drafts,
-    showToast,
+    images,
+    finalizeProgress,
+    isOnline,
   ]);
 
   // 2. FINALISE BUY FROM PERSON OR PAWN (Real Identities, Compliance & Transactions)
@@ -549,515 +586,578 @@ export function useBuyPawnWorkflow() {
     const currentShopId = shopProfile.id;
 
     setIsFinalizing(true);
-    try {
-      // Before an ONLINE authoritative Buy/Pawn RPC is sent:
-      // Reuse existing in-flight upload if the current item photo is still a local data URL
-      if (itemData.imageUrl?.startsWith('data:image/') && navigator.onLine && isSupabaseConfigured()) {
-        try {
-          const remoteUrl = await images.waitForCurrentUpload();
-          if (remoteUrl) {
-            itemData.imageUrl = remoteUrl;
-            setItemData((prev) => ({ ...prev, imageUrl: remoteUrl }));
-          }
-        } catch {
-          // Preserve local-first behavior
-        }
-      }
 
-      // If there's a current item not in basket, add it first or validate it
-      const finalBasket = [...basketItems];
-      if (itemData.title.trim()) {
-        finalBasket.push({
-          ...itemData,
-          id: crypto.randomUUID(),
-          agreedOffer,
-          suggestedRetail,
-        });
-      }
+    const finalBasket = [...basketItems];
+    if (itemData.title.trim()) {
+      finalBasket.push({
+        ...itemData,
+        id: crypto.randomUUID(),
+        agreedOffer,
+        suggestedRetail,
+      });
+    }
 
-      if (finalBasket.length === 0) {
-        showToast('No Items', 'Please add at least one item to the transaction', 'amber');
-        setIsFinalizing(false);
-        return;
-      }
+    if (finalBasket.length === 0) {
+      showToast('No Items', 'Please add at least one item to the transaction', 'amber');
+      setIsFinalizing(false);
+      return;
+    }
 
-      const transactionId = crypto.randomUUID();
-      const existingTxList = await db.sellerTransactions.where('shopId').equals(currentShopId).toArray();
-      const existingTxSet = new Set(existingTxList.map((t) => t.transactionNumber));
-      const transactionNumber = generateUniqueTransactionNumber((tn) => existingTxSet.has(tn));
+    if (txType === 'buy') {
+      const seller = selectedIdentity as Seller;
       const totalPayout = finalBasket.reduce((sum, i) => sum + i.agreedOffer, 0);
-      const nowIso = new Date().toISOString();
 
-      if (txType === 'buy') {
-        const seller = selectedIdentity as Seller;
-        const complianceStatus = seller.verified ? 'VERIFIED' : 'PENDING';
-        const inventoryItemsToAdd: InventoryItem[] = [];
-        const transactionItemsToAdd: any[] = [];
-        const sapsEntriesToAdd: SapsEntry[] = [];
-        const rpcItemsPayload: any[] = [];
+      await finalizeProgress.runSequence({
+        title: 'Completing Acquisition',
+        subtitle: `Purchasing from ${seller.fullName}`,
+        isOffline: !isOnline,
+        steps: [
+          { id: 'prep', label: 'Preparing purchase transaction & tags' },
+          { id: 'compliance', label: `Recording police compliance for ${seller.fullName}` },
+          { id: 'items', label: `Cataloging ${finalBasket.length} item${finalBasket.length > 1 ? 's' : ''} for retail floor` },
+          { id: 'save', label: isOnline ? 'Finalizing purchase & updating inventory' : 'Saving purchase on this device & queueing sync' },
+          { id: 'finish', label: 'Finishing transaction' }
+        ],
+        execute: async (runner) => {
+          runner.startStep('prep');
+          if (itemData.imageUrl?.startsWith('data:image/') && navigator.onLine && isSupabaseConfigured()) {
+            try {
+              const remoteUrl = await images.waitForCurrentUpload();
+              if (remoteUrl) {
+                itemData.imageUrl = remoteUrl;
+                setItemData((prev) => ({ ...prev, imageUrl: remoteUrl }));
+              }
+            } catch {
+              // Preserve local-first behavior
+            }
+          }
+          await new Promise((r) => setTimeout(r, 60));
+          runner.completeStep('prep');
 
-        const currentInventory = await db.inventory.where('shopId').equals(currentShopId).toArray();
-        const existingSkuSet = new Set(currentInventory.map((i) => i.sku));
+          runner.startStep('compliance');
+          const transactionId = crypto.randomUUID();
+          const existingTxList = await db.sellerTransactions.where('shopId').equals(currentShopId).toArray();
+          const existingTxSet = new Set(existingTxList.map((t) => t.transactionNumber));
+          const transactionNumber = generateUniqueTransactionNumber((tn) => existingTxSet.has(tn));
+          const nowIso = new Date().toISOString();
+          const complianceStatus = seller.verified ? 'VERIFIED' : 'PENDING';
+          runner.completeStep('compliance');
 
-        for (const bItem of finalBasket) {
-          const itemId = bItem.id || crypto.randomUUID();
-          const sku = generateUniqueSku((s) => existingSkuSet.has(s));
-          existingSkuSet.add(sku);
+          runner.startStep('items');
+          const inventoryItemsToAdd: InventoryItem[] = [];
+          const transactionItemsToAdd: any[] = [];
+          const sapsEntriesToAdd: SapsEntry[] = [];
+          const rpcItemsPayload: any[] = [];
 
+          const currentInventory = await db.inventory.where('shopId').equals(currentShopId).toArray();
+          const existingSkuSet = new Set(currentInventory.map((i) => i.sku));
+
+          for (const bItem of finalBasket) {
+            const itemId = bItem.id || crypto.randomUUID();
+            const sku = generateUniqueSku((s) => existingSkuSet.has(s));
+            existingSkuSet.add(sku);
+
+            const sapsId = crypto.randomUUID();
+            const sapsEntryNo = `SAPS-${new Date().getFullYear()}-${sapsId.slice(0, 8).toUpperCase()}`;
+
+            const invItem: InventoryItem = {
+              id: itemId,
+              shopId: currentShopId,
+              sku,
+              title: bItem.title,
+              category: bItem.category,
+              brand: bItem.brand?.trim() || undefined,
+              model: bItem.model?.trim() || undefined,
+              serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
+              condition: bItem.condition,
+              acquisitionType: 'Buy',
+              costBasis: bItem.agreedOffer,
+              retailPrice: bItem.suggestedRetail,
+              status: 'Retail Floor',
+              stockLocation: 'Retail Floor',
+              imageUrl: bItem.imageUrl,
+              specs: [bItem.brand, bItem.model].filter(Boolean).join(' • ') || undefined,
+              sourceType: 'seller',
+              sourceStatus: seller.verified ? 'verified' : 'pending',
+              sourceNote: `Purchased from ${seller.fullName} (${seller.idNumber})`,
+              internalNote: bItem.internalNote?.trim() || undefined,
+              addedAt: nowIso,
+            };
+            inventoryItemsToAdd.push(invItem);
+
+            transactionItemsToAdd.push({
+              id: crypto.randomUUID(),
+              sellerTransactionId: transactionId,
+              shopId: currentShopId,
+              itemId,
+              itemSku: sku,
+              itemTitle: bItem.title,
+              amountPaid: bItem.agreedOffer,
+              retailPrice: bItem.suggestedRetail,
+              serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
+              condition: bItem.condition,
+              createdAt: nowIso,
+            });
+
+            sapsEntriesToAdd.push({
+              id: sapsId,
+              shopId: currentShopId,
+              entryNumber: sapsEntryNo,
+              timestamp: nowIso,
+              customerId: seller.id,
+              customerName: seller.fullName,
+              customerIdNumber: seller.idNumber,
+              customerAddress: seller.address,
+              customerPhone: seller.mobile,
+              itemDescription: bItem.title,
+              category: bItem.category,
+              serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
+              condition: bItem.condition,
+              acquisitionType: 'Buy',
+              considerationPaid: bItem.agreedOffer,
+              officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
+              policeStationRef: shopProfile.saps_dealer_license || 'SAPS License',
+              verificationStatus: complianceStatus as any,
+              barcodeRef: sku,
+            });
+
+            rpcItemsPayload.push({
+              id: itemId,
+              sku,
+              title: bItem.title,
+              category: bItem.category,
+              brand: bItem.brand?.trim() || null,
+              model: bItem.model?.trim() || null,
+              serial_or_imei: bItem.serialOrImei?.trim() || 'N/A',
+              condition: bItem.condition,
+              amount_paid: bItem.agreedOffer,
+              retail_price: bItem.suggestedRetail,
+              image_url: bItem.imageUrl,
+              specs: [bItem.brand, bItem.model].filter(Boolean).join(' • ') || null,
+              stock_location: 'Retail Floor',
+              internal_note: bItem.internalNote?.trim() || null,
+              saps_entry_id: sapsId,
+              saps_entry_number: sapsEntryNo,
+            });
+          }
+
+          const txRecord = {
+            id: transactionId,
+            shopId: currentShopId,
+            sellerId: seller.id,
+            transactionNumber,
+            totalProposedPayout: totalPayout,
+            totalApprovedPayout: totalPayout,
+            paymentStatus: 'Paid' as const,
+            status: 'Acquired' as const,
+            complianceStatus: complianceStatus as any,
+            timestamp: nowIso,
+            items: transactionItemsToAdd,
+            sapsRef: transactionNumber,
+          };
+
+          const buyPayload = {
+            transactionId,
+            transactionNumber,
+            sellerId: seller.id,
+            items: rpcItemsPayload,
+            totalAmount: totalPayout,
+            paymentMethod: 'cash',
+            paymentStatus: 'Paid',
+            transactionStatus: 'Acquired',
+            complianceStatus,
+            sapsRef: transactionNumber,
+            officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
+            policeStationRef: shopProfile.saps_dealer_license || '',
+            shopId: currentShopId,
+          };
+
+          runner.completeStep('items');
+
+          runner.startStep('save');
+          let syncLogStatus: 'completed' | 'pending' = 'pending';
+          let syncedAt: string | undefined = undefined;
+
+          // 1. ATOMIC SERVER RPC FIRST IF ONLINE
+          if (isSupabaseConfigured() && navigator.onLine) {
+            try {
+              const rpcRes = await sellerTransactionsApi.completeBuyAcquisitionRpc(buyPayload);
+              if (rpcRes.success) {
+                syncLogStatus = 'completed';
+                syncedAt = new Date().toISOString();
+              } else {
+                const isNetworkError = (msg?: string) => {
+                  if (!msg) return false;
+                  const lower = msg.toLowerCase();
+                  return (
+                    lower.includes('failed to fetch') ||
+                    lower.includes('network') ||
+                    lower.includes('timeout') ||
+                    lower.includes('aborted')
+                  );
+                };
+
+                if (!isNetworkError(rpcRes.error)) {
+                  throw new Error(rpcRes.error || 'Server rejected acquisition.');
+                }
+                console.warn(
+                  'Network timeout during buy acquisition, saving locally for offline sync:',
+                  rpcRes.error
+                );
+              }
+            } catch (err: any) {
+              if (err?.message && !err.message.toLowerCase().includes('network') && !err.message.toLowerCase().includes('fetch')) {
+                throw err;
+              }
+              console.warn(
+                'Network error during online buy acquisition, saving locally for offline sync:',
+                err?.message
+              );
+            }
+          }
+
+          // 2. ATOMIC LOCAL DEXIE COMMIT
+          await db.transaction(
+            'rw',
+            [db.inventory, db.sellerTransactions, db.sellerTransactionItems, db.saps, db.syncLogs],
+            async () => {
+              await db.inventory.bulkAdd(inventoryItemsToAdd);
+              await db.sellerTransactionItems.bulkAdd(transactionItemsToAdd);
+              await db.sellerTransactions.add(txRecord);
+              await db.saps.bulkAdd(sapsEntriesToAdd);
+
+              await db.syncLogs.add({
+                shopId: currentShopId,
+                entityType: 'buyAcquisition',
+                entityId: transactionId,
+                action: 'create',
+                payload: buyPayload,
+                status: syncLogStatus,
+                syncedAt,
+                createdAt: nowIso,
+                retryCount: 0,
+              });
+            }
+          );
+
+          runner.completeStep('save');
+
+          runner.startStep('finish');
+          setResult({
+            assetTag: transactionNumber,
+            item: { title: `${finalBasket.length} Items`, sku: transactionNumber } as any,
+          });
+
+          await drafts.closeDraft(currentShopId);
+          runner.completeStep('finish');
+
+          return { transactionNumber, syncLogStatus, count: finalBasket.length };
+        },
+        successTitle: 'Purchase Completed',
+        successMessage: isOnline
+          ? `Acquired ${finalBasket.length} item${finalBasket.length > 1 ? 's' : ''} from ${seller.fullName}.`
+          : `Saved locally on this device. Cloud sync queued.`,
+        onSuccess: (res) => {
+          setStep('completion');
+          setIsFinalizing(false);
+        },
+        onError: () => {
+          setIsFinalizing(false);
+        },
+        onClose: () => {
+          setIsFinalizing(false);
+        }
+      });
+      return;
+    }
+
+    if (txType === 'pawn' && pawnCalculations) {
+      const pCustomer = selectedIdentity as Customer;
+
+      await finalizeProgress.runSequence({
+        title: 'Finalizing Pawn Loan',
+        subtitle: `Intake for ${pCustomer.fullName}`,
+        isOffline: !isOnline,
+        steps: [
+          { id: 'prep', label: 'Preparing loan agreement & vault tag' },
+          { id: 'ncr', label: 'Applying NCR interest rates & terms' },
+          { id: 'vault', label: `Allocating vault shelf: ${businessRules.defaultVaultShelf}` },
+          { id: 'save', label: isOnline ? 'Registering loan and securing asset' : 'Saving loan locally on this device' },
+          { id: 'finish', label: 'Finishing pawn contract' }
+        ],
+        execute: async (runner) => {
+          runner.startStep('prep');
+          if (itemData.imageUrl?.startsWith('data:image/') && navigator.onLine && isSupabaseConfigured()) {
+            try {
+              const remoteUrl = await images.waitForCurrentUpload();
+              if (remoteUrl) {
+                itemData.imageUrl = remoteUrl;
+                setItemData((prev) => ({ ...prev, imageUrl: remoteUrl }));
+              }
+            } catch {
+              // Preserve local-first behavior
+            }
+          }
+          const allLoans = await db.loans.where('shopId').equals(currentShopId).toArray();
+          const ticketNumber = generateUniquePawnTicket((t) => allLoans.some((l) => l.ticketNumber === t));
+          const currentInventory = await db.inventory.where('shopId').equals(currentShopId).toArray();
+          const sku = generateUniqueSku((s) => currentInventory.some((i) => i.sku === s));
+
+          const loanId = crypto.randomUUID();
+          const itemId = crypto.randomUUID();
           const sapsId = crypto.randomUUID();
           const sapsEntryNo = `SAPS-${new Date().getFullYear()}-${sapsId.slice(0, 8).toUpperCase()}`;
+          const qrToken = `TKN-${loanId.slice(0, 8).toUpperCase()}`;
+          const verificationStatus = pCustomer.verified ? 'VERIFIED' : 'PENDING';
+          const nowIso = new Date().toISOString();
 
+          runner.completeStep('prep');
+
+          runner.startStep('ncr');
           const invItem: InventoryItem = {
             id: itemId,
             shopId: currentShopId,
             sku,
-            title: bItem.title,
-            category: bItem.category,
-            brand: bItem.brand?.trim() || undefined,
-            model: bItem.model?.trim() || undefined,
-            serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
-            condition: bItem.condition,
-            acquisitionType: 'Buy',
-            costBasis: bItem.agreedOffer,
-            retailPrice: bItem.suggestedRetail,
-            status: 'Retail Floor',
-            stockLocation: 'Retail Floor',
-            imageUrl: bItem.imageUrl,
-            specs: [bItem.brand, bItem.model].filter(Boolean).join(' • ') || undefined,
-            sourceType: 'seller',
-            sourceStatus: seller.verified ? 'verified' : 'pending',
-            sourceNote: `Purchased from ${seller.fullName} (${seller.idNumber})`,
-            internalNote: bItem.internalNote?.trim() || undefined,
+            title: itemData.title,
+            category: itemData.category,
+            brand: itemData.brand?.trim() || undefined,
+            model: itemData.model?.trim() || undefined,
+            serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
+            condition: itemData.condition,
+            acquisitionType: 'Pawn',
+            costBasis: agreedOffer,
+            retailPrice: Math.round(agreedOffer * 1.85),
+            status: 'Vault Hold',
+            vaultLocation: businessRules.defaultVaultShelf,
+            stockLocation: businessRules.defaultVaultShelf,
+            pawnTicketId: ticketNumber,
+            imageUrl: itemData.imageUrl,
+            specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
+            sourceType: 'pawn',
+            sourceStatus: pCustomer.verified ? 'verified' : 'pending',
+            sourceNote: `Pawned by ${pCustomer.fullName} under Ticket ${ticketNumber}`,
+            internalNote: itemData.internalNote?.trim() || undefined,
             addedAt: nowIso,
           };
-          inventoryItemsToAdd.push(invItem);
 
-          transactionItemsToAdd.push({
-            id: crypto.randomUUID(),
-            sellerTransactionId: transactionId,
+          const loanRecord: PawnLoan = {
+            id: loanId,
             shopId: currentShopId,
-            itemId,
-            itemSku: sku,
-            itemTitle: bItem.title,
-            amountPaid: bItem.agreedOffer,
-            retailPrice: bItem.suggestedRetail,
-            serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
-            condition: bItem.condition,
-            createdAt: nowIso,
-          });
+            ticketNumber,
+            customerId: pCustomer.id,
+            customerName: pCustomer.fullName,
+            customerIdNumber: pCustomer.idNumber,
+            customerMobile: pCustomer.mobile,
+            customerAddress: pCustomer.address,
+            itemId: itemId,
+            itemTitle: itemData.title,
+            itemCategory: itemData.category,
+            serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
+            condition: itemData.condition,
+            itemImageUrl: itemData.imageUrl,
+            principal: agreedOffer,
+            ncrMonthlyRate: businessRules.pawnMonthlyInterestRate,
+            monthlyInterest: pawnCalculations.interest,
+            monthlyStorageAdminFee: pawnCalculations.adminFee,
+            totalRedemptionAmount: pawnCalculations.totalRedemption,
+            extensionFee: pawnCalculations.adminFee + pawnCalculations.interest,
+            startDate: nowIso.split('T')[0],
+            expiryDate: pawnCalculations.expiryDate,
+            daysRemaining: businessRules.defaultLoanTermDays,
+            daysElapsed: 0,
+            vaultShelf: businessRules.defaultVaultShelf,
+            status: 'Active',
+            qrToken,
+            history: [
+              {
+                date: nowIso,
+                action: 'Created',
+                amount: agreedOffer,
+                note: 'Pawn loan initiated',
+              },
+            ],
+          };
+          runner.completeStep('ncr');
 
-          sapsEntriesToAdd.push({
+          runner.startStep('vault');
+          const sapsRecord: SapsEntry = {
             id: sapsId,
             shopId: currentShopId,
             entryNumber: sapsEntryNo,
             timestamp: nowIso,
-            customerId: seller.id,
-            customerName: seller.fullName,
-            customerIdNumber: seller.idNumber,
-            customerAddress: seller.address,
-            customerPhone: seller.mobile,
-            itemDescription: bItem.title,
-            category: bItem.category,
-            serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
-            condition: bItem.condition,
-            acquisitionType: 'Buy',
-            considerationPaid: bItem.agreedOffer,
+            customerId: pCustomer.id,
+            customerName: pCustomer.fullName,
+            customerIdNumber: pCustomer.idNumber,
+            customerAddress: pCustomer.address,
+            customerPhone: pCustomer.mobile,
+            itemDescription: itemData.title,
+            category: itemData.category,
+            serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
+            condition: itemData.condition,
+            acquisitionType: 'Pawn' as const,
+            considerationPaid: agreedOffer,
             officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
             policeStationRef: shopProfile.saps_dealer_license || 'SAPS License',
-            verificationStatus: complianceStatus as any,
+            verificationStatus: verificationStatus as any,
             barcodeRef: sku,
-          });
+          };
 
-          rpcItemsPayload.push({
-            id: itemId,
-            sku,
-            title: bItem.title,
-            category: bItem.category,
-            brand: bItem.brand?.trim() || null,
-            model: bItem.model?.trim() || null,
-            serial_or_imei: bItem.serialOrImei?.trim() || 'N/A',
-            condition: bItem.condition,
-            amount_paid: bItem.agreedOffer,
-            retail_price: bItem.suggestedRetail,
-            image_url: bItem.imageUrl,
-            specs: [bItem.brand, bItem.model].filter(Boolean).join(' • ') || null,
-            stock_location: 'Retail Floor',
-            internal_note: bItem.internalNote?.trim() || null,
-            saps_entry_id: sapsId,
-            saps_entry_number: sapsEntryNo,
-          });
-        }
+          const pawnPayload = {
+            loanId,
+            ticketNumber,
+            customerId: pCustomer.id,
+            itemId,
+            itemSku: sku,
+            itemTitle: itemData.title,
+            itemCategory: itemData.category,
+            itemBrand: itemData.brand?.trim() || undefined,
+            itemModel: itemData.model?.trim() || undefined,
+            serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
+            condition: itemData.condition,
+            itemImageUrl: itemData.imageUrl,
+            specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
+            stockLocation: businessRules.defaultVaultShelf,
+            internalNote: itemData.internalNote?.trim() || undefined,
+            principal: agreedOffer,
+            ncrMonthlyRate: businessRules.pawnMonthlyInterestRate,
+            monthlyInterest: pawnCalculations.interest,
+            monthlyStorageAdminFee: pawnCalculations.adminFee,
+            totalRedemptionAmount: pawnCalculations.totalRedemption,
+            extensionFee: pawnCalculations.adminFee + pawnCalculations.interest,
+            startDate: nowIso.split('T')[0],
+            expiryDate: pawnCalculations.expiryDate,
+            daysRemaining: businessRules.defaultLoanTermDays,
+            vaultShelf: businessRules.defaultVaultShelf,
+            qrToken,
+            officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
+            policeStationRef: shopProfile.saps_dealer_license || '',
+            sapsEntryId: sapsId,
+            sapsEntryNumber: sapsEntryNo,
+            history: loanRecord.history,
+            shopId: currentShopId,
+          };
+          runner.completeStep('vault');
 
-        const txRecord = {
-          id: transactionId,
-          shopId: currentShopId,
-          sellerId: seller.id,
-          transactionNumber,
-          totalProposedPayout: totalPayout,
-          totalApprovedPayout: totalPayout,
-          paymentStatus: 'Paid' as const,
-          status: 'Acquired' as const,
-          complianceStatus: complianceStatus as any,
-          timestamp: nowIso,
-          items: transactionItemsToAdd,
-          sapsRef: transactionNumber,
-        };
+          runner.startStep('save');
+          let syncLogStatus: 'completed' | 'pending' = 'pending';
+          let syncedAt: string | undefined = undefined;
 
-        const buyPayload = {
-          transactionId,
-          transactionNumber,
-          sellerId: seller.id,
-          items: rpcItemsPayload,
-          totalAmount: totalPayout,
-          paymentMethod: 'cash',
-          paymentStatus: 'Paid',
-          transactionStatus: 'Acquired',
-          complianceStatus,
-          sapsRef: transactionNumber,
-          officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
-          policeStationRef: shopProfile.saps_dealer_license || '',
-          shopId: currentShopId,
-        };
+          // 1. ATOMIC SERVER RPC FIRST IF ONLINE
+          if (isSupabaseConfigured() && navigator.onLine) {
+            try {
+              const rpcRes = await pawnLoansApi.completePawnIntakeRpc(pawnPayload);
+              if (rpcRes.success) {
+                syncLogStatus = 'completed';
+                syncedAt = new Date().toISOString();
+                if (rpcRes.data) {
+                  const serverLoan = Array.isArray(rpcRes.data) ? rpcRes.data[0] : rpcRes.data;
+                  if (serverLoan && typeof serverLoan === 'object') {
+                    if (serverLoan.monthly_interest !== undefined && serverLoan.monthly_interest !== null) {
+                      loanRecord.monthlyInterest = Number(serverLoan.monthly_interest);
+                    }
+                    if (
+                      serverLoan.monthly_storage_admin_fee !== undefined &&
+                      serverLoan.monthly_storage_admin_fee !== null
+                    ) {
+                      loanRecord.monthlyStorageAdminFee = Number(serverLoan.monthly_storage_admin_fee);
+                    }
+                    if (
+                      serverLoan.total_redemption_amount !== undefined &&
+                      serverLoan.total_redemption_amount !== null
+                    ) {
+                      loanRecord.totalRedemptionAmount = Number(serverLoan.total_redemption_amount);
+                    }
+                    if (serverLoan.expiry_date) {
+                      loanRecord.expiryDate = String(serverLoan.expiry_date);
+                    }
+                    if (
+                      serverLoan.days_remaining !== undefined &&
+                      serverLoan.days_remaining !== null
+                    ) {
+                      loanRecord.daysRemaining = Number(serverLoan.days_remaining);
+                    }
+                  }
+                }
+              } else {
+                const isNetworkError = (msg?: string) => {
+                  if (!msg) return false;
+                  const lower = msg.toLowerCase();
+                  return (
+                    lower.includes('failed to fetch') ||
+                    lower.includes('network') ||
+                    lower.includes('timeout') ||
+                    lower.includes('aborted')
+                  );
+                };
 
-        let syncLogStatus: 'completed' | 'pending' = 'pending';
-        let syncedAt: string | undefined = undefined;
-
-        // 1. ATOMIC SERVER RPC FIRST IF ONLINE
-        if (isSupabaseConfigured() && navigator.onLine) {
-          try {
-            const rpcRes = await sellerTransactionsApi.completeBuyAcquisitionRpc(buyPayload);
-            if (rpcRes.success) {
-              syncLogStatus = 'completed';
-              syncedAt = new Date().toISOString();
-            } else {
-              const isNetworkError = (msg?: string) => {
-                if (!msg) return false;
-                const lower = msg.toLowerCase();
-                return (
-                  lower.includes('failed to fetch') ||
-                  lower.includes('network') ||
-                  lower.includes('timeout') ||
-                  lower.includes('aborted')
+                if (!isNetworkError(rpcRes.error)) {
+                  throw new Error(rpcRes.error || 'Server rejected pawn intake.');
+                }
+                console.warn(
+                  'Network timeout during pawn intake, saving locally for offline sync:',
+                  rpcRes.error
                 );
-              };
-
-              if (!isNetworkError(rpcRes.error)) {
-                // Explicit server rejection - ABORT IMMEDIATELY, do not write fake local data
-                showToast('Acquisition Rejected', rpcRes.error || 'Server rejected acquisition.', 'error');
-                setIsFinalizing(false);
-                return;
+              }
+            } catch (err: any) {
+              if (err?.message && !err.message.toLowerCase().includes('network') && !err.message.toLowerCase().includes('fetch')) {
+                throw err;
               }
               console.warn(
-                'Network timeout during buy acquisition, saving locally for offline sync:',
-                rpcRes.error
+                'Network error during online pawn intake, saving locally for offline sync:',
+                err?.message
               );
             }
-          } catch (err: any) {
-            console.warn(
-              'Network error during online buy acquisition, saving locally for offline sync:',
-              err?.message
-            );
           }
-        }
 
-        // 2. ATOMIC LOCAL DEXIE COMMIT (Reflecting server success or durable offline outbox)
-        await db.transaction(
-          'rw',
-          [db.inventory, db.sellerTransactions, db.sellerTransactionItems, db.saps, db.syncLogs],
-          async () => {
-            await db.inventory.bulkAdd(inventoryItemsToAdd);
-            await db.sellerTransactionItems.bulkAdd(transactionItemsToAdd);
-            await db.sellerTransactions.add(txRecord);
-            await db.saps.bulkAdd(sapsEntriesToAdd);
+          // 2. ATOMIC LOCAL DEXIE COMMIT
+          await db.transaction('rw', [db.inventory, db.loans, db.saps, db.syncLogs], async () => {
+            await db.inventory.add(invItem);
+            await db.loans.add(loanRecord);
+            await db.saps.add(sapsRecord);
 
             await db.syncLogs.add({
               shopId: currentShopId,
-              entityType: 'buyAcquisition',
-              entityId: transactionId,
+              entityType: 'pawnIntake',
+              entityId: loanId,
               action: 'create',
-              payload: buyPayload,
+              payload: pawnPayload,
               status: syncLogStatus,
               syncedAt,
               createdAt: nowIso,
               retryCount: 0,
             });
-          }
-        );
-
-        setResult({
-          assetTag: transactionNumber,
-          item: { title: `${finalBasket.length} Items`, sku: transactionNumber } as any,
-        });
-
-        await drafts.closeDraft(currentShopId);
-        setStep('completion');
-        if (syncLogStatus === 'completed') {
-          showToast(
-            'Batch Purchase Complete',
-            `${finalBasket.length} items acquired atomically and logged to SAPS`,
-            'success'
-          );
-        } else {
-          showToast(
-            'Saved Offline',
-            `${finalBasket.length} items saved locally and queued for sync`,
-            'amber'
-          );
-        }
-        return;
-      }
-
-      if (txType === 'pawn' && pawnCalculations) {
-        const pCustomer = selectedIdentity as Customer;
-        const allLoans = await db.loans.where('shopId').equals(currentShopId).toArray();
-        const ticketNumber = generateUniquePawnTicket((t) => allLoans.some((l) => l.ticketNumber === t));
-        const currentInventory = await db.inventory.where('shopId').equals(currentShopId).toArray();
-        const sku = generateUniqueSku((s) => currentInventory.some((i) => i.sku === s));
-
-        const loanId = crypto.randomUUID();
-        const itemId = crypto.randomUUID();
-        const sapsId = crypto.randomUUID();
-        const sapsEntryNo = `SAPS-${new Date().getFullYear()}-${sapsId.slice(0, 8).toUpperCase()}`;
-        const qrToken = `TKN-${loanId.slice(0, 8).toUpperCase()}`;
-        const verificationStatus = pCustomer.verified ? 'VERIFIED' : 'PENDING';
-
-        const invItem: InventoryItem = {
-          id: itemId,
-          shopId: currentShopId,
-          sku,
-          title: itemData.title,
-          category: itemData.category,
-          brand: itemData.brand?.trim() || undefined,
-          model: itemData.model?.trim() || undefined,
-          serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
-          condition: itemData.condition,
-          acquisitionType: 'Pawn',
-          costBasis: agreedOffer,
-          retailPrice: Math.round(agreedOffer * 1.85),
-          status: 'Vault Hold',
-          vaultLocation: businessRules.defaultVaultShelf,
-          stockLocation: businessRules.defaultVaultShelf,
-          pawnTicketId: ticketNumber,
-          imageUrl: itemData.imageUrl,
-          specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
-          sourceType: 'pawn',
-          sourceStatus: pCustomer.verified ? 'verified' : 'pending',
-          sourceNote: `Pawned by ${pCustomer.fullName} under Ticket ${ticketNumber}`,
-          internalNote: itemData.internalNote?.trim() || undefined,
-          addedAt: nowIso,
-        };
-
-        const loanRecord: PawnLoan = {
-          id: loanId,
-          shopId: currentShopId,
-          ticketNumber,
-          customerId: pCustomer.id,
-          customerName: pCustomer.fullName,
-          customerIdNumber: pCustomer.idNumber,
-          customerMobile: pCustomer.mobile,
-          customerAddress: pCustomer.address,
-          itemId: itemId,
-          itemTitle: itemData.title,
-          itemCategory: itemData.category,
-          serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
-          condition: itemData.condition,
-          itemImageUrl: itemData.imageUrl,
-          principal: agreedOffer,
-          ncrMonthlyRate: businessRules.pawnMonthlyInterestRate,
-          monthlyInterest: pawnCalculations.interest,
-          monthlyStorageAdminFee: pawnCalculations.adminFee,
-          totalRedemptionAmount: pawnCalculations.totalRedemption,
-          extensionFee: pawnCalculations.adminFee + pawnCalculations.interest,
-          startDate: nowIso.split('T')[0],
-          expiryDate: pawnCalculations.expiryDate,
-          daysRemaining: businessRules.defaultLoanTermDays,
-          daysElapsed: 0,
-          vaultShelf: businessRules.defaultVaultShelf,
-          status: 'Active',
-          qrToken,
-          history: [
-            {
-              date: nowIso,
-              action: 'Created',
-              amount: agreedOffer,
-              note: 'Pawn loan initiated',
-            },
-          ],
-        };
-
-        const sapsRecord: SapsEntry = {
-          id: sapsId,
-          shopId: currentShopId,
-          entryNumber: sapsEntryNo,
-          timestamp: nowIso,
-          customerId: pCustomer.id,
-          customerName: pCustomer.fullName,
-          customerIdNumber: pCustomer.idNumber,
-          customerAddress: pCustomer.address,
-          customerPhone: pCustomer.mobile,
-          itemDescription: itemData.title,
-          category: itemData.category,
-          serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
-          condition: itemData.condition,
-          acquisitionType: 'Pawn' as const,
-          considerationPaid: agreedOffer,
-          officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
-          policeStationRef: shopProfile.saps_dealer_license || 'SAPS License',
-          verificationStatus: verificationStatus as any,
-          barcodeRef: sku,
-        };
-
-        const pawnPayload = {
-          loanId,
-          ticketNumber,
-          customerId: pCustomer.id,
-          itemId,
-          itemSku: sku,
-          itemTitle: itemData.title,
-          itemCategory: itemData.category,
-          itemBrand: itemData.brand?.trim() || undefined,
-          itemModel: itemData.model?.trim() || undefined,
-          serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
-          condition: itemData.condition,
-          itemImageUrl: itemData.imageUrl,
-          specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
-          stockLocation: businessRules.defaultVaultShelf,
-          internalNote: itemData.internalNote?.trim() || undefined,
-          principal: agreedOffer,
-          ncrMonthlyRate: businessRules.pawnMonthlyInterestRate,
-          monthlyInterest: pawnCalculations.interest,
-          monthlyStorageAdminFee: pawnCalculations.adminFee,
-          totalRedemptionAmount: pawnCalculations.totalRedemption,
-          extensionFee: pawnCalculations.adminFee + pawnCalculations.interest,
-          startDate: nowIso.split('T')[0],
-          expiryDate: pawnCalculations.expiryDate,
-          daysRemaining: businessRules.defaultLoanTermDays,
-          vaultShelf: businessRules.defaultVaultShelf,
-          qrToken,
-          officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
-          policeStationRef: shopProfile.saps_dealer_license || '',
-          sapsEntryId: sapsId,
-          sapsEntryNumber: sapsEntryNo,
-          history: loanRecord.history,
-          shopId: currentShopId,
-        };
-
-        let syncLogStatus: 'completed' | 'pending' = 'pending';
-        let syncedAt: string | undefined = undefined;
-
-        // 1. ATOMIC SERVER RPC FIRST IF ONLINE
-        if (isSupabaseConfigured() && navigator.onLine) {
-          try {
-            const rpcRes = await pawnLoansApi.completePawnIntakeRpc(pawnPayload);
-            if (rpcRes.success) {
-              syncLogStatus = 'completed';
-              syncedAt = new Date().toISOString();
-              if (rpcRes.data) {
-                const serverLoan = Array.isArray(rpcRes.data) ? rpcRes.data[0] : rpcRes.data;
-                if (serverLoan && typeof serverLoan === 'object') {
-                  if (serverLoan.monthly_interest !== undefined && serverLoan.monthly_interest !== null) {
-                    loanRecord.monthlyInterest = Number(serverLoan.monthly_interest);
-                  }
-                  if (
-                    serverLoan.monthly_storage_admin_fee !== undefined &&
-                    serverLoan.monthly_storage_admin_fee !== null
-                  ) {
-                    loanRecord.monthlyStorageAdminFee = Number(serverLoan.monthly_storage_admin_fee);
-                  }
-                  if (
-                    serverLoan.total_redemption_amount !== undefined &&
-                    serverLoan.total_redemption_amount !== null
-                  ) {
-                    loanRecord.totalRedemptionAmount = Number(serverLoan.total_redemption_amount);
-                  }
-                  if (serverLoan.expiry_date) {
-                    loanRecord.expiryDate = String(serverLoan.expiry_date);
-                  }
-                  if (
-                    serverLoan.days_remaining !== undefined &&
-                    serverLoan.days_remaining !== null
-                  ) {
-                    loanRecord.daysRemaining = Number(serverLoan.days_remaining);
-                  }
-                }
-              }
-            } else {
-              const isNetworkError = (msg?: string) => {
-                if (!msg) return false;
-                const lower = msg.toLowerCase();
-                return (
-                  lower.includes('failed to fetch') ||
-                  lower.includes('network') ||
-                  lower.includes('timeout') ||
-                  lower.includes('aborted')
-                );
-              };
-
-              if (!isNetworkError(rpcRes.error)) {
-                // Explicit server rejection - ABORT IMMEDIATELY, do not write fake local data
-                showToast('Pawn Intake Rejected', rpcRes.error || 'Server rejected pawn intake.', 'error');
-                setIsFinalizing(false);
-                return;
-              }
-              console.warn(
-                'Network timeout during pawn intake, saving locally for offline sync:',
-                rpcRes.error
-              );
-            }
-          } catch (err: any) {
-            console.warn(
-              'Network error during online pawn intake, saving locally for offline sync:',
-              err?.message
-            );
-          }
-        }
-
-        // 2. ATOMIC LOCAL DEXIE COMMIT (Reflecting server success or durable offline outbox)
-        await db.transaction('rw', [db.inventory, db.loans, db.saps, db.syncLogs], async () => {
-          await db.inventory.add(invItem);
-          await db.loans.add(loanRecord);
-          await db.saps.add(sapsRecord);
-
-          await db.syncLogs.add({
-            shopId: currentShopId,
-            entityType: 'pawnIntake',
-            entityId: loanId,
-            action: 'create',
-            payload: pawnPayload,
-            status: syncLogStatus,
-            syncedAt,
-            createdAt: nowIso,
-            retryCount: 0,
           });
-        });
 
-        setResult({
-          assetTag: sku,
-          ticketNumber,
-          item: { id: itemId, title: itemData.title, sku } as any,
-          loan: { id: loanId, ticketNumber } as any,
-        });
+          runner.completeStep('save');
 
-        await drafts.closeDraft(currentShopId);
-        setStep('completion');
-        if (syncLogStatus === 'completed') {
-          showToast(
-            'Pawn Finalized',
-            `Ticket ${ticketNumber} created and asset vaulted atomically`,
-            'success'
-          );
-        } else {
-          showToast(
-            'Saved Offline',
-            `Ticket ${ticketNumber} saved locally and queued for sync`,
-            'amber'
-          );
+          runner.startStep('finish');
+          setResult({
+            assetTag: sku,
+            ticketNumber,
+            item: { id: itemId, title: itemData.title, sku } as any,
+            loan: { id: loanId, ticketNumber } as any,
+          });
+
+          await drafts.closeDraft(currentShopId);
+          runner.completeStep('finish');
+
+          return { ticketNumber, syncLogStatus };
+        },
+        successTitle: 'Pawn Loan Registered',
+        successMessage: isOnline
+          ? `Pawn Ticket created for ${pCustomer.fullName}.`
+          : `Loan saved locally on this device. Cloud sync queued.`,
+        onSuccess: () => {
+          setStep('completion');
+          setIsFinalizing(false);
+        },
+        onError: () => {
+          setIsFinalizing(false);
+        },
+        onClose: () => {
+          setIsFinalizing(false);
         }
-      }
-    } catch (err: any) {
-      showToast('Transaction Failed', err?.message || 'Could not complete transaction', 'error');
-    } finally {
-      setIsFinalizing(false);
+      });
     }
   }, [
     selectedIdentity,
@@ -1065,14 +1165,18 @@ export function useBuyPawnWorkflow() {
     isFinalizing,
     hasPermission,
     shopProfile?.id,
+    shopProfile?.saps_dealer_license,
     basketItems,
     itemData,
     agreedOffer,
     suggestedRetail,
     user,
     drafts,
+    images,
     pawnCalculations,
     businessRules,
+    finalizeProgress,
+    isOnline,
     showToast,
   ]);
 
@@ -1259,6 +1363,7 @@ export function useBuyPawnWorkflow() {
     hasPermission,
     showToast,
     setActiveContractModal,
+    finalizeProgress,
 
     // Workflow actions
     actions: {

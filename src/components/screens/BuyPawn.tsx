@@ -12,6 +12,7 @@ import { BuyPawnValuationStep } from './buy-pawn/BuyPawnValuationStep';
 import { BuyPawnLocationStep } from './buy-pawn/BuyPawnLocationStep';
 import { BuyPawnReviewStep } from './buy-pawn/BuyPawnReviewStep';
 import { BuyPawnCompletion } from './buy-pawn/BuyPawnCompletion';
+import { OperationProgressScreen } from '../common/OperationProgressScreen';
 
 export type { WorkflowStep, TxType } from './buy-pawn/buyPawnTypes';
 
@@ -286,6 +287,9 @@ export const BuyPawn: React.FC = () => {
           onCapture={(blob, fileName) => images.handleProcessImage(blob, fileName)}
           title="Capture Item Photograph"
         />
+
+        {/* OPERATION PROGRESS SCREEN */}
+        <OperationProgressScreen state={workflow.finalizeProgress.state} />
       </div>
     </div>
   );

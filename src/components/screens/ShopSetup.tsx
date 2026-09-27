@@ -5,6 +5,8 @@ import { shopProfilesApi } from '../../services/supabaseApi';
 import { validateAndNormalizeSaPhone } from '../../utils/phoneValidator';
 import { createLogoImage, ProcessedImageResult } from '../../utils/imageProcessor';
 import { storageService } from '../../services/storageService';
+import { useOperationProgress } from '../../hooks/useOperationProgress';
+import { OperationProgressScreen } from '../common/OperationProgressScreen';
 import { 
   Loader2, 
   Store, 
@@ -34,8 +36,9 @@ const SA_PROVINCES = [
 ];
 
 export const ShopSetup: React.FC = () => {
-  const { showToast } = useApp();
+  const { showToast, isOnline } = useApp();
   const { user, refreshProfile } = useAuth();
+  const setupProgress = useOperationProgress();
   const [loading, setLoading] = useState(false);
   const [showOptional, setShowOptional] = useState(false);
 
@@ -173,82 +176,113 @@ export const ShopSetup: React.FC = () => {
 
     setLoading(true);
 
-    try {
-      const phoneResult = validateAndNormalizeSaPhone(phone);
-      const normalizedPhone = phoneResult.normalizedNumber || phone.trim();
+    const phoneResult = validateAndNormalizeSaPhone(phone);
+    const normalizedPhone = phoneResult.normalizedNumber || phone.trim();
 
-      const metadata: any = {};
-      if (tradingName.trim()) metadata.trading_name = tradingName.trim();
-      if (regNumber.trim()) metadata.registration_number = regNumber.trim();
-      if (vatNumber.trim()) metadata.vat_number = vatNumber.trim();
-      if (sapsLicense.trim()) metadata.saps_dealer_license = sapsLicense.trim();
+    const metadata: any = {};
+    if (tradingName.trim()) metadata.trading_name = tradingName.trim();
+    if (regNumber.trim()) metadata.registration_number = regNumber.trim();
+    if (vatNumber.trim()) metadata.vat_number = vatNumber.trim();
+    if (sapsLicense.trim()) metadata.saps_dealer_license = sapsLicense.trim();
 
-      // 5. Create/initialize the shop using the existing initializeNewShop() flow
-      const res = await shopProfilesApi.initializeNewShop({
-        shop_name: shopName.trim(),
-        shop_code: shopCode.trim().toUpperCase() || undefined,
-        phone: normalizedPhone,
-        email: email.trim(),
-        address: address.trim(),
-        city: city.trim(),
-        province: province.trim(),
-        postal_code: postalCode.trim() || undefined,
-        metadata,
-      });
+    await setupProgress.runSequence({
+      title: 'Setting Up Store',
+      subtitle: `Initializing ${shopName.trim()}`,
+      isOffline: !isOnline,
+      steps: [
+        { id: 'prep', label: 'Preparing store configuration' },
+        { id: 'shop', label: `Saving shop name: ${shopName.trim()}` },
+        { id: 'contact', label: 'Saving contact details & branch address' },
+        { id: 'compliance', label: 'Applying tax & compliance settings' },
+        { id: 'logo', label: logoPreview ? 'Preparing store branding & logo' : 'Applying store theme' },
+        { id: 'save', label: isOnline ? 'Initializing shop profile securely' : 'Saving shop profile locally' }
+      ],
+      execute: async (runner) => {
+        runner.startStep('prep');
+        await new Promise((r) => setTimeout(r, 60));
+        runner.completeStep('prep');
 
-      if (!res.success || !res.shop_id) {
-        throw new Error(res.error || 'Failed to initialize shop profile');
-      }
+        runner.startStep('shop');
+        await new Promise((r) => setTimeout(r, 50));
+        runner.completeStep('shop');
 
-      // 6. Obtain the newly created shop ID
-      const newShopId = res.shop_id;
+        runner.startStep('contact');
+        runner.completeStep('contact');
 
-      // 7. Store local processed logo for immediate local UI availability
-      const targetLogo = processedLogoRef.current;
-      if (targetLogo) {
-        try {
-          localStorage.setItem(`shop_logo_local_${newShopId}`, targetLogo.dataUrl);
-        } catch {}
+        runner.startStep('compliance');
+        runner.completeStep('compliance');
 
-        // Non-blocking background upload using the real shop ID
-        setLogoUploadStatus('uploading');
-        storageService
-          .uploadLogoImage(targetLogo.blob, newShopId, targetLogo.fileName)
-          .then(async (uploadRes) => {
-            if (
-              uploadRes.imageUrl &&
-              !uploadRes.imageUrl.startsWith('data:image/') &&
-              !uploadRes.storageKey?.startsWith('local/')
-            ) {
-              // 8. Persist the resulting Backblaze URL into the existing shop metadata logo_url
-              setRemoteLogoUrl(uploadRes.imageUrl);
-              setLogoUploadStatus('saved');
-              await shopProfilesApi.updateShopProfile(newShopId, {
-                metadata: {
-                  ...metadata,
-                  logo_url: uploadRes.imageUrl,
-                },
-              });
-              await refreshProfile();
-            } else {
-              // Retain local processed logo; mark as pending without storing data URLs in Supabase metadata
+        runner.startStep('logo');
+        runner.completeStep('logo');
+
+        runner.startStep('save');
+        const res = await shopProfilesApi.initializeNewShop({
+          shop_name: shopName.trim(),
+          shop_code: shopCode.trim().toUpperCase() || undefined,
+          phone: normalizedPhone,
+          email: email.trim(),
+          address: address.trim(),
+          city: city.trim(),
+          province: province.trim(),
+          postal_code: postalCode.trim() || undefined,
+          metadata,
+        });
+
+        if (!res.success || !res.shop_id) {
+          throw new Error(res.error || 'Failed to initialize shop profile');
+        }
+
+        const newShopId = res.shop_id;
+        const targetLogo = processedLogoRef.current;
+        if (targetLogo) {
+          try {
+            localStorage.setItem(`shop_logo_local_${newShopId}`, targetLogo.dataUrl);
+          } catch {}
+
+          setLogoUploadStatus('uploading');
+          storageService
+            .uploadLogoImage(targetLogo.blob, newShopId, targetLogo.fileName)
+            .then(async (uploadRes) => {
+              if (
+                uploadRes.imageUrl &&
+                !uploadRes.imageUrl.startsWith('data:image/') &&
+                !uploadRes.storageKey?.startsWith('local/')
+              ) {
+                setRemoteLogoUrl(uploadRes.imageUrl);
+                setLogoUploadStatus('saved');
+                await shopProfilesApi.updateShopProfile(newShopId, {
+                  metadata: {
+                    ...metadata,
+                    logo_url: uploadRes.imageUrl,
+                  },
+                });
+                await refreshProfile();
+              } else {
+                setLogoUploadStatus('pending');
+              }
+            })
+            .catch((uploadErr) => {
+              console.warn('Logo background upload warning (preserved locally):', uploadErr);
               setLogoUploadStatus('pending');
-            }
-          })
-          .catch((uploadErr) => {
-            console.warn('Logo background upload warning (preserved locally):', uploadErr);
-            setLogoUploadStatus('pending');
-          });
-      }
+            });
+        }
 
-      showToast('Shop Initialized', `${shopName.trim()} is set up and ready!`, 'success');
-      await refreshProfile();
-    } catch (err: any) {
-      console.error('[ShopSetup] Error:', err);
-      showToast('Setup Failed', err.message || 'Could not create shop profile', 'error');
-    } finally {
-      setLoading(false);
-    }
+        runner.completeStep('save');
+        return { shopId: newShopId };
+      },
+      successTitle: 'Shop Created',
+      successMessage: `${shopName.trim()} is ready to use.`,
+      onSuccess: async () => {
+        await refreshProfile();
+        setLoading(false);
+      },
+      onError: () => {
+        setLoading(false);
+      },
+      onClose: () => {
+        setLoading(false);
+      }
+    });
   };
 
   const getSubtleInputClass = (errorKey?: string) =>
@@ -670,6 +704,9 @@ export const ShopSetup: React.FC = () => {
           </p>
         </div>
       </footer>
+
+      {/* OPERATION PROGRESS SCREEN */}
+      <OperationProgressScreen state={setupProgress.state} />
     </div>
   );
 };
