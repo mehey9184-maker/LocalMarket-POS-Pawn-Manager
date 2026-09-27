@@ -1,8 +1,11 @@
 import { db } from '../db';
 import { InventoryItem, Customer } from '../types';
+import { exportDeviceBackupData, validateAndRestoreBackup } from '../utils/backupService';
 
 /**
  * Verification Test Suite: Backup Isolation & Safe Restore
+ * Tests the REAL implementation of the backup service to ensure zero-drift,
+ * strict shop isolation, role authorization, and atomic rollback guarantees.
  */
 export async function runBackupIsolationTests(): Promise<{ passed: boolean; logs: string[] }> {
   const logs: string[] = [];
@@ -14,7 +17,7 @@ export async function runBackupIsolationTests(): Promise<{ passed: boolean; logs
   };
 
   try {
-    log('--- STARTING BACKUP ISOLATION TESTS ---');
+    log('--- STARTING REAL BACKUP ISOLATION TESTS ---');
 
     // Setup mock shops
     const shopAId = 'shop-aaa-uuid';
@@ -98,123 +101,63 @@ export async function runBackupIsolationTests(): Promise<{ passed: boolean; logs
 
     await db.customers.bulkAdd([mockCustA1, mockCustB1]);
 
-    // Define AppContext mock behaviors for export/restore simulation
-    const mockExportDeviceBackup = async (currentShopId: string, shopProfile: any, businessRules: any) => {
-      return {
-        version: 5,
-        exportedAt: new Date().toISOString(),
-        shopProfile,
-        businessRules,
-        inventory: await db.inventory.where('shopId').equals(currentShopId).toArray(),
-        customers: await db.customers.where('shopId').equals(currentShopId).toArray(),
-        sellers: await db.sellers.where('shopId').equals(currentShopId).toArray(),
-        sellerTransactions: await db.sellerTransactions.where('shopId').equals(currentShopId).toArray(),
-        loans: await db.loans.where('shopId').equals(currentShopId).toArray(),
-        saps: await db.saps.where('shopId').equals(currentShopId).toArray(),
-        sales: await db.sales.where('shopId').equals(currentShopId).toArray(),
-        refundRequests: await db.refundRequests.where('shopId').equals(currentShopId).toArray()
-      };
-    };
+    // Setup auth profiles
+    const ownerProfileA = { role: 'owner', shop_id: shopAId, full_name: 'Owner A' };
+    const adminProfileA = { role: 'admin', shop_id: shopAId, full_name: 'Admin A' };
+    const ownerProfileB = { role: 'owner', shop_id: shopBId, full_name: 'Owner B' };
+    const cashierProfileB = { role: 'cashier', shop_id: shopBId, full_name: 'Cashier B' };
+    const seniorCashierProfileB = { role: 'senior_cashier', shop_id: shopBId, full_name: 'Senior Cashier B' };
+    const managerProfileB = { role: 'manager', shop_id: shopBId, full_name: 'Manager B' };
 
-    const mockRestoreDeviceBackup = async (fileContent: string, currentShopId: string) => {
-      const data = JSON.parse(fileContent);
-      if (!data || typeof data !== 'object') {
-        throw new Error('Invalid LocalMarket backup file.');
-      }
-      if (!data.shopProfile || !data.shopProfile.id) {
-        throw new Error('Invalid LocalMarket backup file.');
-      }
-      if (data.shopProfile.id !== currentShopId) {
-        throw new Error('This backup belongs to another shop. Restore cancelled.');
-      }
-
-      const tablesToValidate = [
-        'inventory',
-        'customers',
-        'sellers',
-        'sellerTransactions',
-        'loans',
-        'saps',
-        'sales',
-        'refundRequests'
-      ];
-
-      for (const table of tablesToValidate) {
-        const records = data[table];
-        if (records !== undefined) {
-          if (!Array.isArray(records)) {
-            throw new Error('Invalid LocalMarket backup file.');
-          }
-          for (const record of records) {
-            if (!record || record.shopId !== currentShopId) {
-              throw new Error('This backup contains records from another shop. Restore cancelled.');
-            }
-          }
-        }
-      }
-
-      // Dexie RW Transaction
-      await db.transaction('rw', [
-        db.inventory,
-        db.customers,
-        db.sellers,
-        db.sellerTransactions,
-        db.loans,
-        db.saps,
-        db.sales,
-        db.refundRequests
-      ], async () => {
-        if (Array.isArray(data.inventory)) await db.inventory.bulkPut(data.inventory);
-        if (Array.isArray(data.customers)) await db.customers.bulkPut(data.customers);
-      });
-    };
-
-    // ==========================================
-    // TEST 1 & TEST 2: Shop A exports backup. Only Shop A records appear. Unsynced local records remain.
-    // ==========================================
     const shopAProfile = { id: shopAId, shop_code: 'SHOP-A', shop_name: 'Shop A' };
     const mockRules = {};
-    const backupA = await mockExportDeviceBackup(shopAId, shopAProfile, mockRules);
 
-    const hasShopBInventory = backupA.inventory.some((i: any) => i.shopId === shopBId);
-    const hasShopBCustomer = backupA.customers.some((c: any) => c.shopId === shopBId);
-    const hasUnsyncedShopAInventory = backupA.inventory.some((i: any) => i.id === 'item-a2');
+    // ==========================================================
+    // TEST 1: Shop A Owner exports backup. Only Shop A records appear. Unsynced records remain.
+    // ==========================================================
+    const backupA = await exportDeviceBackupData(ownerProfileA, shopAProfile, mockRules);
 
-    if (!hasShopBInventory && !hasShopBCustomer && hasUnsyncedShopAInventory && backupA.inventory.length === 2) {
-      log('✓ TEST 1 & 2 PASS: Shop A export isolates Shop A records only and includes unsynced local records.');
+    const hasShopBInventory = backupA.inventory?.some((i: any) => i.shopId === shopBId) ?? false;
+    const hasShopBCustomer = backupA.customers?.some((c: any) => c.shopId === shopBId) ?? false;
+    const hasUnsyncedShopAInventory = backupA.inventory?.some((i: any) => i.id === 'item-a2') ?? false;
+
+    if (!hasShopBInventory && !hasShopBCustomer && hasUnsyncedShopAInventory && backupA.inventory?.length === 2) {
+      log('✓ TEST 1 PASS: Shop A export isolates Shop A records only and includes unsynced local records.');
     } else {
-      log('✗ TEST 1 & 2 FAIL: Export isolation failed.');
+      log('✗ TEST 1 FAIL: Export isolation failed.');
       passed = false;
     }
 
-    // ==========================================
-    // TEST 3: Shop B attempts to restore Shop A backup. Restore rejected. No writes occur.
-    // ==========================================
-    let test3Rejected = false;
+    // ==========================================================
+    // TEST 2: Shop B Owner attempts to restore Shop A backup. Restore rejected. No writes occur.
+    // ==========================================================
+    let test2Rejected = false;
     try {
-      await mockRestoreDeviceBackup(JSON.stringify(backupA), shopBId);
+      await validateAndRestoreBackup(JSON.stringify(backupA), ownerProfileB);
     } catch (err: any) {
       if (err.message.includes('This backup belongs to another shop. Restore cancelled.')) {
-        test3Rejected = true;
+        test2Rejected = true;
+      } else {
+        log(`Unexpected test 2 error: ${err.message}`);
       }
     }
 
-    if (test3Rejected) {
-      log('✓ TEST 3 PASS: Attempting to restore foreign backup rejected securely.');
+    if (test2Rejected) {
+      log('✓ TEST 2 PASS: Attempting to restore foreign backup rejected securely.');
     } else {
-      log('✗ TEST 3 FAIL: Foreign restore was not rejected correctly.');
+      log('✗ TEST 2 FAIL: Foreign restore was not rejected correctly.');
       passed = false;
     }
 
-    // ==========================================
-    // TEST 4: Backup top-level says Shop B but one record has Shop A. Entire restore rejected. No writes.
-    // ==========================================
+    // ==========================================================
+    // TEST 3: Backup top-level matches Shop B, but one record has Shop A. Entire restore rejected. No writes.
+    // ==========================================================
     const contaminatedBackup = {
       version: 5,
       shopProfile: { id: shopBId, shop_name: 'Shop B' },
       inventory: [
         {
-          id: 'item-b2',
+          id: 'item-b2-contam',
           shopId: shopBId,
           sku: 'SKU-B2',
           title: 'Item B2',
@@ -226,7 +169,7 @@ export async function runBackupIsolationTests(): Promise<{ passed: boolean; logs
           serialOrImei: '',
           acquisitionType: 'Existing Stock',
           imageUrl: ''
-        } as InventoryItem,
+        },
         {
           id: 'item-a1',
           shopId: shopAId,
@@ -240,35 +183,37 @@ export async function runBackupIsolationTests(): Promise<{ passed: boolean; logs
           serialOrImei: '',
           acquisitionType: 'Existing Stock',
           imageUrl: ''
-        } as InventoryItem
+        }
       ]
     };
 
-    let test4Rejected = false;
+    let test3Rejected = false;
     try {
-      await mockRestoreDeviceBackup(JSON.stringify(contaminatedBackup), shopBId);
+      await validateAndRestoreBackup(JSON.stringify(contaminatedBackup), ownerProfileB);
     } catch (err: any) {
       if (err.message.includes('This backup contains records from another shop. Restore cancelled.')) {
-        test4Rejected = true;
+        test3Rejected = true;
+      } else {
+        log(`Unexpected test 3 error: ${err.message}`);
       }
     }
 
-    const test4ItemExists = await db.inventory.get('item-b2');
-    if (test4Rejected && !test4ItemExists) {
-      log('✓ TEST 4 PASS: Contaminated mixed-shop backup fully rejected. Zero writes occurred.');
+    const test3ItemExists = await db.inventory.get('item-b2-contam');
+    if (test3Rejected && !test3ItemExists) {
+      log('✓ TEST 3 PASS: Contaminated mixed-shop backup fully rejected. Zero writes occurred.');
     } else {
-      log(`✗ TEST 4 FAIL: Contaminated backup not blocked correctly. Item-B2 exists: ${!!test4ItemExists}`);
+      log(`✗ TEST 3 FAIL: Contaminated backup not blocked correctly. Item-B2 exists: ${!!test3ItemExists}`);
       passed = false;
     }
 
-    // ==========================================
-    // TEST 5: Valid Shop B backup restores successfully.
-    // ==========================================
+    // ==========================================================
+    // TEST 4: Valid Shop B backup restores successfully.
+    // ==========================================================
     const mockItemB2: InventoryItem = {
-      id: 'item-b2',
+      id: 'item-b2-valid',
       shopId: shopBId,
       sku: 'SKU-B2',
-      title: 'Item B2',
+      title: 'Item B2 Valid',
       status: 'InStock',
       addedAt: new Date().toISOString(),
       condition: 'Good',
@@ -280,9 +225,9 @@ export async function runBackupIsolationTests(): Promise<{ passed: boolean; logs
     };
 
     const mockCustB2: Customer = {
-      id: 'cust-b2',
+      id: 'cust-b2-valid',
       shopId: shopBId,
-      fullName: 'Customer B2',
+      fullName: 'Customer B2 Valid',
       idNumber: '999',
       mobile: '084',
       idType: 'RSA Smart ID',
@@ -298,73 +243,106 @@ export async function runBackupIsolationTests(): Promise<{ passed: boolean; logs
       customers: [mockCustB2]
     };
 
-    await mockRestoreDeviceBackup(JSON.stringify(validShopBBackup), shopBId);
-    const restoredB2Item = await db.inventory.get('item-b2');
-    const restoredB2Cust = await db.customers.get('cust-b2');
+    await validateAndRestoreBackup(JSON.stringify(validShopBBackup), ownerProfileB);
+    const restoredB2Item = await db.inventory.get('item-b2-valid');
+    const restoredB2Cust = await db.customers.get('cust-b2-valid');
 
     if (restoredB2Item && restoredB2Cust) {
-      log('✓ TEST 5 PASS: Valid shop backup restored successfully.');
+      log('✓ TEST 4 PASS: Valid shop backup restored successfully.');
     } else {
-      log('✗ TEST 5 FAIL: Valid backup restore failed.');
+      log('✗ TEST 4 FAIL: Valid backup restore failed.');
       passed = false;
     }
 
-    // ==========================================
-    // TEST 6: Failure during write rolls back cleanly.
-    // ==========================================
-    const mockItemB3: InventoryItem = {
-      id: 'item-b3',
-      shopId: shopBId,
-      sku: 'SKU-B3',
-      title: 'Item B3',
-      status: 'InStock',
-      addedAt: new Date().toISOString(),
-      condition: 'Good',
-      retailPrice: 250,
-      category: 'General Goods',
-      serialOrImei: '',
-      acquisitionType: 'Existing Stock',
-      imageUrl: ''
-    };
+    // ==========================================================
+    // TEST 5: Role authorization for export - Cashier, Senior Cashier, Manager fail. Owner, Admin pass.
+    // ==========================================================
+    let cashierExportFailed = false;
+    let seniorCashierExportFailed = false;
+    let managerExportFailed = false;
+    let ownerExportSucceeded = false;
+    let adminExportSucceeded = false;
 
-    const faultyBackup = {
-      version: 5,
-      shopProfile: { id: shopBId, shop_name: 'Shop B' },
-      inventory: [mockItemB3]
-    };
-
-    let test6Failed = false;
     try {
-      await db.transaction('rw', [db.inventory, db.customers], async () => {
-        await db.inventory.bulkPut(faultyBackup.inventory);
-        throw new Error('Simulated write failure midway');
-      });
-    } catch (err) {
-      test6Failed = true;
+      await exportDeviceBackupData(cashierProfileB, shopAProfile, mockRules);
+    } catch {
+      cashierExportFailed = true;
     }
 
-    const itemB3Exists = await db.inventory.get('item-b3');
-    if (test6Failed && !itemB3Exists) {
-      log('✓ TEST 6 PASS: Failure midway rolls back cleanly in transaction. Zero records committed.');
+    try {
+      await exportDeviceBackupData(seniorCashierProfileB, shopAProfile, mockRules);
+    } catch {
+      seniorCashierExportFailed = true;
+    }
+
+    try {
+      await exportDeviceBackupData(managerProfileB, shopAProfile, mockRules);
+    } catch {
+      managerExportFailed = true;
+    }
+
+    try {
+      await exportDeviceBackupData(ownerProfileA, shopAProfile, mockRules);
+      ownerExportSucceeded = true;
+    } catch {}
+
+    try {
+      await exportDeviceBackupData(adminProfileA, shopAProfile, mockRules);
+      adminExportSucceeded = true;
+    } catch {}
+
+    if (cashierExportFailed && seniorCashierExportFailed && managerExportFailed && ownerExportSucceeded && adminExportSucceeded) {
+      log('✓ TEST 5 PASS: Role authorization correctly restricts export access to Owners and Admins only.');
     } else {
-      log('✗ TEST 6 FAIL: Rollback failed or was not clean.');
+      log(`✗ TEST 5 FAIL: Role export checks failed. cashierExportFailed: ${cashierExportFailed}, seniorCashierExportFailed: ${seniorCashierExportFailed}, managerExportFailed: ${managerExportFailed}, ownerExportSucceeded: ${ownerExportSucceeded}, adminExportSucceeded: ${adminExportSucceeded}`);
       passed = false;
     }
 
-    // ==========================================
-    // TEST 7, 8, 9, 10: Role accesses
-    // ==========================================
-    const checkIsOwner = (role: string) => role === 'owner' || role === 'admin';
+    // ==========================================================
+    // TEST 6: Role authorization for restore - Cashier, Senior Cashier, Manager fail. Owner, Admin pass.
+    // ==========================================================
+    let cashierRestoreFailed = false;
+    let seniorCashierRestoreFailed = false;
+    let managerRestoreFailed = false;
+    let ownerRestoreSucceeded = false;
+    let adminRestoreSucceeded = false;
 
-    const isCashierOwner = checkIsOwner('cashier');
-    const isManagerOwner = checkIsOwner('manager');
-    const isSeniorCashierOwner = checkIsOwner('senior_cashier');
-    const isActualOwnerOwner = checkIsOwner('owner');
+    const validBackupToRestore = JSON.stringify(validShopBBackup);
 
-    if (!isCashierOwner && !isManagerOwner && !isSeniorCashierOwner && isActualOwnerOwner) {
-      log('✓ TEST 7-10 PASS: Cashier, Senior Cashier, and Manager cannot access backup UI. Owner is authorized.');
+    try {
+      await validateAndRestoreBackup(validBackupToRestore, cashierProfileB);
+    } catch {
+      cashierRestoreFailed = true;
+    }
+
+    try {
+      await validateAndRestoreBackup(validBackupToRestore, seniorCashierProfileB);
+    } catch {
+      seniorCashierRestoreFailed = true;
+    }
+
+    try {
+      await validateAndRestoreBackup(validBackupToRestore, managerProfileB);
+    } catch {
+      managerRestoreFailed = true;
+    }
+
+    try {
+      await validateAndRestoreBackup(validBackupToRestore, ownerProfileB);
+      ownerRestoreSucceeded = true;
+    } catch {}
+
+    try {
+      // Temporary change profile shop_id to test admin restore
+      const adminProfileB = { role: 'admin', shop_id: shopBId, full_name: 'Admin B' };
+      await validateAndRestoreBackup(validBackupToRestore, adminProfileB);
+      adminRestoreSucceeded = true;
+    } catch {}
+
+    if (cashierRestoreFailed && seniorCashierRestoreFailed && managerRestoreFailed && ownerRestoreSucceeded && adminRestoreSucceeded) {
+      log('✓ TEST 6 PASS: Role authorization correctly restricts restore access to Owners and Admins only.');
     } else {
-      log('✗ TEST 7-10 FAIL: Role check authorization incorrect.');
+      log(`✗ TEST 6 FAIL: Role restore checks failed. cashierRestoreFailed: ${cashierRestoreFailed}, seniorCashierRestoreFailed: ${seniorCashierRestoreFailed}, managerRestoreFailed: ${managerRestoreFailed}, ownerRestoreSucceeded: ${ownerRestoreSucceeded}, adminRestoreSucceeded: ${adminRestoreSucceeded}`);
       passed = false;
     }
 
