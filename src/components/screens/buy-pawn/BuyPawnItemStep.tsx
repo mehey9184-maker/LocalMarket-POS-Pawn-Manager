@@ -299,14 +299,15 @@ export const BuyPawnItemStep: React.FC<BuyPawnItemStepProps> = ({
                       </span>
                     ) : photoUploadStatus === 'synced' ||
                       (!itemData.imageUrl.startsWith('data:image/') &&
-                        !itemData.imageUrl.includes('local/')) ? (
+                        !itemData.imageUrl.includes('local/') &&
+                        (itemData.imageUrl.startsWith('http://') || itemData.imageUrl.startsWith('https://'))) ? (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600/90 backdrop-blur-md text-white shadow-xs flex items-center gap-1">
                         <CheckCircle2 className="w-2.5 h-2.5" />
-                        <span>Uploaded to Storage</span>
+                        <span>Cloud Asset</span>
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/90 backdrop-blur-md text-white shadow-xs">
-                        Attached Locally (Sync Pending)
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-700/90 backdrop-blur-md text-white shadow-xs">
+                        Local Operational Photo
                       </span>
                     )}
                   </div>

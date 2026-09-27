@@ -18,22 +18,6 @@ import {
 } from './supabaseApi';
 import { storageService } from './storageService';
 
-async function ensureRemoteImage(imageUrl: string | undefined | null, shopId: string, itemId: string): Promise<string> {
-  if (!imageUrl || !imageUrl.startsWith('data:image/')) {
-    return imageUrl || '';
-  }
-  try {
-    const res = await storageService.uploadItemImage(imageUrl, shopId, itemId);
-    if (res.imageUrl && !res.imageUrl.startsWith('data:image/')) {
-      await db.inventory.update(itemId, { imageUrl: res.imageUrl });
-      return res.imageUrl;
-    }
-  } catch (err) {
-    console.warn('Failed to upload image to storage during sync:', err);
-  }
-  throw new Error('Photo upload to Backblaze B2 is pending/failed; holding cloud sync until image is uploaded.');
-}
-
 let activeSyncPromise: Promise<{ processed: number; successful: number; failed: number }> | null = null;
 
 const isUuid = (id: string | null | undefined): boolean => {
@@ -101,11 +85,11 @@ export const SyncService = {
       return { success: false, error: 'Supabase is not configured' };
     }
 
-    if (!shopId || !isUuid(shopId)) {
-      return { success: false, error: 'DETERMINISTIC_RECOVERABLE: Missing or invalid authoritative shop context for synchronization.' };
-    }
-
     let validationError: string | null = null;
+
+    if (!shopId || !isUuid(shopId)) {
+      validationError = 'DETERMINISTIC_RECOVERABLE: Missing or invalid authoritative shop context for synchronization.';
+    }
 
     // 1. Check if the entity ID itself is synthetic/legacy format
     const entityTypesRequiringUuid = [
@@ -172,8 +156,7 @@ export const SyncService = {
               throw new Error(priceRes.error || 'Server rejected offline price update');
             }
           } else {
-            const cleanImageUrl = await ensureRemoteImage(payload.imageUrl, shopId, log.entityId);
-            const row = shopItemsApi.mapInventoryItemToRow({ ...payload, imageUrl: cleanImageUrl }, shopId);
+            const row = shopItemsApi.mapInventoryItemToRow(payload, shopId);
             await shopItemsApi.upsertItem(row);
           }
           break;
@@ -193,17 +176,11 @@ export const SyncService = {
 
         case 'buyAcquisition': {
           const payload = log.payload;
-          const sanitizedItems = await Promise.all(
-            (payload.items || []).map(async (item: any) => ({
-              ...item,
-              image_url: await ensureRemoteImage(item.image_url, shopId, item.id || log.entityId)
-            }))
-          );
           const rpcRes = await sellerTransactionsApi.completeBuyAcquisitionRpc({
             transactionId: payload.transactionId || log.entityId,
             transactionNumber: payload.transactionNumber,
             sellerId: payload.sellerId,
-            items: sanitizedItems,
+            items: payload.items || [],
             totalAmount: payload.totalAmount,
             paymentMethod: payload.paymentMethod,
             paymentStatus: payload.paymentStatus,
@@ -224,7 +201,6 @@ export const SyncService = {
 
         case 'pawnIntake': {
           const payload = log.payload;
-          const cleanImageUrl = await ensureRemoteImage(payload.itemImageUrl, shopId, payload.itemId || log.entityId);
           const rpcRes = await pawnLoansApi.completePawnIntakeRpc({
             loanId: payload.loanId || log.entityId,
             ticketNumber: payload.ticketNumber,
@@ -237,7 +213,7 @@ export const SyncService = {
             itemModel: payload.itemModel,
             serialOrImei: payload.serialOrImei,
             condition: payload.condition,
-            itemImageUrl: cleanImageUrl,
+            itemImageUrl: payload.itemImageUrl || null,
             specs: payload.specs,
             stockLocation: payload.stockLocation,
             internalNote: payload.internalNote,

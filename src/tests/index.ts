@@ -16,6 +16,7 @@ import { runApiRoutingAndResilienceTests } from './apiRoutingAndResilience.test'
 import { runTerminalPinLockoutTests } from './terminalPinLockout.test';
 import { runOfflineQueueSyncTests } from './offlineQueueSync.test';
 import { runInventoryPaginationTests } from './inventoryPagination.test';
+import { runImageStoragePolicyTests } from './imageStoragePolicy.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -34,6 +35,7 @@ export async function runAllTests() {
   await runTerminalPinLockoutTests();
   await runOfflineQueueSyncTests();
   await runInventoryPaginationTests();
+  await runImageStoragePolicyTests();
   await runTerminalSessionTests();
   runIntelligentAssistanceTests();
   await runResumableWorkTests();

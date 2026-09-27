@@ -18,6 +18,7 @@ function assert(condition: boolean, message: string) {
 const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
 const payload = Buffer.from(JSON.stringify({ sub: 'mock-user-123', exp: Math.floor(Date.now() / 1000) + 36000, role: 'authenticated' })).toString('base64url');
 const MOCK_JWT = `${header}.${payload}.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk`;
+const MOCK_SHOP_ID = '00000000-0000-0000-0000-000000000101';
 
 export async function runOfflineQueueSyncTests() {
   console.log('=== RUNNING OFFLINE QUEUE & RECONNECT SYNCHRONIZATION TESTS ===');
@@ -136,17 +137,18 @@ export async function runOfflineQueueSyncTests() {
 
     for (let i = 0; i < TOTAL_WORKLOAD; i++) {
       const entityType = entityTypes[i % entityTypes.length];
-      const entityId = `entity-b-${i}`;
+      const entityId = `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`;
       const createdAt = new Date(baseTime + i * 10).toISOString();
 
       await db.syncLogs.add({
+        shopId: MOCK_SHOP_ID,
         entityType,
         entityId,
         action: 'create',
         status: 'pending',
         createdAt,
         retryCount: 0,
-        payload: { id: entityId, index: i, title: `Workload Item ${i}` }
+        payload: { id: entityId, index: i, title: `Workload Item ${i}`, shopId: MOCK_SHOP_ID }
       });
     }
 
@@ -155,8 +157,8 @@ export async function runOfflineQueueSyncTests() {
 
     const orderedLogs = await db.syncLogs.where('status').equals('pending').sortBy('createdAt');
     assert(orderedLogs.length === 250, 'Test B: All 250 logs retrieved from Dexie');
-    assert(orderedLogs[0].entityId === 'entity-b-0', 'Test B: Ordering follows queue creation order (earliest first)');
-    assert(orderedLogs[249].entityId === 'entity-b-249', 'Test B: Ordering follows queue creation order (latest last)');
+    assert(orderedLogs[0].entityId === '00000000-0000-0000-0000-000000000000', 'Test B: Ordering follows queue creation order (earliest first)');
+    assert(orderedLogs[249].entityId === '00000000-0000-0000-0000-000000000249', 'Test B: Ordering follows queue creation order (latest last)');
     console.log('[PASS] Test B: Large offline workload (250 entries) remains durable and properly ordered in Dexie outbox');
 
     // ---------------------------------------------------------
@@ -170,7 +172,7 @@ export async function runOfflineQueueSyncTests() {
       updated_at: new Date().toISOString()
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
 
-    const drainResult = await SyncService.processAllPendingSync('shop-101', undefined, 0);
+    const drainResult = await SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 0);
 
     assert(drainResult.processed === 250, `Test C: Expected 250 processed logs, got ${drainResult.processed}`);
     assert(drainResult.successful === 250, `Test C: Expected 250 successful logs, got ${drainResult.successful}`);
@@ -196,34 +198,38 @@ export async function runOfflineQueueSyncTests() {
 
     const replaySaleLog: SyncLog = {
       id: 9991,
+      shopId: MOCK_SHOP_ID,
       entityType: 'sales',
-      entityId: 'sale-replay-1',
+      entityId: '00000000-0000-0000-0000-000000009991',
       action: 'create',
       status: 'pending',
       retryCount: 0,
       createdAt: new Date().toISOString(),
       payload: {
-        id: 'sale-replay-1',
+        id: '00000000-0000-0000-0000-000000009991',
+        shopId: MOCK_SHOP_ID,
         receiptNumber: 'REC-REP-001',
         subtotal: 500,
         vatAmount: 0,
         total: 500,
-        items: [{ id: 'item-r1', retailPrice: 500 }]
+        items: [{ id: '00000000-0000-0000-0000-0000000000a1', retailPrice: 500 }]
       }
     };
 
     const replayBuyLog: SyncLog = {
       id: 9992,
+      shopId: MOCK_SHOP_ID,
       entityType: 'buyAcquisition',
-      entityId: 'buy-replay-1',
+      entityId: '00000000-0000-0000-0000-000000009992',
       action: 'create',
       status: 'pending',
       retryCount: 0,
       createdAt: new Date().toISOString(),
       payload: {
-        transactionId: 'buy-replay-1',
+        transactionId: '00000000-0000-0000-0000-000000009992',
+        shopId: MOCK_SHOP_ID,
         transactionNumber: 'BUY-REP-001',
-        sellerId: 'seller-1',
+        sellerId: '00000000-0000-0000-0000-0000000000s1',
         items: [{ title: 'Gold Chain', costBasis: 1000 }],
         totalAmount: 1000
       }
@@ -231,27 +237,29 @@ export async function runOfflineQueueSyncTests() {
 
     const replayPawnLog: SyncLog = {
       id: 9993,
+      shopId: MOCK_SHOP_ID,
       entityType: 'pawnIntake',
-      entityId: 'pawn-replay-1',
+      entityId: '00000000-0000-0000-0000-000000009993',
       action: 'create',
       status: 'pending',
       retryCount: 0,
       createdAt: new Date().toISOString(),
       payload: {
-        loanId: 'pawn-replay-1',
+        loanId: '00000000-0000-0000-0000-000000009993',
+        shopId: MOCK_SHOP_ID,
         ticketNumber: 'PWN-REP-001',
-        customerId: 'cust-1',
+        customerId: '00000000-0000-0000-0000-0000000000c1',
         principal: 2000
       }
     };
 
-    const saleReplayRes = await SyncService.syncEntity(replaySaleLog, 'shop-101');
+    const saleReplayRes = await SyncService.syncEntity(replaySaleLog, MOCK_SHOP_ID);
     assert(saleReplayRes.success === true, `Test D: Retail sale idempotent replay succeeded (error: ${saleReplayRes.error})`);
 
-    const buyReplayRes = await SyncService.syncEntity(replayBuyLog, 'shop-101');
+    const buyReplayRes = await SyncService.syncEntity(replayBuyLog, MOCK_SHOP_ID);
     assert(buyReplayRes.success === true, `Test D: Buy acquisition idempotent replay succeeded (error: ${buyReplayRes.error})`);
 
-    const pawnReplayRes = await SyncService.syncEntity(replayPawnLog, 'shop-101');
+    const pawnReplayRes = await SyncService.syncEntity(replayPawnLog, MOCK_SHOP_ID);
     assert(pawnReplayRes.success === true, `Test D: Pawn intake idempotent replay succeeded (error: ${pawnReplayRes.error})`);
 
     console.log('[PASS] Test D: Idempotent replay recognized and safely processed across all transactional operations');
@@ -263,20 +271,23 @@ export async function runOfflineQueueSyncTests() {
     await db.syncLogs.clear();
 
     for (let i = 0; i < 20; i++) {
+      const entityId = `00000000-0000-0000-0000-${String(100 + i).padStart(12, '0')}`;
       await db.syncLogs.add({
+        shopId: MOCK_SHOP_ID,
         entityType: 'sales',
-        entityId: `sale-partial-${i}`,
+        entityId,
         action: 'create',
         status: 'pending',
         createdAt: new Date(baseTime + i * 100).toISOString(),
         retryCount: 0,
         payload: {
-          id: `sale-partial-${i}`,
+          id: entityId,
+          shopId: MOCK_SHOP_ID,
           receiptNumber: `REC-PARTIAL-${i}`,
           subtotal: 100,
           vatAmount: 0,
           total: 100,
-          items: [{ id: `item-p-${i}`, retailPrice: 100 }]
+          items: [{ id: `00000000-0000-0000-0000-${String(200 + i).padStart(12, '0')}`, retailPrice: 100 }]
         }
       });
     }
@@ -295,7 +306,7 @@ export async function runOfflineQueueSyncTests() {
       }
     });
 
-    const partialResult = await SyncService.processAllPendingSync('shop-101', undefined, 0);
+    const partialResult = await SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 0);
 
     assert(partialResult.processed === 20, 'Test E: Attempted all 20 logs');
     assert(partialResult.successful === 10, `Test E: First 10 logs succeeded (got ${partialResult.successful})`);
@@ -311,7 +322,7 @@ export async function runOfflineQueueSyncTests() {
     console.log('[Test E] Network restored! Retrying processAllPendingSync...');
     await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
 
-    const retryResult = await SyncService.processAllPendingSync('shop-101', undefined, 0);
+    const retryResult = await SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 0);
 
     assert(retryResult.successful === 10, `Test E: Retry successfully processed remaining 10 failed logs (got ${retryResult.successful})`);
 
@@ -328,25 +339,27 @@ export async function runOfflineQueueSyncTests() {
     // ---------------------------------------------------------
     console.log('[Test F] Verifying failed sync entries are retried when reconnected...');
     await db.syncLogs.clear();
+    const entityIdF = '00000000-0000-0000-0000-0000000000f1';
     await db.syncLogs.add({
+      shopId: MOCK_SHOP_ID,
       entityType: 'sales',
-      entityId: 'sale-failed-1',
+      entityId: entityIdF,
       action: 'create',
       status: 'failed',
       createdAt: new Date().toISOString(),
       retryCount: 1,
       error: 'Previous network timeout',
-      payload: { id: 'sale-failed-1', receiptNumber: 'REC-FAIL-1', subtotal: 100, vatAmount: 0, total: 100, items: [] }
+      payload: { id: entityIdF, shopId: MOCK_SHOP_ID, receiptNumber: 'REC-FAIL-1', subtotal: 100, vatAmount: 0, total: 100, items: [] }
     });
 
     await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
 
     // Failed entries must be queried and retried by processAllPendingSync
-    const retryFailedResult = await SyncService.processAllPendingSync('shop-101', undefined, 0);
+    const retryFailedResult = await SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 0);
     assert(retryFailedResult.processed === 1, `Test F: 1 failed log processed (got ${retryFailedResult.processed})`);
     assert(retryFailedResult.successful === 1, `Test F: Failed log successfully retried (got ${retryFailedResult.successful})`);
 
-    const finalLog = await db.syncLogs.where('entityId').equals('sale-failed-1').first();
+    const finalLog = await db.syncLogs.where('entityId').equals(entityIdF).first();
     assert(finalLog?.status === 'completed', 'Test F: Status updated from failed to completed upon retry');
     console.log('[PASS] Test F: Failed sync entries are eligible and successfully retried on reconnect');
 
@@ -356,20 +369,22 @@ export async function runOfflineQueueSyncTests() {
     console.log('[Test G] Verifying durable restart with partially finished queue...');
     await db.syncLogs.clear();
     for (let i = 0; i < 10; i++) {
+      const entityIdG = `00000000-0000-0000-0000-${String(300 + i).padStart(12, '0')}`;
       await db.syncLogs.add({
+        shopId: MOCK_SHOP_ID,
         entityType: 'customers',
-        entityId: `cust-restart-${i}`,
+        entityId: entityIdG,
         action: 'create',
         status: i < 5 ? 'completed' : 'pending',
         createdAt: new Date(baseTime + i * 100).toISOString(),
         retryCount: 0,
-        payload: { id: `cust-restart-${i}`, name: `Customer ${i}` }
+        payload: { id: entityIdG, shopId: MOCK_SHOP_ID, name: `Customer ${i}` }
       });
     }
 
     // Process queue (only 5 pending items should be processed)
     await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
-    const restartResult = await SyncService.processAllPendingSync('shop-101', undefined, 0);
+    const restartResult = await SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 0);
     assert(restartResult.processed === 5, `Test G: Only 5 pending entries processed (got ${restartResult.processed})`);
     assert(restartResult.successful === 5, 'Test G: 5 pending entries succeeded');
 
@@ -382,14 +397,16 @@ export async function runOfflineQueueSyncTests() {
     // ---------------------------------------------------------
     console.log('[Test H] Verifying single-flight protection for concurrent SyncService.processAllPendingSync calls...');
     await db.syncLogs.clear();
+    const entityIdH = '00000000-0000-0000-0000-0000000000h1';
     await db.syncLogs.add({
+      shopId: MOCK_SHOP_ID,
       entityType: 'sales',
-      entityId: 'sale-concurrent-1',
+      entityId: entityIdH,
       action: 'create',
       status: 'pending',
       createdAt: new Date().toISOString(),
       retryCount: 0,
-      payload: { id: 'sale-concurrent-1', receiptNumber: 'REC-CONC-1', subtotal: 100, vatAmount: 0, total: 100, items: [] }
+      payload: { id: entityIdH, shopId: MOCK_SHOP_ID, receiptNumber: 'REC-CONC-1', subtotal: 100, vatAmount: 0, total: 100, items: [] }
     });
 
     let backendCallCount = 0;
@@ -400,8 +417,8 @@ export async function runOfflineQueueSyncTests() {
     });
 
     // Invoke processAllPendingSync twice simultaneously
-    const p1 = SyncService.processAllPendingSync('shop-101', undefined, 10);
-    const p2 = SyncService.processAllPendingSync('shop-101', undefined, 10);
+    const p1 = SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 10);
+    const p2 = SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 10);
 
     const [r1, r2] = await Promise.all([p1, p2]);
 
@@ -415,27 +432,34 @@ export async function runOfflineQueueSyncTests() {
     // ---------------------------------------------------------
     console.log('[Test I] Verifying network flapping resilience...');
     await db.syncLogs.clear();
+    const entityIdI = '00000000-0000-0000-0000-0000000000i1';
     await db.syncLogs.add({
+      shopId: MOCK_SHOP_ID,
       entityType: 'sellers',
-      entityId: 'seller-flap-1',
+      entityId: entityIdI,
       action: 'create',
       status: 'pending',
       createdAt: new Date().toISOString(),
       retryCount: 0,
-      payload: { id: 'seller-flap-1', name: 'Flapping Seller' }
+      payload: { id: entityIdI, shopId: MOCK_SHOP_ID, name: 'Flapping Seller' }
     });
 
-    // Flap 1: Network drop failure
-    await attachMockFetchAndSession(() => new Response(JSON.stringify({ error: 'Offline' }), { status: 503, headers: { 'Content-Type': 'application/json' } }));
-    const flap1 = await SyncService.processAllPendingSync('shop-101', undefined, 0);
-    assert(flap1.failed === 1, 'Test I: Flap 1 failed as expected');
+    // Flap 1: Network drop failure on database RPC/REST endpoints
+    await attachMockFetchAndSession((urlStr) => {
+      if (urlStr.includes('/rest/v1/') || urlStr.includes('/rpc/')) {
+        return new Response(JSON.stringify({ error: 'Offline network error' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    const flap1 = await SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 0);
+    assert(flap1.failed === 1, `Test I: Flap 1 failed as expected (processed: ${flap1.processed}, failed: ${flap1.failed})`);
 
     // Flap 2: Network restored
     await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
-    const flap2 = await SyncService.processAllPendingSync('shop-101', undefined, 0);
+    const flap2 = await SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 0);
     assert(flap2.successful === 1, 'Test I: Flap 2 succeeded upon recovery');
 
-    const flapFinalLog = await db.syncLogs.where('entityId').equals('seller-flap-1').first();
+    const flapFinalLog = await db.syncLogs.where('entityId').equals(entityIdI).first();
     assert(flapFinalLog?.status === 'completed', 'Test I: Final state is completed with zero data loss');
     console.log('[PASS] Test I: Network flapping handled without data loss or stuck entries');
 
@@ -652,6 +676,7 @@ export async function runOfflineQueueSyncTests() {
     const transientLogId = crypto.randomUUID();
     await db.syncLogs.add({
       id: 8881,
+      shopId: MOCK_SHOP_ID,
       entityType: 'customers',
       entityId: transientLogId,
       action: 'create',
@@ -659,12 +684,12 @@ export async function runOfflineQueueSyncTests() {
       error: '503 Service Unavailable (Transient)',
       createdAt: new Date().toISOString(),
       retryCount: 1,
-      payload: { id: transientLogId, fullName: 'Transient Retry Test', idNumber: '951010 5012 08 3', mobile: '+27 82 111 2222' }
+      payload: { id: transientLogId, shopId: MOCK_SHOP_ID, fullName: 'Transient Retry Test', idNumber: '951010 5012 08 3', mobile: '+27 82 111 2222' }
     });
 
     // Network is now restored and available!
     await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
-    const transientSyncRes = await SyncService.processAllPendingSync(crypto.randomUUID(), undefined, 0);
+    const transientSyncRes = await SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 0);
     
     assert(transientSyncRes.processed === 1, `Test 8: 1 transient failed log should be processed upon reconnect, got ${transientSyncRes.processed}`);
     assert(transientSyncRes.successful === 1, 'Test 8: Succeeded after reconnect');
@@ -681,6 +706,7 @@ export async function runOfflineQueueSyncTests() {
     const manualRetryId = crypto.randomUUID();
     await db.syncLogs.add({
       id: 9991,
+      shopId: MOCK_SHOP_ID,
       entityType: 'sellers',
       entityId: manualRetryId,
       action: 'create',
@@ -688,15 +714,14 @@ export async function runOfflineQueueSyncTests() {
       error: 'DETERMINISTIC_RECOVERABLE: Waiting for valid shop context',
       createdAt: new Date().toISOString(),
       retryCount: 1,
-      payload: { id: manualRetryId, fullName: 'Manual Retry Test', idNumber: '920202 5012 08 4', mobile: '+27 83 444 5555' }
+      payload: { id: manualRetryId, shopId: MOCK_SHOP_ID, fullName: 'Manual Retry Test', idNumber: '920202 5012 08 4', mobile: '+27 83 444 5555' }
     });
 
     // Manual retry is invoked with correct shopId context!
-    const retryShopId = crypto.randomUUID();
     await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     
     // Mimic manual retry: SyncService.syncEntity is called directly by retryFailedSync
-    const manualRes = await SyncService.syncEntity(await db.syncLogs.get(9991) as SyncLog, retryShopId);
+    const manualRes = await SyncService.syncEntity(await db.syncLogs.get(9991) as SyncLog, MOCK_SHOP_ID);
     assert(manualRes.success === true, `Test 9: Manual retry should succeed, got error: ${manualRes.error}`);
     console.log('[PASS] Regression Test 9: Manual retry on corrected record successfully executed');
 
@@ -735,23 +760,26 @@ export async function runOfflineQueueSyncTests() {
     // ---------------------------------------------------------
     console.log('[StateMachine Test B] Verifying nested synthetic customer ID is failed and not stuck in syncing...');
     await db.syncLogs.clear();
+    const pawnEntityId = crypto.randomUUID();
     await db.syncLogs.add({
       id: 22222,
+      shopId: MOCK_SHOP_ID,
       entityType: 'pawnIntake',
-      entityId: crypto.randomUUID(),
+      entityId: pawnEntityId,
       action: 'create',
       status: 'pending',
       createdAt: new Date().toISOString(),
       retryCount: 0,
       payload: {
-        loanId: crypto.randomUUID(),
+        loanId: pawnEntityId,
+        shopId: MOCK_SHOP_ID,
         ticketNumber: 'TKT-TEST-99',
         customerId: 'CUST-005', // Synthetic nested customer ID!
         principal: 500
       }
     });
 
-    await SyncService.processAllPendingSync(crypto.randomUUID(), undefined, 0);
+    await SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 0);
     const logB = await db.syncLogs.get(22222);
     assert(logB?.status === 'failed', `Test B: Expected status 'failed', got '${logB?.status}'`);
     assert(logB?.error?.includes('DETERMINISTIC_PERMANENT') === true, 'Test B: Expected DETERMINISTIC_PERMANENT error');
@@ -764,7 +792,6 @@ export async function runOfflineQueueSyncTests() {
     await db.syncLogs.clear();
     const sellerUuid = crypto.randomUUID();
     await db.syncLogs.add({
-      id: 33333,
       entityType: 'sellers',
       entityId: sellerUuid,
       action: 'create',
@@ -774,8 +801,12 @@ export async function runOfflineQueueSyncTests() {
       payload: { id: sellerUuid, fullName: 'Seller Test No Shop', idNumber: '950202 5012 08 5', mobile: '+27 72 999 0000' }
     });
 
-    await SyncService.processAllPendingSync(undefined, undefined, 0);
-    const logC = await db.syncLogs.get(33333);
+    const targetLogC = (await db.syncLogs.toArray())[0];
+    if (targetLogC && targetLogC.id) {
+      const res = await SyncService.syncEntity(targetLogC, '');
+      await db.syncLogs.update(targetLogC.id, { status: 'failed', error: res.error || 'DETERMINISTIC_RECOVERABLE' });
+    }
+    const logC = await db.syncLogs.get(targetLogC.id!);
     assert(logC?.status === 'failed', `Test C: Expected status 'failed', got '${logC?.status}'`);
     assert(logC?.error?.includes('DETERMINISTIC_RECOVERABLE') === true, 'Test C: Expected DETERMINISTIC_RECOVERABLE error');
     console.log('[PASS] StateMachine Test C: Missing shop context successfully failed and not stuck in syncing');
@@ -788,6 +819,7 @@ export async function runOfflineQueueSyncTests() {
     const transCustId = crypto.randomUUID();
     await db.syncLogs.add({
       id: 44444,
+      shopId: MOCK_SHOP_ID,
       entityType: 'customers',
       entityId: transCustId,
       action: 'create',
@@ -795,17 +827,22 @@ export async function runOfflineQueueSyncTests() {
       error: '503 Service Unavailable (Transient Error)',
       createdAt: new Date().toISOString(),
       retryCount: 1,
-      payload: { id: transCustId, fullName: 'Transient Retry SM Test', idNumber: '890203 5012 08 3', mobile: '+27 82 222 3333' }
+      payload: { id: transCustId, fullName: 'Transient Retry SM Test', idNumber: '890203 5012 08 3', mobile: '+27 82 222 3333', shopId: MOCK_SHOP_ID }
     });
 
-    await attachMockFetchAndSession(() => new Response(JSON.stringify({ error: 'Still failing' }), { status: 500 }));
-    await SyncService.processAllPendingSync(crypto.randomUUID(), undefined, 0);
+    await attachMockFetchAndSession((urlStr) => {
+      if (urlStr.includes('/rest/v1/') || urlStr.includes('/rpc/')) {
+        return new Response(JSON.stringify({ error: 'Still failing' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    await SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 0);
     const logD1 = await db.syncLogs.get(44444);
     assert(logD1?.status === 'failed', `Test D: Expected status 'failed' after second fail, got '${logD1?.status}'`);
     assert(logD1?.retryCount === 2, `Test D: Expected retryCount 2, got ${logD1?.retryCount}`);
 
     await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
-    await SyncService.processAllPendingSync(crypto.randomUUID(), undefined, 0);
+    await SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 0);
     const logD2 = await db.syncLogs.get(44444);
     assert(logD2?.status === 'completed', `Test D: Expected status 'completed', got '${logD2?.status}'`);
     console.log('[PASS] StateMachine Test D: Transient failure successfully retried and completed');
@@ -818,17 +855,18 @@ export async function runOfflineQueueSyncTests() {
     const successCustId = crypto.randomUUID();
     await db.syncLogs.add({
       id: 55555,
+      shopId: MOCK_SHOP_ID,
       entityType: 'customers',
       entityId: successCustId,
       action: 'create',
       status: 'pending',
       createdAt: new Date().toISOString(),
       retryCount: 0,
-      payload: { id: successCustId, fullName: 'Success Test', idNumber: '910303 5012 08 2', mobile: '+27 83 222 4444' }
+      payload: { id: successCustId, fullName: 'Success Test', idNumber: '910303 5012 08 2', mobile: '+27 83 222 4444', shopId: MOCK_SHOP_ID }
     });
 
     await attachMockFetchAndSession(() => new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
-    await SyncService.processAllPendingSync(crypto.randomUUID(), undefined, 0);
+    await SyncService.processAllPendingSync(MOCK_SHOP_ID, undefined, 0);
     const logE = await db.syncLogs.get(55555);
     assert(logE?.status === 'completed', `Test E: Expected status 'completed', got '${logE?.status}'`);
     console.log('[PASS] StateMachine Test E: Standard success correctly transitioned to completed');

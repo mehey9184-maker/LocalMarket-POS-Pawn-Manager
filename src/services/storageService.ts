@@ -1,11 +1,8 @@
 /**
  * Storage Service Abstraction
- * Manages item photographs and assets with Backblaze B2 (S3-compatible) storage
- * via server-side secure endpoints.
- * 
- * Security Rule:
- * Browser NEVER touches Backblaze B2 secret keys or master keys.
- * Uploads are mediated by `/api/storage/upload`.
+ * Local-First Image Storage Policy:
+ * - Transaction/inventory item photographs are LOCAL ONLY (Dexie IndexedDB / local storage).
+ * - Business & Profile assets (shop logos, user/avatar photos) are CLOUD-BACKED (Backblaze B2 / Supabase Storage).
  */
 
 import { authApi } from './supabaseApi';
@@ -16,40 +13,53 @@ export interface StorageUploadResult {
   storageKey: string;
 }
 
+export type ImagePurpose = 'item' | 'logo' | 'profile';
+
 export const storageService = {
   /**
-   * Upload an item photograph or shop asset.
-   * Accepts an already-optimized File, Blob, or base64 Data URL.
-   * Path convention:
-   *   Item: shops/{shopId}/items/{itemId}/{imageId}.webp
+   * Upload or resolve image storage based on purpose.
+   * Path convention for cloud assets:
    *   Logo: shops/{shopId}/branding/logo/{imageId}.webp
+   *   Profile: profiles/{shopId}/{userId}/{imageId}.webp
+   * 
+   * LOCAL ONLY policy for items:
+   *   Item photos (purpose === 'item') stay 100% local and return local Data URL/reference immediately.
    */
   async uploadItemImage(
     fileOrDataUrl: File | Blob | string,
     shopId?: string,
     itemId: string = `item-${Date.now()}`,
     fileName?: string,
-    purpose: 'item' | 'logo' = 'item'
+    purpose: ImagePurpose = 'item'
   ): Promise<StorageUploadResult> {
     let base64Payload: string = '';
 
-    try {
-      if (typeof fileOrDataUrl === 'string') {
-        base64Payload = fileOrDataUrl;
-      } else {
-        // Convert File / Blob to Data URL
-        base64Payload = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = (err) => reject(err);
-          reader.readAsDataURL(fileOrDataUrl);
-        });
-      }
+    if (typeof fileOrDataUrl === 'string') {
+      base64Payload = fileOrDataUrl;
+    } else {
+      base64Payload = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = (err) => reject(err);
+        reader.readAsDataURL(fileOrDataUrl);
+      });
+    }
 
+    // 1. LOCAL-ONLY POLICY FOR ITEM PHOTOS
+    // Transaction and inventory item photos are operational local data.
+    // They are stored locally in IndexedDB and never uploaded to cloud storage.
+    if (purpose === 'item') {
+      return {
+        imageUrl: base64Payload || (typeof fileOrDataUrl === 'string' ? fileOrDataUrl : ''),
+        storageKey: `local/${shopId || 'offline'}/items/${itemId}.webp`,
+      };
+    }
+
+    // 2. CLOUD STORAGE POLICY FOR BUSINESS & PROFILE ASSETS (logos & user avatars)
+    try {
       const session = await authApi.getSession();
       const token = session?.access_token;
 
-      // Call secure server-side upload proxy
       const result = await apiPost<{ imageUrl: string; storageKey: string }>(
         '/api/storage/upload',
         {
@@ -71,28 +81,20 @@ export const storageService = {
         storageKey: result.data.storageKey,
       };
     } catch (err: any) {
-      console.warn('Storage upload note (preserving image locally):', err.message);
-      // Fallback: If network or server endpoint is temporarily unavailable,
-      // return genuine base64 data URL so local workflow is never blocked and the real image is preserved
+      console.warn('Cloud asset upload note (preserving image locally):', err.message);
       const fallbackPath = purpose === 'logo'
         ? `local/${shopId || 'offline'}/branding/logo/logo.webp`
-        : `local/${shopId || 'offline'}/${itemId}.webp`;
+        : `local/${shopId || 'offline'}/profile/avatar.webp`;
 
-      if (base64Payload) {
-        return {
-          imageUrl: base64Payload,
-          storageKey: fallbackPath,
-        };
-      }
       return {
-        imageUrl: typeof fileOrDataUrl === 'string' ? fileOrDataUrl : '',
+        imageUrl: base64Payload || (typeof fileOrDataUrl === 'string' ? fileOrDataUrl : ''),
         storageKey: fallbackPath,
       };
     }
   },
 
   /**
-   * Dedicated helper for standardized shop logo upload
+   * Helper for standardized shop logo cloud upload
    */
   async uploadLogoImage(
     fileOrDataUrl: File | Blob | string,
@@ -103,10 +105,22 @@ export const storageService = {
   },
 
   /**
-   * Delete an item image by its storage key
+   * Helper for standardized user / avatar profile photo cloud upload
+   */
+  async uploadProfileImage(
+    fileOrDataUrl: File | Blob | string,
+    shopId?: string,
+    userId?: string,
+    fileName?: string
+  ): Promise<StorageUploadResult> {
+    return this.uploadItemImage(fileOrDataUrl, shopId, userId || 'avatar', fileName, 'profile');
+  },
+
+  /**
+   * Delete an image asset by storage key (if stored remotely)
    */
   async deleteItemImage(storageKey: string): Promise<boolean> {
-    if (!storageKey || storageKey.startsWith('fallback/')) return true;
+    if (!storageKey || storageKey.startsWith('local/') || storageKey.startsWith('fallback/')) return true;
 
     try {
       const session = await authApi.getSession();
@@ -127,6 +141,7 @@ export const storageService = {
 
   /**
    * Resolves a storageKey or URL to a fully qualified URL
+   * Preserves existing remote URLs, HTTP links, and Data URLs.
    */
   getItemImageUrl(storageKeyOrUrl: string): string {
     if (!storageKeyOrUrl) return '';
