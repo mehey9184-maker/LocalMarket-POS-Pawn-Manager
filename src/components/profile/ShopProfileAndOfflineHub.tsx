@@ -25,9 +25,11 @@ import {
   Loader2
 } from 'lucide-react';
 import { useApp, ShopProfile } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { BusinessRules } from '../../types';
 
 export const ShopProfileAndOfflineHub: React.FC = () => {
+  const { isOwner } = useAuth();
   const {
     shopProfile,
     updateShopProfile,
@@ -412,54 +414,56 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
         </div>
 
         {/* WHATSAPP-STYLE BACKUP FILE ACTIONS */}
-        <div className="pt-4 border-t border-stone-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-xs font-bold text-stone-700">WhatsApp-Style Physical File Backup</p>
-            <p className="text-[11px] text-stone-500">
-              Generates a standalone portable <code className="text-stone-600">.json</code> file on your computer/phone disk, completely independent of cloud or WiFi.
-            </p>
-          </div>
-
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-3">
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileUpload} 
-                accept=".json" 
-                className="hidden" 
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isRestoring}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-stone-50 text-stone-700 rounded-xl text-xs font-bold border border-stone-200 transition cursor-pointer animate-none"
-                title="Restore local database from a WhatsApp-style backup file"
-              >
-                {isRestoring ? (
-                  <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
-                ) : (
-                  <Upload className="w-4 h-4 text-blue-600" />
-                )}
-                <span>{isRestoring ? 'Restoring backup…' : 'Restore from File'}</span>
-              </button>
-
-              <button
-                onClick={exportDeviceBackup}
-                disabled={isRestoring}
-                className="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-600/10 cursor-pointer"
-                title="Download full point-in-time database snapshot directly to device storage"
-              >
-                <Download className="w-4 h-4" />
-                <span>Download Device Backup File</span>
-              </button>
-            </div>
-            {isRestoring && (
-              <p className="text-[11px] text-blue-600 font-semibold animate-pulse">
-                Restoring your local shop data… Please do not close this window.
+        {isOwner && (
+          <div className="pt-4 border-t border-stone-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-stone-700">WhatsApp-Style Physical File Backup</p>
+              <p className="text-[11px] text-stone-500">
+                Generates a standalone portable <code className="text-stone-600">.json</code> file on your computer/phone disk, completely independent of cloud or WiFi.
               </p>
-            )}
+            </div>
+
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-3">
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  onChange={handleFileUpload} 
+                  accept=".json" 
+                  className="hidden" 
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isRestoring}
+                  className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-stone-50 text-stone-700 rounded-xl text-xs font-bold border border-stone-200 transition cursor-pointer animate-none"
+                  title="Restore local database from a WhatsApp-style backup file"
+                >
+                  {isRestoring ? (
+                    <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4 text-blue-600" />
+                  )}
+                  <span>{isRestoring ? 'Restoring backup…' : 'Restore from File'}</span>
+                </button>
+
+                <button
+                  onClick={exportDeviceBackup}
+                  disabled={isRestoring}
+                  className="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-600/10 cursor-pointer"
+                  title="Download full point-in-time database snapshot directly to device storage"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download Device Backup File</span>
+                </button>
+              </div>
+              {isRestoring && (
+                <p className="text-[11px] text-blue-600 font-semibold animate-pulse">
+                  Restoring your local shop data… Please do not close this window.
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* MODAL: DEAL RULES & PRICING CONFIGURATION */}

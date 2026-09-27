@@ -694,19 +694,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
         exportDeviceBackup: async () => {
           try {
+            const currentShopId = shopProfile?.id;
+            if (!currentShopId) {
+              throw new Error('No authenticated shop context found to perform backup.');
+            }
             const backup = {
               version: 5,
               exportedAt: new Date().toISOString(),
               shopProfile,
               businessRules,
-              inventory: await db.inventory.toArray(),
-              customers: await db.customers.toArray(),
-              sellers: await db.sellers.toArray(),
-              sellerTransactions: await db.sellerTransactions.toArray(),
-              loans: await db.loans.toArray(),
-              saps: await db.saps.toArray(),
-              sales: await db.sales.toArray(),
-              refundRequests: await db.refundRequests.toArray()
+              inventory: await db.inventory.where('shopId').equals(currentShopId).toArray(),
+              customers: await db.customers.where('shopId').equals(currentShopId).toArray(),
+              sellers: await db.sellers.where('shopId').equals(currentShopId).toArray(),
+              sellerTransactions: await db.sellerTransactions.where('shopId').equals(currentShopId).toArray(),
+              loans: await db.loans.where('shopId').equals(currentShopId).toArray(),
+              saps: await db.saps.where('shopId').equals(currentShopId).toArray(),
+              sales: await db.sales.where('shopId').equals(currentShopId).toArray(),
+              refundRequests: await db.refundRequests.where('shopId').equals(currentShopId).toArray()
             };
             const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -723,20 +727,101 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
         restoreDeviceBackup: async (fileContent: string) => {
           try {
-            const data = JSON.parse(fileContent);
-            if (!data.inventory && !data.sales) {
-              throw new Error('Invalid LocalMarket backup file format');
+            // A. Parse JSON safely
+            let data: any;
+            try {
+              data = JSON.parse(fileContent);
+            } catch (parseErr) {
+              throw new Error('Invalid LocalMarket backup file.');
             }
-            if (data.shopProfile) setShopProfile(data.shopProfile);
-            if (data.businessRules) updateBusinessRules(data.businessRules);
-            if (Array.isArray(data.inventory)) await db.inventory.bulkPut(data.inventory);
-            if (Array.isArray(data.customers)) await db.customers.bulkPut(data.customers);
-            if (Array.isArray(data.sellers)) await db.sellers.bulkPut(data.sellers);
-            if (Array.isArray(data.sellerTransactions)) await db.sellerTransactions.bulkPut(data.sellerTransactions);
-            if (Array.isArray(data.loans)) await db.loans.bulkPut(data.loans);
-            if (Array.isArray(data.saps)) await db.saps.bulkPut(data.saps);
-            if (Array.isArray(data.sales)) await db.sales.bulkPut(data.sales);
-            if (Array.isArray(data.refundRequests)) await db.refundRequests.bulkPut(data.refundRequests);
+
+            // B. Confirm this is a supported LocalMarket backup format
+            if (!data || typeof data !== 'object') {
+              throw new Error('Invalid LocalMarket backup file.');
+            }
+
+            // C. Require a valid shop identity in the backup
+            if (!data.shopProfile || !data.shopProfile.id) {
+              throw new Error('Invalid LocalMarket backup file.');
+            }
+
+            const currentShopId = shopProfile?.id;
+            if (!currentShopId) {
+              throw new Error('No active shop context identified.');
+            }
+
+            const backupShopId = data.shopProfile.id;
+
+            // D. Compare the backup shop identity against the CURRENT authenticated shop
+            if (backupShopId !== currentShopId) {
+              throw new Error('This backup belongs to another shop. Restore cancelled.');
+            }
+
+            // E. Validate EVERY record in EVERY backup table that contains shopId
+            const tablesToValidate = [
+              'inventory',
+              'customers',
+              'sellers',
+              'sellerTransactions',
+              'loans',
+              'saps',
+              'sales',
+              'refundRequests'
+            ];
+
+            for (const table of tablesToValidate) {
+              const records = data[table];
+              if (records !== undefined) {
+                if (!Array.isArray(records)) {
+                  throw new Error('Invalid LocalMarket backup file.');
+                }
+                for (const record of records) {
+                  if (!record || record.shopId !== currentShopId) {
+                    throw new Error('This backup contains records from another shop. Restore cancelled.');
+                  }
+                }
+              }
+            }
+
+            // F. ZERO WRITES BEFORE VALIDATION PASSES
+            // Wrap the local Dexie table restoration in ONE Dexie transaction
+            try {
+              await db.transaction('rw', [
+                db.inventory,
+                db.customers,
+                db.sellers,
+                db.sellerTransactions,
+                db.loans,
+                db.saps,
+                db.sales,
+                db.refundRequests
+              ], async () => {
+                if (Array.isArray(data.inventory)) await db.inventory.bulkPut(data.inventory);
+                if (Array.isArray(data.customers)) await db.customers.bulkPut(data.customers);
+                if (Array.isArray(data.sellers)) await db.sellers.bulkPut(data.sellers);
+                if (Array.isArray(data.sellerTransactions)) await db.sellerTransactions.bulkPut(data.sellerTransactions);
+                if (Array.isArray(data.loans)) await db.loans.bulkPut(data.loans);
+                if (Array.isArray(data.saps)) await db.saps.bulkPut(data.saps);
+                if (Array.isArray(data.sales)) await db.sales.bulkPut(data.sales);
+                if (Array.isArray(data.refundRequests)) await db.refundRequests.bulkPut(data.refundRequests);
+              });
+            } catch (writeErr: any) {
+              console.error('Dexie transaction failed:', writeErr);
+              throw new Error('Restore could not be completed. No partial restore should remain.');
+            }
+
+            // G. SHOP PROFILE / BUSINESS RULES
+            // Apply validated current-shop shopProfile / businessRules state ONLY after successful local restore.
+            if (data.shopProfile) {
+              setShopProfile(data.shopProfile);
+            }
+            if (data.businessRules) {
+              const rulesRes = await updateBusinessRules(data.businessRules, 'Restored from device backup file');
+              if (!rulesRes.success) {
+                throw new Error(`Settings Restore Failed: ${rulesRes.error || 'Unauthorized'}`);
+              }
+            }
+
             showToast('Restore Complete', 'Local database restored successfully', 'success');
             return { success: true, message: 'Restored successfully' };
           } catch (err: any) {
