@@ -15,7 +15,8 @@ import {
   Info,
   Calendar,
   Wallet,
-  TrendingUp
+  TrendingUp,
+  Loader2
 } from 'lucide-react';
 
 export const BusinessRulesManager: React.FC = () => {
@@ -36,8 +37,8 @@ export const BusinessRulesManager: React.FC = () => {
     if (shopProfile.id) {
       setIsLoadingLogs(true);
       shopProfilesApi.getBusinessRuleAuditLogs(shopProfile.id)
-        .then(logs => setAuditLogs(logs as any))
-        .finally(() => setIsLoadingLogs(false));
+         .then(logs => setAuditLogs(logs as any))
+         .finally(() => setIsLoadingLogs(false));
     }
   }, [shopProfile.id]);
 
@@ -104,7 +105,7 @@ export const BusinessRulesManager: React.FC = () => {
                     step="0.1"
                     min="0"
                     max="30"
-                    disabled={!isOwner}
+                    disabled={isSaving || !isOwner}
                     value={Math.round(localRules.pawnMonthlyInterestRate * 100 * 10) / 10}
                     onChange={e => handleChange('pawnMonthlyInterestRate', (parseFloat(e.target.value) || 0) / 100)}
                     className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-stone-900 font-bold font-mono focus:border-[#C85A32] focus:outline-none disabled:opacity-50"
@@ -126,7 +127,7 @@ export const BusinessRulesManager: React.FC = () => {
                     step="0.1"
                     min="0"
                     max="50"
-                    disabled={!isOwner}
+                    disabled={isSaving || !isOwner}
                     value={Math.round(localRules.pawnStorageAdminFeeRate * 100 * 10) / 10}
                     onChange={e => handleChange('pawnStorageAdminFeeRate', (parseFloat(e.target.value) || 0) / 100)}
                     className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-stone-900 font-bold font-mono focus:border-[#C85A32] focus:outline-none disabled:opacity-50"
@@ -147,7 +148,7 @@ export const BusinessRulesManager: React.FC = () => {
                     type="number"
                     min="1"
                     max="365"
-                    disabled={!isOwner}
+                    disabled={isSaving || !isOwner}
                     value={localRules.defaultLoanTermDays}
                     onChange={e => handleChange('defaultLoanTermDays', parseInt(e.target.value) || 30)}
                     className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-stone-900 font-bold font-mono focus:border-[#C85A32] focus:outline-none disabled:opacity-50"
@@ -167,7 +168,7 @@ export const BusinessRulesManager: React.FC = () => {
                     type="number"
                     min="0"
                     max="90"
-                    disabled={!isOwner}
+                    disabled={isSaving || !isOwner}
                     value={localRules.gracePeriodDays}
                     onChange={e => handleChange('gracePeriodDays', parseInt(e.target.value) || 0)}
                     className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-stone-900 font-bold font-mono focus:border-[#C85A32] focus:outline-none disabled:opacity-50"
@@ -187,7 +188,7 @@ export const BusinessRulesManager: React.FC = () => {
                   <input
                     type="number"
                     min="1"
-                    disabled={!isOwner}
+                    disabled={isSaving || !isOwner}
                     value={localRules.minLoanPrincipal}
                     onChange={e => handleChange('minLoanPrincipal', parseFloat(e.target.value) || 0)}
                     className="w-full bg-white border border-stone-200 rounded-xl pl-8 pr-4 py-3 text-stone-900 font-bold font-mono focus:border-[#C85A32] focus:outline-none disabled:opacity-50"
@@ -206,7 +207,7 @@ export const BusinessRulesManager: React.FC = () => {
                     type="number"
                     step="0.1"
                     min="1"
-                    disabled={!isOwner}
+                    disabled={isSaving || !isOwner}
                     value={localRules.defaultRetailMarkupMultiplier}
                     onChange={e => handleChange('defaultRetailMarkupMultiplier', parseFloat(e.target.value) || 1.8)}
                     className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-stone-900 font-bold font-mono focus:border-[#C85A32] focus:outline-none disabled:opacity-50"
@@ -223,9 +224,10 @@ export const BusinessRulesManager: React.FC = () => {
                   <textarea
                     value={changeReason}
                     onChange={e => setChangeReason(e.target.value)}
+                    disabled={isSaving}
                     placeholder="e.g. Updating vault fees to reflect new insurance premiums..."
                     rows={2}
-                    className="w-full bg-white border border-stone-200 rounded-2xl px-4 py-3 text-xs text-stone-900 placeholder:text-stone-300 focus:border-[#C85A32] focus:outline-none"
+                    className="w-full bg-white border border-stone-200 rounded-2xl px-4 py-3 text-xs text-stone-900 placeholder:text-stone-300 focus:border-[#C85A32] focus:outline-none disabled:opacity-50"
                   />
                 </div>
                 <button
@@ -233,8 +235,12 @@ export const BusinessRulesManager: React.FC = () => {
                   disabled={isSaving || !changeReason.trim()}
                   className="w-full py-4 bg-[#C85A32] hover:bg-[#B84E27] text-white rounded-2xl text-sm font-black uppercase tracking-widest shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:grayscale cursor-pointer"
                 >
-                  <Save className="w-4 h-4" />
-                  {isSaving ? 'PERSISTING TO CLOUD...' : 'COMMIT CHANGES TO SERVER'}
+                  {isSaving ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  <span>{isSaving ? 'Saving changes…' : 'COMMIT CHANGES TO SERVER'}</span>
                 </button>
               </div>
             )}
@@ -263,9 +269,23 @@ export const BusinessRulesManager: React.FC = () => {
 
             <div className="flex-1 overflow-y-auto p-2 no-scrollbar divide-y divide-stone-100">
               {isLoadingLogs ? (
-                <div className="p-10 text-center space-y-4">
-                  <div className="w-8 h-8 border-2 border-[#C85A32] border-t-transparent rounded-full animate-spin mx-auto" />
-                  <p className="text-[10px] text-stone-400 font-mono uppercase tracking-widest animate-pulse">Fetching Audit Log...</p>
+                <div className="space-y-4 p-4 animate-pulse">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="space-y-3 pb-4 border-b border-stone-100 last:border-none">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-stone-200" />
+                          <div className="h-3 w-24 bg-stone-200 rounded" />
+                        </div>
+                        <div className="h-2.5 w-20 bg-stone-100 rounded" />
+                      </div>
+                      <div className="h-3.5 w-3/4 bg-stone-100 rounded italic" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="h-11 bg-stone-50/50 rounded-lg border border-stone-100" />
+                        <div className="h-11 bg-stone-50/50 rounded-lg border border-stone-100" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : auditLogs.length > 0 ? (
                 auditLogs.map(log => (

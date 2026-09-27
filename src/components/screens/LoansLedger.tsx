@@ -18,7 +18,8 @@ import {
   Banknote,
   ChevronRight,
   ShieldCheck,
-  MessageSquare
+  MessageSquare,
+  Loader2
 } from 'lucide-react';
 
 const LoanCard: React.FC<{ 
@@ -432,10 +433,25 @@ export const LoansLedger: React.FC = () => {
                 </div>
               </div>
               <div className="p-4 bg-[#F8F9FA] border-t border-gray-200 space-y-2 shrink-0">
-                <button type="button" disabled={isProcessing} onClick={handleExecuteSettlement} className="w-full py-3 px-4 rounded-xl bg-[#C85A32] hover:bg-[#b04d29] text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 transition active:scale-[0.99] disabled:opacity-50 cursor-pointer">
-                  {isProcessing ? <span>Processing...</span> : settlementOption === 'redeem' ? <><CheckCircle2 className="w-4 h-4" /><span>Receive Payment &amp; Release Asset</span></> : <><RotateCcw className="w-4 h-4" /><span>Collect Fee &amp; Extend</span></>}
+                <button type="button" disabled={isProcessing} onClick={handleExecuteSettlement} className="w-full py-3 px-4 rounded-xl bg-[#C85A32] hover:bg-[#b04d29] disabled:bg-stone-200 disabled:text-stone-400 text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 transition active:scale-[0.99] cursor-pointer">
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{settlementOption === 'redeem' ? 'Releasing asset…' : 'Extending loan…'}</span>
+                    </>
+                  ) : settlementOption === 'redeem' ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Receive Payment &amp; Release Asset</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Collect Fee &amp; Extend</span>
+                    </>
+                  )}
                 </button>
-                <button type="button" onClick={() => setSelectedLoanForDrawer(null)} className="w-full py-2 text-center text-xs text-gray-500 hover:text-gray-800 transition cursor-pointer">Cancel &amp; Close Drawer</button>
+                <button type="button" disabled={isProcessing} onClick={() => setSelectedLoanForDrawer(null)} className="w-full py-2 text-center text-xs text-gray-500 hover:text-gray-800 disabled:opacity-50 transition cursor-pointer">Cancel &amp; Close Drawer</button>
               </div>
             </div>
           </div>

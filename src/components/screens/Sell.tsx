@@ -23,7 +23,8 @@ import {
   Smartphone,
   Printer,
   AlertTriangle,
-  Lock
+  Lock,
+  Loader2
 } from 'lucide-react';
 
 const CartItemRow: React.FC<{ 
@@ -586,7 +587,8 @@ export const Sell: React.FC = () => {
           <div className="flex gap-2 pt-1">
             <button 
               onClick={clearCart}
-              className="p-3 rounded-xl border border-gray-200 text-gray-500 hover:text-red-500 hover:border-red-300 transition"
+              disabled={isProcessing}
+              className="p-3 rounded-xl border border-gray-200 text-gray-500 hover:text-red-500 hover:border-red-300 disabled:opacity-50 transition"
               title="Clear Basket [Esc]"
             >
               <Trash2 className="w-4 h-4" />
@@ -597,7 +599,10 @@ export const Sell: React.FC = () => {
               className="flex-1 py-3 rounded-xl bg-[#C85A32] disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold text-xs shadow-xs hover:bg-[#A94725] transition flex items-center justify-center gap-2 cursor-pointer"
             >
               {isProcessing ? (
-                <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Finalising sale…</span>
+                </>
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />

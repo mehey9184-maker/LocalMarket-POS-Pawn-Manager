@@ -323,7 +323,8 @@ export const StaffAccessManager: React.FC = () => {
                         key={i}
                         type="button"
                         onClick={() => toggleDay(i)}
-                        className={`w-10 h-10 rounded-xl font-bold text-xs transition-all border cursor-pointer ${
+                        disabled={isSaving}
+                        className={`w-10 h-10 rounded-xl font-bold text-xs transition-all border cursor-pointer disabled:opacity-50 ${
                           (schedule.workingDays || []).includes(i)
                             ? 'bg-amber-600 border-amber-500 text-white shadow-md'
                             : 'bg-stone-50 border-stone-200 text-stone-500 hover:border-stone-400'
@@ -342,8 +343,9 @@ export const StaffAccessManager: React.FC = () => {
                     <input 
                       type="time" 
                       value={schedule.startTime || "08:00"}
+                      disabled={isSaving}
                       onChange={(e) => handleUpdateSchedule({ startTime: e.target.value })}
-                      className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-900 focus:border-amber-500 outline-none"
+                      className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-900 focus:border-amber-500 outline-none disabled:opacity-50"
                     />
                   </div>
                   <div className="space-y-2">
@@ -351,8 +353,9 @@ export const StaffAccessManager: React.FC = () => {
                     <input 
                       type="time" 
                       value={schedule.endTime || "17:00"}
+                      disabled={isSaving}
                       onChange={(e) => handleUpdateSchedule({ endTime: e.target.value })}
-                      className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-900 focus:border-amber-500 outline-none"
+                      className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-900 focus:border-amber-500 outline-none disabled:opacity-50"
                     />
                   </div>
                 </div>
@@ -369,9 +372,10 @@ export const StaffAccessManager: React.FC = () => {
                         type="checkbox" 
                         className="sr-only peer"
                         checked={schedule.overnight ?? false}
+                        disabled={isSaving}
                         onChange={(e) => handleUpdateSchedule({ overnight: e.target.checked })}
                       />
-                      <div className="w-11 h-6 bg-stone-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                      <div className="w-11 h-6 bg-stone-200 peer-disabled:opacity-50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
                     </label>
                   </div>
 
@@ -380,8 +384,9 @@ export const StaffAccessManager: React.FC = () => {
                     <input 
                       type="number" 
                       value={schedule.earlyLoginMinutes ?? 10}
+                      disabled={isSaving}
                       onChange={(e) => handleUpdateSchedule({ earlyLoginMinutes: parseInt(e.target.value) || 0 })}
-                      className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-900 focus:border-amber-500 outline-none"
+                      className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-900 focus:border-amber-500 outline-none disabled:opacity-50"
                     />
                   </div>
                 </div>
@@ -407,7 +412,7 @@ export const StaffAccessManager: React.FC = () => {
                     setIsResetPinModalOpen(true);
                   }}
                   disabled={isSaving}
-                  className="w-full py-3 rounded-xl text-xs font-bold border border-red-200 bg-white text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-3 rounded-xl text-xs font-bold border border-red-200 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Key className="w-3.5 h-3.5" />
                   <span>Reset Terminal PIN</span>
@@ -417,7 +422,7 @@ export const StaffAccessManager: React.FC = () => {
                   type="button"
                   onClick={handleToggleActive}
                   disabled={isSaving}
-                  className={`w-full py-3 rounded-xl text-xs font-bold border transition-colors cursor-pointer bg-white ${
+                  className={`w-full py-3 rounded-xl text-xs font-bold border disabled:opacity-50 transition-colors cursor-pointer bg-white ${
                     selectedStaff.is_active 
                       ? 'border-red-200 text-red-600 hover:bg-red-50' 
                       : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
@@ -441,7 +446,22 @@ export const StaffAccessManager: React.FC = () => {
           </div>
 
           <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden divide-y divide-stone-100 shadow-xs">
-            {auditLogs.length > 0 ? auditLogs.map((log) => {
+            {isLoadingLogs ? (
+              <div className="space-y-4 p-5 animate-pulse">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="space-y-2 pb-4 border-b border-stone-100 last:border-none">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="h-4 w-28 bg-stone-200 rounded" />
+                        <div className="h-3.5 w-32 bg-stone-100 rounded" />
+                      </div>
+                      <div className="h-3 w-20 bg-stone-100 rounded" />
+                    </div>
+                    <div className="h-3.5 w-2/3 bg-stone-100 rounded mt-1" />
+                  </div>
+                ))}
+              </div>
+            ) : auditLogs.length > 0 ? auditLogs.map((log) => {
               const eventBadgeStyle = () => {
                 switch (log.event_type) {
                   case 'STAFF_PROVISIONED':
@@ -562,7 +582,7 @@ export const StaffAccessManager: React.FC = () => {
                     className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#C85A32] hover:bg-[#A94725] text-white transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-md shadow-[#C85A32]/10"
                   >
                     {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    <span>Confirm PIN Reset</span>
+                    <span>{isSaving ? 'Saving…' : 'Confirm PIN Reset'}</span>
                   </button>
                 </div>
               </form>
@@ -602,7 +622,7 @@ export const StaffAccessManager: React.FC = () => {
                   }`}
                 >
                   {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{confirmDialog.actionLabel}</span>
+                  <span>{isSaving ? 'Saving…' : confirmDialog.actionLabel}</span>
                 </button>
               </div>
             </div>

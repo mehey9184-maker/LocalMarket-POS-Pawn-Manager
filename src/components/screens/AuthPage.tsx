@@ -268,6 +268,7 @@ export const AuthPage: React.FC = () => {
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-4.5" noValidate>
+              <fieldset disabled={loading} className="space-y-4.5">
               {/* Full Name field (Sign Up only) */}
               {isSignUp && (
                 <div className="space-y-1.5 transition-all">
@@ -403,6 +404,7 @@ export const AuthPage: React.FC = () => {
                   )}
                 </div>
               )}
+              </fieldset>
 
               {/* Primary Action Button */}
               <button 
@@ -428,7 +430,8 @@ export const AuthPage: React.FC = () => {
                 <button 
                   type="button"
                   onClick={toggleAuthMode}
-                  className="text-sm font-medium text-[#C85A32] hover:text-[#A94725] hover:underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] rounded"
+                  disabled={loading}
+                  className="text-sm font-medium text-[#C85A32] hover:text-[#A94725] hover:underline disabled:opacity-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] rounded"
                 >
                   {isSignUp ? 'Already have an account? Sign In' : 'Need an owner account? Create one'}
                 </button>

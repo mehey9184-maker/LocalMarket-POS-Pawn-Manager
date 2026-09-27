@@ -21,7 +21,8 @@ import {
   Scale,
   History,
   ShoppingBag,
-  ImageIcon
+  ImageIcon,
+  Loader2
 } from 'lucide-react';
 import { useApp, ShopProfile } from '../../context/AppContext';
 import { BusinessRules } from '../../types';
@@ -49,15 +50,23 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
   } = useApp();
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState<ShopProfile>(shopProfile);
   const [rulesForm, setRulesForm] = useState<BusinessRules>(businessRules);
   const [isRestoring, setIsRestoring] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateShopProfile(profileForm);
-    setIsEditingProfile(false);
+    setIsSavingProfile(true);
+    try {
+      await updateShopProfile(profileForm);
+      setIsEditingProfile(false);
+    } catch (err: any) {
+      showToast('Error', err?.message || 'Failed to save store profile', 'error');
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
   
   useEffect(() => {
@@ -411,32 +420,44 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileUpload} 
-              accept=".json" 
-              className="hidden" 
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isRestoring}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-stone-50 text-stone-700 rounded-xl text-xs font-bold border border-stone-200 transition cursor-pointer"
-              title="Restore local database from a WhatsApp-style backup file"
-            >
-              <Upload className="w-4 h-4 text-blue-600" />
-              <span>{isRestoring ? 'Restoring...' : 'Restore from File'}</span>
-            </button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-3">
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileUpload} 
+                accept=".json" 
+                className="hidden" 
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isRestoring}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-stone-50 text-stone-700 rounded-xl text-xs font-bold border border-stone-200 transition cursor-pointer animate-none"
+                title="Restore local database from a WhatsApp-style backup file"
+              >
+                {isRestoring ? (
+                  <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4 text-blue-600" />
+                )}
+                <span>{isRestoring ? 'Restoring backup…' : 'Restore from File'}</span>
+              </button>
 
-            <button
-              onClick={exportDeviceBackup}
-              className="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-600/10 cursor-pointer"
-              title="Download full point-in-time database snapshot directly to device storage"
-            >
-              <Download className="w-4 h-4" />
-              <span>Download Device Backup File</span>
-            </button>
+              <button
+                onClick={exportDeviceBackup}
+                disabled={isRestoring}
+                className="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-600/10 cursor-pointer"
+                title="Download full point-in-time database snapshot directly to device storage"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download Device Backup File</span>
+              </button>
+            </div>
+            {isRestoring && (
+              <p className="text-[11px] text-blue-600 font-semibold animate-pulse">
+                Restoring your local shop data… Please do not close this window.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -633,14 +654,15 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
                 </div>
                 <button
                   onClick={() => setIsEditingProfile(false)}
-                  className="p-2 text-stone-400 hover:text-stone-700 rounded-xl hover:bg-stone-50 transition cursor-pointer"
+                  disabled={isSavingProfile}
+                  className="p-2 text-stone-400 hover:text-stone-700 disabled:opacity-50 rounded-xl hover:bg-stone-50 transition cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <form onSubmit={handleSaveProfile} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <fieldset disabled={isSavingProfile} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-[11px] font-bold text-stone-500 uppercase tracking-wider block mb-1">Shop Name</label>
                     <input
@@ -732,22 +754,28 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
                       className="w-full px-4 py-2.5 bg-white border border-stone-200 rounded-xl text-xs text-stone-900 focus:border-[#C85A32] outline-none"
                     />
                   </div>
-                </div>
+                </fieldset>
 
                 <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-100">
                   <button
                     type="button"
                     onClick={() => setIsEditingProfile(false)}
-                    className="px-5 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition cursor-pointer border border-stone-200"
+                    disabled={isSavingProfile}
+                    className="px-5 py-2.5 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-700 rounded-xl text-xs font-bold transition cursor-pointer border border-stone-200"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="flex items-center gap-2 px-6 py-2.5 bg-[#C85A32] hover:bg-[#B84E27] text-white rounded-xl text-xs font-bold transition shadow-lg shadow-[#C85A32]/25 cursor-pointer"
+                    disabled={isSavingProfile}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-[#C85A32] hover:bg-[#B84E27] disabled:bg-stone-200 disabled:text-stone-400 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-[#C85A32]/25 cursor-pointer"
                   >
-                    <Save className="w-4 h-4" />
-                    <span>Save Store Profile</span>
+                    {isSavingProfile ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    <span>{isSavingProfile ? 'Saving store profile…' : 'Save Store Profile'}</span>
                   </button>
                 </div>
               </form>
