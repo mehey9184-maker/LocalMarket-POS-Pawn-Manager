@@ -128,7 +128,7 @@ BEGIN
     v_code := v_prefix || '-CH-' || LPAD(v_curr_num::TEXT, 2, '0');
     RETURN v_code;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE plpgsql SECURITY INVOKER SET search_path = public, pg_temp;
 
 -- Restrict function execution to server-side / admin roles
 REVOKE EXECUTE ON FUNCTION public.generate_next_cashier_code(UUID) FROM PUBLIC, anon, authenticated;
