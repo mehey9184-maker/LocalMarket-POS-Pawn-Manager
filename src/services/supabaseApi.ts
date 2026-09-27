@@ -45,6 +45,21 @@ import {
 } from '../types';
 
 /**
+ * Local-First Image Storage Policy Helper:
+ * Ensures item photos remain local-only. Only HTTP/HTTPS cloud URLs (e.g. legacy remote assets)
+ * are sent to Supabase. Data URLs, base64 data, Blobs, local paths, and local storage keys
+ * are stripped during cloud database replication.
+ */
+export const sanitizeCloudImageUrl = (url?: string | null): string | null => {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  return null;
+};
+
+/**
  * Supabase Production API Service
  * Handles Authentication, Shop Profiles, Profiles, Shop Items (Inventory),
  * Customers, Sellers, Seller Transactions, Pawn Loans, Sales, SAPS Compliance, and Audit Logs.
@@ -628,7 +643,7 @@ export const shopItemsApi = {
       stock_location: item.stockLocation || null,
       status: item.status,
       days_in_vault: item.daysInVault || 0,
-      image_url: item.imageUrl || null,
+      image_url: sanitizeCloudImageUrl(item.imageUrl),
       specs: item.specs || null,
       pawn_ticket_id: item.pawnTicketId || null,
       source_type: item.sourceType || null,
@@ -1000,7 +1015,11 @@ export const sellerTransactionsApi = {
           p_transaction_id: params.transactionId,
           p_transaction_number: params.transactionNumber,
           p_seller_id: params.sellerId,
-          p_items: params.items,
+          p_items: (params.items || []).map((item: any) => ({
+            ...item,
+            imageUrl: sanitizeCloudImageUrl(item.imageUrl || item.image_url),
+            image_url: sanitizeCloudImageUrl(item.image_url || item.imageUrl)
+          })),
           p_total_amount: params.totalAmount ?? 0,
           p_payment_method: params.paymentMethod || 'cash',
           p_payment_status: params.paymentStatus || 'Paid',
@@ -1282,7 +1301,7 @@ export const pawnLoansApi = {
           p_item_model: params.itemModel || null,
           p_serial_or_imei: params.serialOrImei || null,
           p_condition: params.condition || 'Good',
-          p_item_image_url: params.itemImageUrl || null,
+          p_item_image_url: sanitizeCloudImageUrl(params.itemImageUrl),
           p_specs: params.specs || null,
           p_stock_location: params.stockLocation || null,
           p_internal_note: params.internalNote || null,
@@ -1347,7 +1366,7 @@ export const pawnLoansApi = {
       item_category: loan.itemCategory || null,
       serial_or_imei: loan.serialOrImei || null,
       condition: loan.condition || null,
-      item_image_url: loan.itemImageUrl || null,
+      item_image_url: sanitizeCloudImageUrl(loan.itemImageUrl),
       principal: loan.principal,
       ncr_monthly_rate: loan.ncrMonthlyRate,
       monthly_interest: loan.monthlyInterest,
@@ -1487,7 +1506,13 @@ export const salesApi = {
           p_sale_id: params.saleId,
           p_receipt_number: params.receiptNumber,
           p_shop_id: params.shopId,
-          p_items: params.items,
+          p_items: (params.items || []).map((ci: any) => ({
+            ...ci,
+            item: ci.item ? {
+              ...ci.item,
+              imageUrl: sanitizeCloudImageUrl(ci.item.imageUrl || ci.item.image_url)
+            } : ci.item
+          })),
           p_subtotal: params.subtotal,
           p_vat_amount: params.vatAmount,
           p_total: params.total,
@@ -1515,7 +1540,13 @@ export const salesApi = {
       shop_id: shopId || sale.shopId || null,
       receipt_number: sale.receiptNumber,
       timestamp: sale.timestamp || new Date().toISOString(),
-      items: sale.items as any,
+      items: (sale.items || []).map((ci: any) => ({
+        ...ci,
+        item: ci.item ? {
+          ...ci.item,
+          imageUrl: sanitizeCloudImageUrl(ci.item.imageUrl || ci.item.image_url)
+        } : ci.item
+      })) as any,
       subtotal: sale.subtotal,
       vat_amount: sale.vatAmount,
       total: sale.total,
