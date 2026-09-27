@@ -181,19 +181,17 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     // Draw full-res video frame
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) return;
-        const timestamp = Date.now();
-        const fileName = `item_photo_${timestamp}.jpg`;
-        // Stop tracks immediately upon successful capture
-        stopTracks();
-        onCapture(blob, fileName);
-        onClose();
-      },
-      'image/jpeg',
-      0.95
-    );
+    // Return the clean captured source Blob without intermediate lossy re-encoding;
+    // imageProcessor remains the single source of truth for final optimization.
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const timestamp = Date.now();
+      const fileName = `item_capture_${timestamp}.png`;
+      // Stop tracks immediately upon successful capture
+      stopTracks();
+      onCapture(blob, fileName);
+      onClose();
+    });
   };
 
   // Manage open/close and clean up stream

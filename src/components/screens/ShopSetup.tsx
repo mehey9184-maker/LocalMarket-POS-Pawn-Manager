@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { shopProfilesApi } from '../../services/supabaseApi';
 import { validateAndNormalizeSaPhone } from '../../utils/phoneValidator';
-import { createLogoImage } from '../../utils/imageProcessor';
+import { createLogoImage, ProcessedImageResult } from '../../utils/imageProcessor';
 import { storageService } from '../../services/storageService';
 import { 
   Loader2, 
@@ -59,7 +59,7 @@ export const ShopSetup: React.FC = () => {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [remoteLogoUrl, setRemoteLogoUrl] = useState<string | null>(null);
   const [logoUploadStatus, setLogoUploadStatus] = useState<'idle' | 'ready' | 'uploading' | 'saved' | 'pending'>('idle');
-  const logoUploadPromiseRef = useRef<Promise<string | null> | null>(null);
+  const processedLogoRef = useRef<ProcessedImageResult | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   // Validation Errors
@@ -96,33 +96,10 @@ export const ShopSetup: React.FC = () => {
 
       // 2. Immediately update local preview
       setLogoPreview(processed.dataUrl);
+
+      // 4. Keep the processed logo locally available without uploading to unowned shops/general
+      processedLogoRef.current = processed;
       setLogoUploadStatus('ready');
-
-      // 3. Start background upload to Backblaze
-      setLogoUploadStatus('uploading');
-      const uploadPromise = (async () => {
-        try {
-          const uploadRes = await storageService.uploadLogoImage(
-            processed.blob,
-            undefined,
-            processed.fileName
-          );
-          if (uploadRes.imageUrl && !uploadRes.imageUrl.startsWith('data:image/') && !uploadRes.storageKey?.startsWith('local/')) {
-            setRemoteLogoUrl(uploadRes.imageUrl);
-            setLogoUploadStatus('saved');
-            return uploadRes.imageUrl;
-          } else {
-            setLogoUploadStatus('pending');
-            return null;
-          }
-        } catch (uploadErr) {
-          console.warn('Logo background upload warning (saved locally):', uploadErr);
-          setLogoUploadStatus('pending');
-          return null;
-        }
-      })();
-
-      logoUploadPromiseRef.current = uploadPromise;
     } catch (err: any) {
       console.error('Logo normalization error:', err);
       showToast('Logo Error', 'Could not process logo image.', 'error');
@@ -197,31 +174,16 @@ export const ShopSetup: React.FC = () => {
     setLoading(true);
 
     try {
-      // If logo upload is still in-flight and we are online, await it
-      let uploadedLogo = remoteLogoUrl;
-      if (!uploadedLogo && logoUploadPromiseRef.current && navigator.onLine) {
-        try {
-          const awaited = await logoUploadPromiseRef.current;
-          if (awaited) uploadedLogo = awaited;
-        } catch {
-          // ignore, fallback to local logoPreview below
-        }
-      }
-
-      const finalLogoUrl = uploadedLogo || logoPreview || undefined;
-
       const phoneResult = validateAndNormalizeSaPhone(phone);
       const normalizedPhone = phoneResult.normalizedNumber || phone.trim();
 
       const metadata: any = {};
-      if (finalLogoUrl) {
-        metadata.logo_url = finalLogoUrl;
-      }
       if (tradingName.trim()) metadata.trading_name = tradingName.trim();
       if (regNumber.trim()) metadata.registration_number = regNumber.trim();
       if (vatNumber.trim()) metadata.vat_number = vatNumber.trim();
       if (sapsLicense.trim()) metadata.saps_dealer_license = sapsLicense.trim();
 
+      // 5. Create/initialize the shop using the existing initializeNewShop() flow
       const res = await shopProfilesApi.initializeNewShop({
         shop_name: shopName.trim(),
         shop_code: shopCode.trim().toUpperCase() || undefined,
@@ -231,15 +193,65 @@ export const ShopSetup: React.FC = () => {
         city: city.trim(),
         province: province.trim(),
         postal_code: postalCode.trim() || undefined,
-        metadata
+        metadata,
       });
 
-      if (res.success) {
-        showToast('Shop Initialized', `${shopName.trim()} is set up and ready!`, 'success');
-        await refreshProfile();
-      } else {
+      if (!res.success || !res.shop_id) {
         throw new Error(res.error || 'Failed to initialize shop profile');
       }
+
+      // 6. Obtain the newly created shop ID
+      const newShopId = res.shop_id;
+
+      // 7. Upload the already-processed logo using that real shop ID
+      const targetLogo = processedLogoRef.current;
+      if (targetLogo) {
+        setLogoUploadStatus('uploading');
+        try {
+          const uploadRes = await storageService.uploadLogoImage(
+            targetLogo.blob,
+            newShopId,
+            targetLogo.fileName
+          );
+
+          if (
+            uploadRes.imageUrl &&
+            !uploadRes.imageUrl.startsWith('data:image/') &&
+            !uploadRes.storageKey?.startsWith('local/')
+          ) {
+            // 8. Persist the resulting Backblaze URL into the existing shop metadata logo_url
+            setRemoteLogoUrl(uploadRes.imageUrl);
+            setLogoUploadStatus('saved');
+            await shopProfilesApi.updateShopProfile(newShopId, {
+              metadata: {
+                ...metadata,
+                logo_url: uploadRes.imageUrl,
+              },
+            });
+          } else {
+            setLogoUploadStatus('pending');
+            // Persist local preview data URL so branding is immediately functional offline
+            await shopProfilesApi.updateShopProfile(newShopId, {
+              metadata: {
+                ...metadata,
+                logo_url: targetLogo.dataUrl,
+              },
+            }).catch(() => {});
+          }
+        } catch (uploadErr) {
+          console.warn('Logo upload after shop creation warning (preserved locally):', uploadErr);
+          setLogoUploadStatus('pending');
+          await shopProfilesApi.updateShopProfile(newShopId, {
+            metadata: {
+              ...metadata,
+              logo_url: targetLogo.dataUrl,
+            },
+          }).catch(() => {});
+        }
+      }
+
+      showToast('Shop Initialized', `${shopName.trim()} is set up and ready!`, 'success');
+      await refreshProfile();
     } catch (err: any) {
       console.error('[ShopSetup] Error:', err);
       showToast('Setup Failed', err.message || 'Could not create shop profile', 'error');

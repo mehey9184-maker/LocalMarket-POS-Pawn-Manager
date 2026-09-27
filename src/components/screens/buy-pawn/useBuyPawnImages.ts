@@ -20,7 +20,32 @@ export function useBuyPawnImages({
   const [photoUploadStatus, setPhotoUploadStatus] = useState<PhotoUploadStatus>('idle');
   const [photoMeta, setPhotoMeta] = useState<PhotoMeta | null>(null);
   const photoFileInputRef = useRef<HTMLInputElement>(null);
-  const currentUploadPromiseRef = useRef<Promise<any> | null>(null);
+  const uploadGenerationRef = useRef<number>(0);
+  const currentUploadPromiseRef = useRef<Promise<string | null> | null>(null);
+
+  /**
+   * Waits for the currently running image upload if active.
+   * - If no upload is active, resolves immediately with null
+   * - If an upload is active, awaits that exact Promise
+   * - Returns remote Backblaze URL when successful, or null if local/failed
+   * - Never starts a second upload and never throws
+   */
+  const waitForCurrentUpload = async (): Promise<string | null> => {
+    const activePromise = currentUploadPromiseRef.current;
+    if (!activePromise) {
+      return null;
+    }
+    const targetGen = uploadGenerationRef.current;
+    try {
+      const remoteUrl = await activePromise;
+      if (uploadGenerationRef.current === targetGen) {
+        return remoteUrl;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
 
   /**
    * Local-First Photo Processing Pipeline:
@@ -29,6 +54,7 @@ export function useBuyPawnImages({
    * 3. Upload to Backblaze B2 in the background (non-blocking)
    */
   const handleProcessImage = async (fileOrBlob: File | Blob, originalFileName?: string) => {
+    const currentGen = ++uploadGenerationRef.current;
     setPhotoUploadStatus('optimizing');
     const originalSize = fileOrBlob.size;
 
@@ -39,6 +65,9 @@ export function useBuyPawnImages({
         quality: 0.82,
         fileName: originalFileName || (fileOrBlob as File).name || 'item_photo.jpg',
       });
+
+      // Discard if user replaced image while compression was running
+      if (uploadGenerationRef.current !== currentGen) return;
 
       // 2. Immediately display local preview data URL (user continues without waiting)
       setItemData((prev) => ({ ...prev, imageUrl: processed.dataUrl }));
@@ -56,6 +85,11 @@ export function useBuyPawnImages({
       const uploadPromise = storageService
         .uploadItemImage(processed.blob, shopId, draftItemId, processed.fileName)
         .then((uploadRes) => {
+          // If a newer image operation was initiated, ignore this stale result
+          if (uploadGenerationRef.current !== currentGen) {
+            return null;
+          }
+
           if (
             uploadRes.imageUrl &&
             !uploadRes.imageUrl.startsWith('data:image/') &&
@@ -63,7 +97,7 @@ export function useBuyPawnImages({
           ) {
             // Successfully uploaded to remote Backblaze B2!
             setItemData((prev) => {
-              if (prev.imageUrl === processed.dataUrl) {
+              if (uploadGenerationRef.current === currentGen && prev.imageUrl === processed.dataUrl) {
                 return { ...prev, imageUrl: uploadRes.imageUrl };
               }
               return prev;
@@ -76,6 +110,9 @@ export function useBuyPawnImages({
           }
         })
         .catch((err) => {
+          if (uploadGenerationRef.current !== currentGen) {
+            return null;
+          }
           console.warn('Background upload note (preserved locally):', err);
           setPhotoUploadStatus('local_only');
           return null;
@@ -83,6 +120,7 @@ export function useBuyPawnImages({
 
       currentUploadPromiseRef.current = uploadPromise;
     } catch (err: any) {
+      if (uploadGenerationRef.current !== currentGen) return;
       console.error('Image optimization error:', err);
       showToast('Image Error', err.message || 'Could not process photograph', 'error');
       setPhotoUploadStatus('idle');
@@ -108,6 +146,7 @@ export function useBuyPawnImages({
   };
 
   const handleRemovePhoto = () => {
+    uploadGenerationRef.current++;
     setItemData((prev) => ({ ...prev, imageUrl: '' }));
     setPhotoMeta(null);
     setPhotoUploadStatus('idle');
@@ -116,6 +155,7 @@ export function useBuyPawnImages({
   };
 
   const resetImages = () => {
+    uploadGenerationRef.current++;
     setIsCameraOpen(false);
     setPhotoUploadStatus('idle');
     setPhotoMeta(null);
@@ -132,5 +172,6 @@ export function useBuyPawnImages({
     handlePhotoFileSelect,
     handleRemovePhoto,
     resetImages,
+    waitForCurrentUpload,
   };
 }

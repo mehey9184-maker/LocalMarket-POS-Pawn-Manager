@@ -1141,7 +1141,12 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         return res.status(auth.status).json({ error: auth.error || "Authentication required to upload assets." });
       }
 
-      const safeShopId = (auth.profile.shop_id || "general").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const callerShopId = auth.profile.shop_id;
+      const requestedShopId = typeof req.body.shopId === "string" && req.body.shopId.trim() ? req.body.shopId.trim() : null;
+      const targetShopId = (requestedShopId && (auth.profile.role === 'owner' || auth.profile.role === 'admin' || !callerShopId || callerShopId === requestedShopId))
+        ? requestedShopId
+        : (callerShopId || "general");
+      const safeShopId = targetShopId.replace(/[^a-zA-Z0-9_-]/g, "_");
       const { image, itemId = "item-01", purpose = "item" } = req.body;
       const safePurpose = purpose === "logo" ? "logo" : "item";
 

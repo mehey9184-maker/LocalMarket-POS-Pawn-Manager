@@ -415,6 +415,18 @@ export function useBuyPawnWorkflow() {
   const handleFinalizeExistingStock = useCallback(async () => {
     setIsFinalizing(true);
     try {
+      if (itemData.imageUrl?.startsWith('data:image/') && navigator.onLine) {
+        try {
+          const remoteUrl = await images.waitForCurrentUpload();
+          if (remoteUrl) {
+            itemData.imageUrl = remoteUrl;
+            setItemData((prev) => ({ ...prev, imageUrl: remoteUrl }));
+          }
+        } catch {
+          // Keep the optimized local image
+        }
+      }
+
       const sku = generateUniqueSku((s) => inventory.some((i) => i.sku === s));
       const rawCost = costBasisInput.trim();
       const costBasisNum =
@@ -538,6 +550,20 @@ export function useBuyPawnWorkflow() {
 
     setIsFinalizing(true);
     try {
+      // Before an ONLINE authoritative Buy/Pawn RPC is sent:
+      // Reuse existing in-flight upload if the current item photo is still a local data URL
+      if (itemData.imageUrl?.startsWith('data:image/') && navigator.onLine && isSupabaseConfigured()) {
+        try {
+          const remoteUrl = await images.waitForCurrentUpload();
+          if (remoteUrl) {
+            itemData.imageUrl = remoteUrl;
+            setItemData((prev) => ({ ...prev, imageUrl: remoteUrl }));
+          }
+        } catch {
+          // Preserve local-first behavior
+        }
+      }
+
       // If there's a current item not in basket, add it first or validate it
       const finalBasket = [...basketItems];
       if (itemData.title.trim()) {
