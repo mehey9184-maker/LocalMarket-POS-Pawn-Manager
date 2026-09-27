@@ -346,6 +346,83 @@ export async function runBackupIsolationTests(): Promise<{ passed: boolean; logs
       passed = false;
     }
 
+    // ==========================================================
+    // TEST 7: Transaction Rollback Guarantee - Simulated failure after partial write
+    // ==========================================================
+    log('--- TEST 7: RUNNING REAL TRANSACTION ROLLBACK GUARANTEE TEST ---');
+    const rollbackItem: InventoryItem = {
+      id: 'item-rollback-test-id',
+      shopId: shopBId,
+      sku: 'SKU-ROLLBACK',
+      title: 'Rollback Test Item',
+      status: 'InStock',
+      addedAt: new Date().toISOString(),
+      condition: 'Good',
+      retailPrice: 500,
+      category: 'General Goods',
+      serialOrImei: '',
+      acquisitionType: 'Existing Stock',
+      imageUrl: ''
+    };
+
+    const rollbackCust: Customer = {
+      id: 'cust-rollback-test-id',
+      shopId: shopBId,
+      fullName: 'Rollback Test Customer',
+      idNumber: '8888',
+      mobile: '088',
+      idType: 'RSA Smart ID',
+      address: '',
+      verified: true,
+      createdAt: new Date().toISOString()
+    };
+
+    const rollbackBackupPayload = {
+      version: 5,
+      shopProfile: { id: shopBId, shop_name: 'Shop B' },
+      inventory: [rollbackItem],
+      customers: [rollbackCust]
+    };
+
+    // Confirm that the item does not exist beforehand
+    const itemBefore = await db.inventory.get('item-rollback-test-id');
+    if (itemBefore) {
+      await db.inventory.delete('item-rollback-test-id');
+    }
+
+    const originalBulkPut = db.customers.bulkPut;
+    let test7ThrewError = false;
+
+    try {
+      // Overwrite bulkPut on the table so it fails when called during the transaction
+      (db.customers as any).bulkPut = async function() {
+        throw new Error('Simulated database write failure for rollback verification');
+      };
+
+      // Attempt to restore with the real function
+      await validateAndRestoreBackup(JSON.stringify(rollbackBackupPayload), ownerProfileB);
+    } catch (err: any) {
+      if (err.message.includes('Restore could not be completed. No partial restore should remain.')) {
+        test7ThrewError = true;
+      } else {
+        log(`Unexpected test 7 error: ${err.message}`);
+      }
+    } finally {
+      // Restore the original bulkPut function immediately!
+      (db.customers as any).bulkPut = originalBulkPut;
+    }
+
+    // Verify database state: rollback should ensure the inventory write did NOT persist
+    const itemAfter = await db.inventory.get('item-rollback-test-id');
+    const custAfter = await db.customers.get('cust-rollback-test-id');
+
+    if (test7ThrewError && !itemAfter && !custAfter) {
+      log('✓ TEST 7 PASS: Real validateAndRestoreBackup transaction rolled back successfully upon failure. No partial records remained.');
+    } else {
+      log(`✗ TEST 7 FAIL: Transaction rollback failed. errorThrown: ${test7ThrewError}, itemSaved: ${!!itemAfter}, customerSaved: ${!!custAfter}`);
+      passed = false;
+    }
+
   } catch (err: any) {
     log(`✗ EXCEPTION: Test suite threw exception: ${err.message}`);
     passed = false;
