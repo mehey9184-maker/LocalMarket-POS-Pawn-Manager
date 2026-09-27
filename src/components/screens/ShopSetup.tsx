@@ -203,51 +203,42 @@ export const ShopSetup: React.FC = () => {
       // 6. Obtain the newly created shop ID
       const newShopId = res.shop_id;
 
-      // 7. Upload the already-processed logo using that real shop ID
+      // 7. Store local processed logo for immediate local UI availability
       const targetLogo = processedLogoRef.current;
       if (targetLogo) {
-        setLogoUploadStatus('uploading');
         try {
-          const uploadRes = await storageService.uploadLogoImage(
-            targetLogo.blob,
-            newShopId,
-            targetLogo.fileName
-          );
+          localStorage.setItem(`shop_logo_local_${newShopId}`, targetLogo.dataUrl);
+        } catch {}
 
-          if (
-            uploadRes.imageUrl &&
-            !uploadRes.imageUrl.startsWith('data:image/') &&
-            !uploadRes.storageKey?.startsWith('local/')
-          ) {
-            // 8. Persist the resulting Backblaze URL into the existing shop metadata logo_url
-            setRemoteLogoUrl(uploadRes.imageUrl);
-            setLogoUploadStatus('saved');
-            await shopProfilesApi.updateShopProfile(newShopId, {
-              metadata: {
-                ...metadata,
-                logo_url: uploadRes.imageUrl,
-              },
-            });
-          } else {
+        // Non-blocking background upload using the real shop ID
+        setLogoUploadStatus('uploading');
+        storageService
+          .uploadLogoImage(targetLogo.blob, newShopId, targetLogo.fileName)
+          .then(async (uploadRes) => {
+            if (
+              uploadRes.imageUrl &&
+              !uploadRes.imageUrl.startsWith('data:image/') &&
+              !uploadRes.storageKey?.startsWith('local/')
+            ) {
+              // 8. Persist the resulting Backblaze URL into the existing shop metadata logo_url
+              setRemoteLogoUrl(uploadRes.imageUrl);
+              setLogoUploadStatus('saved');
+              await shopProfilesApi.updateShopProfile(newShopId, {
+                metadata: {
+                  ...metadata,
+                  logo_url: uploadRes.imageUrl,
+                },
+              });
+              await refreshProfile();
+            } else {
+              // Retain local processed logo; mark as pending without storing data URLs in Supabase metadata
+              setLogoUploadStatus('pending');
+            }
+          })
+          .catch((uploadErr) => {
+            console.warn('Logo background upload warning (preserved locally):', uploadErr);
             setLogoUploadStatus('pending');
-            // Persist local preview data URL so branding is immediately functional offline
-            await shopProfilesApi.updateShopProfile(newShopId, {
-              metadata: {
-                ...metadata,
-                logo_url: targetLogo.dataUrl,
-              },
-            }).catch(() => {});
-          }
-        } catch (uploadErr) {
-          console.warn('Logo upload after shop creation warning (preserved locally):', uploadErr);
-          setLogoUploadStatus('pending');
-          await shopProfilesApi.updateShopProfile(newShopId, {
-            metadata: {
-              ...metadata,
-              logo_url: targetLogo.dataUrl,
-            },
-          }).catch(() => {});
-        }
+          });
       }
 
       showToast('Shop Initialized', `${shopName.trim()} is set up and ready!`, 'success');

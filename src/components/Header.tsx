@@ -127,9 +127,9 @@ export const Header: React.FC<HeaderProps> = () => {
           onClick={() => setActiveTab('home')}
           className="flex items-center gap-3 shrink-0 group text-left cursor-pointer"
         >
-          {shopProfile?.logo_url || (shopProfile?.metadata as any)?.logo_url ? (
+          {shopProfile?.logo_url || (shopProfile?.metadata as any)?.logo_url || (shopProfile?.id ? localStorage.getItem(`shop_logo_local_${shopProfile.id}`) : null) ? (
             <img 
-              src={shopProfile.logo_url || (shopProfile.metadata as any).logo_url} 
+              src={shopProfile.logo_url || (shopProfile.metadata as any)?.logo_url || localStorage.getItem(`shop_logo_local_${shopProfile.id}`) || ''} 
               alt={shopProfile.shop_name} 
               className="w-9 h-9 rounded-xl object-contain bg-white border border-gray-200 p-0.5 shadow-xs" 
             />

@@ -56,78 +56,102 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   }, []);
 
   // Start camera stream
-  const startCamera = useCallback(async (deviceId?: string, mode: 'environment' | 'user' = 'environment') => {
-    stopTracks();
-    setIsLoading(true);
-    setError(null);
-    setTorchOn(false);
-    setHasTorch(false);
+  const startCamera = useCallback(
+    async (
+      deviceId?: string,
+      mode: 'environment' | 'user' = 'environment',
+      isCanceled?: () => boolean
+    ) => {
+      stopTracks();
+      setIsLoading(true);
+      setError(null);
+      setTorchOn(false);
+      setHasTorch(false);
 
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setError('Live camera access is not supported by this browser. Please use the file upload option.');
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      // Primary constraint: prefer 1080p, chosen device or facing mode
-      let stream: MediaStream;
-      const constraints: MediaStreamConstraints = {
-        audio: false,
-        video: deviceId
-          ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-          : {
-              facingMode: { ideal: mode },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-            },
-      };
+      if (!navigator.mediaDevices?.getUserMedia) {
+        if (isCanceled?.()) return;
+        setError('Live camera access is not supported by this browser. Please use the file upload option.');
+        setIsLoading(false);
+        return;
+      }
 
       try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-      } catch (primaryErr: any) {
-        console.warn('High-res camera constraints failed, attempting fallback:', primaryErr);
-        // Fallback: minimal video constraint
-        stream = await navigator.mediaDevices.getUserMedia({
+        // Primary constraint: prefer 1080p, chosen device or facing mode
+        let stream: MediaStream;
+        const constraints: MediaStreamConstraints = {
           audio: false,
-          video: deviceId ? { deviceId } : true,
-        });
-      }
+          video: deviceId
+            ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+            : {
+                facingMode: { ideal: mode },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+              },
+        };
 
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
-      }
-
-      // Check torch capability
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) {
-        const capabilities: any = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-        if (capabilities.torch) {
-          setHasTorch(true);
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (primaryErr: any) {
+          if (isCanceled?.()) return;
+          console.warn('High-res camera constraints failed, attempting fallback:', primaryErr);
+          // Fallback: minimal video constraint
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: deviceId ? { deviceId } : true,
+          });
         }
-      }
 
-      await updateDeviceList();
-      setIsLoading(false);
-    } catch (err: any) {
-      console.error('Camera initialization error:', err);
-      let userMsg = 'Could not access the camera.';
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        userMsg = 'Camera permission was denied. Please allow camera permissions in your browser address bar.';
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        userMsg = 'No camera device found on this system. Please connect a webcam or use file upload.';
-      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        userMsg = 'Camera is already in use by another application. Please close other camera apps and retry.';
-      } else if (err.message) {
-        userMsg = err.message;
+        if (isCanceled?.()) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        // Ensure old tracks are stopped before assigning new stream
+        stopTracks();
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+
+        if (isCanceled?.()) {
+          stream.getTracks().forEach((track) => track.stop());
+          if (videoRef.current) videoRef.current.srcObject = null;
+          streamRef.current = null;
+          return;
+        }
+
+        // Check torch capability
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          const capabilities: any = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+          if (capabilities.torch) {
+            setHasTorch(true);
+          }
+        }
+
+        await updateDeviceList();
+        setIsLoading(false);
+      } catch (err: any) {
+        if (isCanceled?.()) return;
+        console.error('Camera initialization error:', err);
+        let userMsg = 'Could not access the camera.';
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          userMsg = 'Camera permission was denied. Please allow camera permissions in your browser address bar.';
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          userMsg = 'No camera device found on this system. Please connect a webcam or use file upload.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          userMsg = 'Camera is already in use by another application. Please close other camera apps and retry.';
+        } else if (err.message) {
+          userMsg = err.message;
+        }
+        setError(userMsg);
+        setIsLoading(false);
       }
-      setError(userMsg);
-      setIsLoading(false);
-    }
-  }, [stopTracks, updateDeviceList]);
+    },
+    [stopTracks, updateDeviceList]
+  );
 
   // Toggle Torch/Flashlight
   const toggleTorch = async () => {
@@ -146,19 +170,15 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     }
   };
 
-  // Flip camera between environment and user
+  // Flip camera between environment and user - triggers single authoritative useEffect
   const handleFlipCamera = () => {
-    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
-    setFacingMode(nextMode);
+    setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
     setSelectedDeviceId('');
-    startCamera(undefined, nextMode);
   };
 
-  // Switch specific device
+  // Switch specific device - triggers single authoritative useEffect
   const handleDeviceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const devId = e.target.value;
-    setSelectedDeviceId(devId);
-    startCamera(devId, facingMode);
+    setSelectedDeviceId(e.target.value);
   };
 
   // Capture frame from video to canvas
@@ -194,15 +214,18 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     });
   };
 
-  // Manage open/close and clean up stream
+  // Manage open/close and clean up stream - single authoritative restart mechanism
   useEffect(() => {
+    let isCanceled = false;
+
     if (isOpen) {
-      startCamera(selectedDeviceId || undefined, facingMode);
+      startCamera(selectedDeviceId || undefined, facingMode, () => isCanceled);
     } else {
       stopTracks();
     }
 
     return () => {
+      isCanceled = true;
       stopTracks();
     };
   }, [isOpen, startCamera, stopTracks, selectedDeviceId, facingMode]);

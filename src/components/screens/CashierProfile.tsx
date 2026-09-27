@@ -190,23 +190,31 @@ export const CashierProfile: React.FC = () => {
 
       // Upload new normalized logo if selected
       if (logoPreview && logoFile) {
+        // Retain local processed logo in local storage for immediate UI display
+        try {
+          localStorage.setItem(`shop_logo_local_${shopProfile.id}`, logoPreview);
+        } catch {}
+
         try {
           const uploadRes = await storageService.uploadLogoImage(logoPreview, shopProfile.id, logoFile.name);
-          if (uploadRes.imageUrl) {
+          if (
+            uploadRes.imageUrl &&
+            !uploadRes.imageUrl.startsWith('data:image/') &&
+            !uploadRes.storageKey?.startsWith('local/')
+          ) {
             finalLogoUrl = uploadRes.imageUrl;
           }
         } catch (uploadErr) {
-          console.warn('Logo upload warning (preserving locally):', uploadErr);
-          finalLogoUrl = logoPreview;
+          console.warn('Logo upload warning (preserved locally):', uploadErr);
         }
       }
 
       await updateShopProfile({
         ...shopForm,
-        logo_url: finalLogoUrl,
+        logo_url: finalLogoUrl?.startsWith('data:image/') ? (shopProfile.logo_url || '') : finalLogoUrl,
         metadata: {
           ...(shopProfile.metadata as any || {}),
-          logo_url: finalLogoUrl
+          ...(finalLogoUrl && !finalLogoUrl.startsWith('data:image/') ? { logo_url: finalLogoUrl } : {})
         }
       });
 

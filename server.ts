@@ -1143,10 +1143,73 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
 
       const callerShopId = auth.profile.shop_id;
       const requestedShopId = typeof req.body.shopId === "string" && req.body.shopId.trim() ? req.body.shopId.trim() : null;
-      const targetShopId = (requestedShopId && (auth.profile.role === 'owner' || auth.profile.role === 'admin' || !callerShopId || callerShopId === requestedShopId))
-        ? requestedShopId
-        : (callerShopId || "general");
-      const safeShopId = targetShopId.replace(/[^a-zA-Z0-9_-]/g, "_");
+
+      let authoritativeShopId: string;
+
+      if (callerShopId) {
+        // Normal authenticated shop user:
+        // A request specifying shopId must match auth.profile.shop_id. Otherwise reject with HTTP 403.
+        if (requestedShopId && requestedShopId !== callerShopId) {
+          return res.status(403).json({
+            error: "Forbidden: Cross-shop asset upload is prohibited. You may only upload to your assigned shop."
+          });
+        }
+        authoritativeShopId = callerShopId;
+      } else {
+        // First-time shop initialization exception:
+        // The authenticated owner may have no current shop_id immediately before/around initial shop creation.
+        // In that situation, allow the requested shop ID only when it is the newly-created/authorized shop context associated with the current setup flow.
+        if (auth.profile.role !== 'owner' && auth.profile.role !== 'admin') {
+          return res.status(403).json({
+            error: "Forbidden: Account has no assigned shop and cannot upload assets."
+          });
+        }
+
+        if (!requestedShopId) {
+          return res.status(400).json({
+            error: "Missing shopId for initial shop branding upload."
+          });
+        }
+
+        const adminClient = getSupabaseAdminClient();
+        if (!adminClient) {
+          return res.status(503).json({ error: "Database admin service unavailable." });
+        }
+
+        // Re-check profile in case it was linked after session creation
+        const { data: freshProfile } = await adminClient
+          .from("profiles")
+          .select("shop_id")
+          .eq("id", auth.user.id)
+          .maybeSingle();
+
+        let isAuthorized = freshProfile?.shop_id === requestedShopId;
+
+        if (!isAuthorized) {
+          // Check system_logs for SHOP_INITIALIZED event for this actor and shop_id
+          const { data: initLog } = await adminClient
+            .from("system_logs")
+            .select("id")
+            .eq("event_type", "SHOP_INITIALIZED")
+            .eq("actor_id", auth.user.id)
+            .eq("shop_id", requestedShopId)
+            .maybeSingle();
+
+          if (initLog) {
+            isAuthorized = true;
+          }
+        }
+
+        if (!isAuthorized) {
+          return res.status(403).json({
+            error: "Forbidden: You are not authorized to upload assets for this shop."
+          });
+        }
+
+        authoritativeShopId = requestedShopId;
+      }
+
+      const safeShopId = authoritativeShopId.replace(/[^a-zA-Z0-9_-]/g, "_");
       const { image, itemId = "item-01", purpose = "item" } = req.body;
       const safePurpose = purpose === "logo" ? "logo" : "item";
 
@@ -1228,13 +1291,8 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
 
       const safeShopId = (auth.profile.shop_id || "").replace(/[^a-zA-Z0-9_-]/g, "_");
 
-      // Verify that caller's shop matches the path (unless admin or owner)
-      if (
-        safeShopId &&
-        !storageKey.includes(safeShopId) &&
-        auth.profile.role !== "owner" &&
-        auth.profile.role !== "admin"
-      ) {
+      // Verify that caller's shop matches the path strictly to enforce shop isolation
+      if (!safeShopId || !storageKey.startsWith(`shops/${safeShopId}/`)) {
         return res.status(403).json({ error: "Forbidden: Cannot delete storage files from another shop." });
       }
 
