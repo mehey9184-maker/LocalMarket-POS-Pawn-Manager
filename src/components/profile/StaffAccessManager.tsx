@@ -871,7 +871,7 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.fullName.trim() || !formData.cashierCode.trim()) return;
+    if (!formData.fullName.trim()) return;
 
     if (formData.pinCode && !/^\d{6}$/.test(formData.pinCode.trim())) {
       showToast('Invalid PIN', 'Terminal PIN must be exactly 6 numeric digits.', 'error');
@@ -888,7 +888,7 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       steps: [
         { id: 'prep', label: 'Preparing operator credentials' },
         { id: 'account', label: `Creating ${roleDisplay} profile: ${formData.fullName}` },
-        { id: 'perms', label: `Assigning cashier code: ${formData.cashierCode.toUpperCase()}` },
+        { id: 'perms', label: 'Allocating branch sequence code & permissions' },
         { id: 'pin', label: formData.pinCode ? 'Securing 6-digit terminal PIN' : 'Configuring default security PIN' },
         { id: 'save', label: isOnline ? 'Saving account on server' : 'Saving account locally on this terminal' },
         { id: 'finish', label: 'Finishing staff setup' }
@@ -910,7 +910,6 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         const res = await provisionStaff({
           fullName: formData.fullName.trim(),
           role: formData.role,
-          cashierCode: formData.cashierCode.trim(),
           pinCode: formData.pinCode.trim() || undefined,
           email: formData.email.trim() || undefined,
         });
@@ -987,16 +986,9 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Staff / Cashier Code</label>
-            <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 font-bold text-xs uppercase">Code</span>
-              <input 
-                required
-                type="text" 
-                value={formData.cashierCode}
-                onChange={e => setFormData({ ...formData, cashierCode: e.target.value.toUpperCase() })}
-                placeholder="e.g. CSH-05"
-                className="w-full h-12 bg-white border border-stone-200 rounded-xl pl-16 pr-4 text-sm text-stone-900 font-mono focus:border-[#C85A32] outline-none transition-all"
-              />
+            <div className="h-12 bg-stone-50 border border-stone-200 rounded-xl px-4 flex items-center text-xs font-mono text-stone-600 font-medium">
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-2.5"></span>
+              Auto-allocated per branch sequence (e.g. SOW-CH-01)
             </div>
           </div>
 

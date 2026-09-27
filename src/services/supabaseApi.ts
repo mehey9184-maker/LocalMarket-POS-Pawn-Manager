@@ -153,12 +153,12 @@ export const authApi = {
     };
   },
 
-  async loginWithPin(cashierCode: string, pin: string): Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }> {
+  async loginWithPin(cashierCode: string, pin: string, shopId?: string, staffId?: string): Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }> {
     try {
-      console.log(`[Client PIN Login] Initiating login POST for cashierCode: ${cashierCode}`);
+      console.log(`[Client PIN Login] Initiating login POST for cashierCode: ${cashierCode}, shopId: ${shopId}, staffId: ${staffId}`);
       const result = await apiPost<{ success: boolean; locked?: boolean; remainingSeconds?: number; session?: any; error?: string }>(
         '/api/auth/login-with-pin',
-        { cashierCode, pin }
+        { cashierCode, pin, shopId, staffId }
       );
 
       console.log(`[Client PIN Login] POST completed. status: ${result.status}, ok: ${result.ok}, data.success: ${result.data?.success}, hasSession: ${!!result.data?.session}`);
@@ -1660,7 +1660,7 @@ export const staffApi = {
     shopId: string;
     fullName: string;
     role: 'cashier' | 'senior_cashier' | 'manager';
-    cashierCode: string;
+    cashierCode?: string;
     pinCode?: string;
     email?: string;
   }): Promise<{ success: boolean; profile?: ProfileRow; error?: string }> {

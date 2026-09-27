@@ -118,6 +118,76 @@ function getSupabaseAdminClient() {
   });
 }
 
+// Server-side Staff Code Auto-Allocation Helper
+async function generateNextCashierCode(adminSupabase: any, shopId: string): Promise<string> {
+  try {
+    const { data: rpcCode, error: rpcErr } = await adminSupabase.rpc('generate_next_cashier_code', { p_shop_id: shopId });
+    if (!rpcErr && rpcCode && typeof rpcCode === 'string') {
+      return rpcCode;
+    }
+    if (rpcErr) {
+      console.warn('[Staff Code Allocator] RPC generate_next_cashier_code note:', rpcErr.message);
+    }
+  } catch (e) {
+    console.warn('[Staff Code Allocator] RPC exception, falling back to query:', e);
+  }
+
+  const { data: shopProfile } = await adminSupabase
+    .from('shop_profiles')
+    .select('shop_code, name')
+    .eq('id', shopId)
+    .single();
+
+  const shopCode = shopProfile?.shop_code || '';
+  const shopName = shopProfile?.name || '';
+
+  let clean = shopCode.toUpperCase().replace(/^SHOP-?/, '').replace(/[^A-Z0-9]/g, '');
+  let branchPrefix = '';
+  if (clean.length >= 3) {
+    branchPrefix = clean.slice(0, 3);
+  } else if (clean.length > 0) {
+    branchPrefix = clean.padEnd(3, 'X');
+  } else {
+    let cleanName = shopName.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (cleanName.length >= 3) {
+      branchPrefix = cleanName.slice(0, 3);
+    } else if (cleanName.length > 0) {
+      branchPrefix = cleanName.padEnd(3, 'X');
+    } else {
+      branchPrefix = 'SHP';
+    }
+  }
+
+  const { data: existingStaff } = await adminSupabase
+    .from('profiles')
+    .select('cashier_code')
+    .eq('shop_id', shopId);
+
+  let maxNum = 0;
+  if (existingStaff && Array.isArray(existingStaff)) {
+    const prefixPattern = new RegExp(`^${branchPrefix}-CH-(\\d+)$`, 'i');
+    const genericPattern = /-CH-(\d+)$/i;
+
+    for (const staff of existingStaff) {
+      const code = staff.cashier_code || '';
+      let match = code.match(prefixPattern);
+      if (!match) {
+        match = code.match(genericPattern);
+      }
+      if (match && match[1]) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+  }
+
+  const nextNum = maxNum + 1;
+  const formattedNum = String(nextNum).padStart(2, '0');
+  return `${branchPrefix}-CH-${formattedNum}`;
+}
+
 // PIN Hashing Helpers
 function hashPin(pin: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -592,11 +662,11 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
   // --- API ROUTE: LOGIN WITH PIN ---
   app.post("/api/auth/login-with-pin", async (req, res) => {
     try {
-      const { cashierCode, pin } = req.body;
-      console.log(`[PIN Login] Initiated login check for cashierCode: ${cashierCode}`);
+      const { cashierCode, pin, shopId, staffId } = req.body;
+      console.log(`[PIN Login] Initiated login check for cashierCode: ${cashierCode}, shopId: ${shopId || 'none'}, staffId: ${staffId || 'none'}`);
 
-      if (!cashierCode || !pin) {
-        console.warn(`[PIN Login] Missing cashierCode or pin. CashierCode exists: ${!!cashierCode}, PIN exists: ${!!pin}`);
+      if ((!cashierCode && !staffId) || !pin) {
+        console.warn(`[PIN Login] Missing cashierCode/staffId or pin. CashierCode/staffId exists: ${!!(cashierCode || staffId)}, PIN exists: ${!!pin}`);
         return res.status(400).json({ success: false, error: "Cashier code and PIN are required." });
       }
       if (!/^\d{6}$/.test(String(pin))) {
@@ -615,13 +685,18 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         return res.status(503).json({ success: false, error: "Backend admin service not configured." });
       }
 
-      // 1. Find profile by cashier code
-      console.log(`[PIN Login] Querying profiles table for cashier_code: ${cashierCode}`);
-      const { data: profile, error: profileErr } = await adminSupabase
-        .from("profiles")
-        .select("*, shop:shop_profiles(*)")
-        .eq("cashier_code", cashierCode)
-        .maybeSingle();
+      // 1. Find profile by staffId, shopId+cashierCode, or cashierCode
+      console.log(`[PIN Login] Querying profiles table for cashier_code: ${cashierCode}, shopId: ${shopId}, staffId: ${staffId}`);
+      let profileQuery = adminSupabase.from("profiles").select("*, shop:shop_profiles(*)");
+      if (staffId) {
+        profileQuery = profileQuery.eq("id", staffId);
+      } else if (shopId && cashierCode) {
+        profileQuery = profileQuery.eq("shop_id", shopId).eq("cashier_code", cashierCode);
+      } else {
+        profileQuery = profileQuery.eq("cashier_code", cashierCode);
+      }
+
+      const { data: profile, error: profileErr } = await profileQuery.maybeSingle();
 
       if (profileErr) {
         console.error(`[PIN Login] Profile query failed for cashierCode: ${cashierCode}. Error:`, profileErr.message);
@@ -973,10 +1048,10 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
 
       const { fullName, role, cashierCode, pinCode, email, password } = req.body;
 
-      if (!fullName || !cashierCode || !role) {
+      if (!fullName || !role) {
         return res.status(400).json({
           success: false,
-          error: "fullName, cashierCode, and role are required."
+          error: "fullName and role are required."
         });
       }
 
@@ -1013,7 +1088,9 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         });
       }
 
-      const staffEmail = email || `${cashierCode.toLowerCase().replace(/[^a-z0-9]/g, "")}@localmarketpos.co.za`;
+      // Server/database controlled staff code allocation
+      const finalCashierCode = await generateNextCashierCode(adminSupabase, authoritativeShopId);
+      const staffEmail = email || `${finalCashierCode.toLowerCase().replace(/[^a-z0-9]/g, "")}@localmarketpos.co.za`;
       
       // Use a random password - users only login via PIN which establishes session on server
       const staffPassword = password || crypto.randomBytes(16).toString('hex') + "A1!";
@@ -1029,7 +1106,7 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
           full_name: fullName,
           role,
           shop_id: authoritativeShopId,
-          cashier_code: cashierCode
+          cashier_code: finalCashierCode
         }
       });
 
@@ -1039,7 +1116,8 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         const { data: existingProfile } = await adminSupabase
           .from("profiles")
           .select("id, shop_id")
-          .eq("cashier_code", cashierCode)
+          .eq("shop_id", authoritativeShopId)
+          .eq("cashier_code", finalCashierCode)
           .maybeSingle();
 
         if (existingProfile?.id) {
@@ -1075,7 +1153,7 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         email: staffEmail,
         full_name: fullName,
         role: role,
-        cashier_code: cashierCode,
+        cashier_code: finalCashierCode,
         pin_hash: hashedPin,
         pin_code: null,
         is_active: true,

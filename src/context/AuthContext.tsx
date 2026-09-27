@@ -24,7 +24,7 @@ interface AuthContextType {
   provisionStaff: (data: {
     fullName: string;
     role: 'cashier' | 'senior_cashier' | 'manager';
-    cashierCode: string;
+    cashierCode?: string;
     pinCode?: string;
     email?: string;
   }) => Promise<{ success: boolean; profile?: ProfileRow; error?: string }>;
@@ -325,7 +325,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const provisionStaff = async (data: {
     fullName: string;
     role: 'cashier' | 'senior_cashier' | 'manager';
-    cashierCode: string;
+    cashierCode?: string;
     pinCode?: string;
     email?: string;
   }) => {
@@ -550,8 +550,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     try {
-      console.log(`[Client Switch] Calling authApi.loginWithPin for cashierCode: ${params.cashierCode}`);
-      const res = await authApi.loginWithPin(params.cashierCode, params.pin);
+      console.log(`[Client Switch] Calling authApi.loginWithPin for cashierCode: ${params.cashierCode}, targetShopId: ${params.targetShopId}`);
+      const res = await authApi.loginWithPin(params.cashierCode, params.pin, params.targetShopId, params.targetStaffId);
       console.log(`[Client Switch] loginWithPin result success: ${res.success}, error: ${res.error || 'none'}`);
 
       if (!res.success) {
