@@ -115,7 +115,12 @@ export const StaffAccessManager: React.FC = () => {
 
         runner.startStep('finish');
         setSelectedStaff({ ...selectedStaff, permissions: newPerms });
-        await loadAuditLogs(selectedStaff.id);
+        try {
+          await loadAuditLogs(selectedStaff.id);
+        } catch (refreshErr) {
+          console.warn('Non-critical audit refresh failed:', refreshErr);
+          runner.updateStepDetail('finish', isOnline ? 'Permissions saved successfully · history refresh pending' : 'Saved on this computer');
+        }
         runner.completeStep('finish');
         return true;
       },
@@ -157,7 +162,12 @@ export const StaffAccessManager: React.FC = () => {
 
         runner.startStep('finish');
         setSelectedStaff({ ...selectedStaff, schedule: newSchedule });
-        await loadAuditLogs(selectedStaff.id);
+        try {
+          await loadAuditLogs(selectedStaff.id);
+        } catch (refreshErr) {
+          console.warn('Non-critical audit refresh failed:', refreshErr);
+          runner.updateStepDetail('finish', isOnline ? 'Schedule saved successfully · history refresh pending' : 'Saved on this computer');
+        }
         runner.completeStep('finish');
         return true;
       },
@@ -206,7 +216,12 @@ export const StaffAccessManager: React.FC = () => {
 
             runner.startStep('finish');
             setSelectedStaff({ ...selectedStaff, role: newRole as any });
-            await loadAuditLogs(selectedStaff.id);
+            try {
+              await loadAuditLogs(selectedStaff.id);
+            } catch (refreshErr) {
+              console.warn('Non-critical audit refresh failed:', refreshErr);
+              runner.updateStepDetail('finish', isOnline ? 'Role updated successfully · history refresh pending' : 'Saved on this computer');
+            }
             runner.completeStep('finish');
             return true;
           },
@@ -257,7 +272,12 @@ export const StaffAccessManager: React.FC = () => {
 
         runner.startStep('finish');
         setNewPinValue('');
-        await loadAuditLogs(selectedStaff.id);
+        try {
+          await loadAuditLogs(selectedStaff.id);
+        } catch (refreshErr) {
+          console.warn('Non-critical audit refresh failed:', refreshErr);
+          runner.updateStepDetail('finish', isOnline ? 'PIN reset successfully · history refresh pending' : 'Saved on this computer');
+        }
         runner.completeStep('finish');
         return true;
       },
@@ -313,7 +333,12 @@ export const StaffAccessManager: React.FC = () => {
 
             runner.startStep('finish');
             setSelectedStaff({ ...selectedStaff, is_active: !willDeactivate });
-            await loadAuditLogs(selectedStaff.id);
+            try {
+              await loadAuditLogs(selectedStaff.id);
+            } catch (refreshErr) {
+              console.warn('Non-critical audit refresh failed:', refreshErr);
+              runner.updateStepDetail('finish', isOnline ? 'Status updated successfully · history refresh pending' : 'Saved on this computer');
+            }
             runner.completeStep('finish');
             return true;
           },

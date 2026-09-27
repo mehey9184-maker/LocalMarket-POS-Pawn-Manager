@@ -108,7 +108,15 @@ export const BusinessRulesManager: React.FC<BusinessRulesManagerProps> = ({ onSu
           try {
             const logs = await shopProfilesApi.getBusinessRuleAuditLogs(shopProfile.id);
             setAuditLogs(logs as any);
-          } catch {}
+          } catch (refreshErr) {
+            console.warn('Non-critical audit refresh failed:', refreshErr);
+            runner.updateStepDetail(
+              'finish',
+              res.persistence === 'cloud'
+                ? 'Rules saved successfully · audit history refresh pending'
+                : 'Saved on this computer · audit history refresh pending'
+            );
+          }
         }
         runner.completeStep('finish');
 
