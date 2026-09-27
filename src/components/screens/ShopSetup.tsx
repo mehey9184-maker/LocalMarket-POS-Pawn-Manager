@@ -191,19 +191,17 @@ export const ShopSetup: React.FC = () => {
       isOffline: !isOnline,
       steps: [
         { id: 'prep', label: 'Preparing store configuration' },
-        { id: 'shop', label: `Saving shop name: ${shopName.trim()}` },
-        { id: 'contact', label: 'Saving contact details & branch address' },
-        { id: 'compliance', label: 'Applying tax & compliance settings' },
-        { id: 'logo', label: logoPreview ? 'Preparing store branding & logo' : 'Applying store theme' },
+        { id: 'shop', label: `Registering shop name: ${shopName.trim()}` },
+        { id: 'contact', label: 'Preparing contact & branch details' },
+        { id: 'compliance', label: 'Preparing compliance settings' },
+        { id: 'logo', label: logoPreview ? 'Preparing store branding & local logo' : 'Applying store theme' },
         { id: 'save', label: isOnline ? 'Initializing shop profile securely' : 'Saving shop profile locally' }
       ],
       execute: async (runner) => {
         runner.startStep('prep');
-        await new Promise((r) => setTimeout(r, 60));
         runner.completeStep('prep');
 
         runner.startStep('shop');
-        await new Promise((r) => setTimeout(r, 50));
         runner.completeStep('shop');
 
         runner.startStep('contact');
@@ -268,10 +266,13 @@ export const ShopSetup: React.FC = () => {
         }
 
         runner.completeStep('save');
-        return { shopId: newShopId };
+        return { shopId: newShopId, hasLogo: Boolean(targetLogo) };
       },
       successTitle: 'Shop Created',
-      successMessage: `${shopName.trim()} is ready to use.`,
+      successMessage: (res) =>
+        res?.hasLogo
+          ? `${shopName.trim()} is ready to use. Logo saved locally — cloud upload continuing.`
+          : `${shopName.trim()} is ready to use.`,
       onSuccess: async () => {
         await refreshProfile();
         setLoading(false);

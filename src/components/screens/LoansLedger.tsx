@@ -244,7 +244,6 @@ export const LoansLedger: React.FC = () => {
     if (!selectedLoanForDrawer) return;
 
     setIsProcessing(true);
-    await new Promise(resolve => setTimeout(resolve, 400));
     
     if (settlementOption === 'redeem') {
       await redeemLoan(selectedLoanForDrawer.ticketNumber, selectedLoanForDrawer.totalRedemptionAmount);

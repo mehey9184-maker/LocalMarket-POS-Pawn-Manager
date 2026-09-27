@@ -297,36 +297,38 @@ export const Sell: React.FC = () => {
       subtitle: `${cart.length} item${cart.length > 1 ? 's' : ''} • R ${total.toFixed(2)}`,
       isOffline: !isOnline,
       steps: [
-        { id: 'prep', label: 'Preparing transaction invoice' },
-        { id: 'payment', label: `Recording ${tenderLabel} tender: R ${finalAmount.toFixed(2)}` },
-        { id: 'stock', label: `Updating inventory for ${cart.length} item${cart.length > 1 ? 's' : ''}` },
-        { id: 'receipt', label: receiptType === 'whatsapp' ? `Preparing WhatsApp slip for ${customerMobile || normalizedPhone}` : 'Generating printable thermal receipt' },
-        { id: 'save', label: isOnline ? 'Recording sale in store registry' : 'Saving sale on this device & queueing sync' }
+        { id: 'prep', label: 'Preparing sale', detail: `${cart.length} item${cart.length > 1 ? 's' : ''} in basket` },
+        { id: 'payment', label: `Processing ${tenderLabel} payment`, detail: `Tendered: R ${finalAmount.toFixed(2)}` },
+        { id: 'checkout', label: isOnline ? 'Completing sale transaction' : 'Saving sale transaction locally' },
+        { id: 'receipt', label: receiptType === 'whatsapp' ? `Preparing WhatsApp slip for ${customerMobile || normalizedPhone}` : 'Preparing printable receipt' },
+        { id: 'confirm', label: 'Sale confirmed' }
       ],
       execute: async (runner) => {
+        // 1. Preparation & payment info validation complete immediately
         runner.startStep('prep');
-        await new Promise((r) => setTimeout(r, 60));
         runner.completeStep('prep');
 
         runner.startStep('payment');
-        await new Promise((r) => setTimeout(r, 50));
         runner.completeStep('payment');
 
-        runner.startStep('stock');
-        runner.completeStep('stock');
-
-        runner.startStep('receipt');
-        runner.completeStep('receipt');
-
-        runner.startStep('save');
+        // 2. Real atomic checkout execution
+        runner.startStep('checkout');
         const sale = await completeCheckout(
           selectedTender, 
           finalAmount, 
           receiptType,
           normalizedPhone
         );
+        runner.completeStep('checkout');
 
-        runner.completeStep('save');
+        // 3. Receipt preparation
+        runner.startStep('receipt');
+        runner.completeStep('receipt');
+
+        // 4. Sale confirmed
+        runner.startStep('confirm');
+        runner.completeStep('confirm');
+
         return sale;
       },
       successTitle: 'Sale Complete',

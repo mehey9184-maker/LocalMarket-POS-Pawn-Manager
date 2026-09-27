@@ -427,15 +427,15 @@ export function useBuyPawnWorkflow() {
       subtitle: `Registering ${itemData.title.trim() || 'Inventory Item'}`,
       isOffline: !isOnline,
       steps: [
-        { id: 'prep', label: 'Preparing inventory SKU & tags' },
-        { id: 'media', label: itemData.imageUrl ? 'Verifying item photography' : 'Preparing catalog metadata' },
-        { id: 'pricing', label: `Setting retail price: R ${retailPriceNum.toLocaleString()}` },
+        { id: 'prep', label: 'Preparing inventory record' },
+        { id: 'media', label: itemData.imageUrl ? 'Preparing photography & catalog metadata' : 'Preparing catalog metadata' },
+        { id: 'pricing', label: `Applying retail price: R ${retailPriceNum.toLocaleString()}` },
         { id: 'save', label: isOnline ? 'Adding item to active inventory' : 'Saving stock item on this device' },
+        { id: 'confirm', label: 'Confirming inventory save' },
         { id: 'finish', label: 'Finishing inventory intake' }
       ],
       execute: async (runner) => {
         runner.startStep('prep');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('prep');
 
         runner.startStep('media');
@@ -495,8 +495,10 @@ export function useBuyPawnWorkflow() {
         }
         runner.completeStep('save');
 
+        runner.startStep('confirm');
+        runner.completeStep('confirm');
+
         runner.startStep('finish');
-        await new Promise(r => setTimeout(r, 60));
         runner.completeStep('finish');
 
         return createdItem;
@@ -612,10 +614,11 @@ export function useBuyPawnWorkflow() {
         subtitle: `Purchasing from ${seller.fullName}`,
         isOffline: !isOnline,
         steps: [
-          { id: 'prep', label: 'Preparing purchase transaction & tags' },
-          { id: 'compliance', label: `Recording police compliance for ${seller.fullName}` },
+          { id: 'prep', label: 'Preparing acquisition & tags' },
+          { id: 'compliance', label: `Preparing police compliance for ${seller.fullName}` },
           { id: 'items', label: `Cataloging ${finalBasket.length} item${finalBasket.length > 1 ? 's' : ''} for retail floor` },
-          { id: 'save', label: isOnline ? 'Finalizing purchase & updating inventory' : 'Saving purchase on this device & queueing sync' },
+          { id: 'save', label: isOnline ? 'Executing acquisition transaction' : 'Saving acquisition locally' },
+          { id: 'confirm', label: 'Confirming persistence' },
           { id: 'finish', label: 'Finishing transaction' }
         ],
         execute: async (runner) => {
@@ -631,7 +634,6 @@ export function useBuyPawnWorkflow() {
               // Preserve local-first behavior
             }
           }
-          await new Promise((r) => setTimeout(r, 60));
           runner.completeStep('prep');
 
           runner.startStep('compliance');
@@ -842,6 +844,14 @@ export function useBuyPawnWorkflow() {
 
           runner.completeStep('save');
 
+          runner.startStep('confirm');
+          if (syncLogStatus === 'completed') {
+            runner.updateStepDetail('confirm', 'Acquisition confirmed on server');
+          } else {
+            runner.updateStepDetail('confirm', 'Saved on this computer · Cloud sync queued');
+          }
+          runner.completeStep('confirm');
+
           runner.startStep('finish');
           setResult({
             assetTag: transactionNumber,
@@ -853,10 +863,10 @@ export function useBuyPawnWorkflow() {
 
           return { transactionNumber, syncLogStatus, count: finalBasket.length };
         },
-        successTitle: 'Purchase Completed',
-        successMessage: isOnline
+        successTitle: (res) => (res?.syncLogStatus === 'completed' ? 'Purchase Completed' : 'Saved on This Computer'),
+        successMessage: (res) => (res?.syncLogStatus === 'completed'
           ? `Acquired ${finalBasket.length} item${finalBasket.length > 1 ? 's' : ''} from ${seller.fullName}.`
-          : `Saved locally on this device. Cloud sync queued.`,
+          : `Acquisition saved on this computer. Cloud sync queued.`),
         onSuccess: (res) => {
           setStep('completion');
           setIsFinalizing(false);
@@ -880,9 +890,10 @@ export function useBuyPawnWorkflow() {
         isOffline: !isOnline,
         steps: [
           { id: 'prep', label: 'Preparing loan agreement & vault tag' },
-          { id: 'ncr', label: 'Applying NCR interest rates & terms' },
+          { id: 'ncr', label: 'Applying business calculations & NCR rates' },
           { id: 'vault', label: `Allocating vault shelf: ${businessRules.defaultVaultShelf}` },
-          { id: 'save', label: isOnline ? 'Registering loan and securing asset' : 'Saving loan locally on this device' },
+          { id: 'save', label: isOnline ? 'Executing pawn transaction' : 'Saving loan locally on this device' },
+          { id: 'confirm', label: 'Confirming persistence' },
           { id: 'finish', label: 'Finishing pawn contract' }
         ],
         execute: async (runner) => {
@@ -1130,6 +1141,14 @@ export function useBuyPawnWorkflow() {
 
           runner.completeStep('save');
 
+          runner.startStep('confirm');
+          if (syncLogStatus === 'completed') {
+            runner.updateStepDetail('confirm', 'Pawn agreement confirmed on server');
+          } else {
+            runner.updateStepDetail('confirm', 'Saved on this computer · Cloud sync queued');
+          }
+          runner.completeStep('confirm');
+
           runner.startStep('finish');
           setResult({
             assetTag: sku,
@@ -1143,10 +1162,10 @@ export function useBuyPawnWorkflow() {
 
           return { ticketNumber, syncLogStatus };
         },
-        successTitle: 'Pawn Loan Registered',
-        successMessage: isOnline
+        successTitle: (res) => (res?.syncLogStatus === 'completed' ? 'Pawn Loan Registered' : 'Saved on This Computer'),
+        successMessage: (res) => (res?.syncLogStatus === 'completed'
           ? `Pawn Ticket created for ${pCustomer.fullName}.`
-          : `Loan saved locally on this device. Cloud sync queued.`,
+          : `Loan saved on this computer. Cloud sync queued.`),
         onSuccess: () => {
           setStep('completion');
           setIsFinalizing(false);

@@ -103,11 +103,9 @@ export const StaffAccessManager: React.FC = () => {
       ],
       execute: async (runner) => {
         runner.startStep('prep');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('prep');
 
         runner.startStep('policy');
-        await new Promise(r => setTimeout(r, 60));
         runner.completeStep('policy');
 
         runner.startStep('save');
@@ -147,11 +145,9 @@ export const StaffAccessManager: React.FC = () => {
       ],
       execute: async (runner) => {
         runner.startStep('prep');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('prep');
 
         runner.startStep('sched');
-        await new Promise(r => setTimeout(r, 60));
         runner.completeStep('sched');
 
         runner.startStep('save');
@@ -198,11 +194,9 @@ export const StaffAccessManager: React.FC = () => {
           ],
           execute: async (runner) => {
             runner.startStep('prep');
-            await new Promise(r => setTimeout(r, 80));
             runner.completeStep('prep');
 
             runner.startStep('role');
-            await new Promise(r => setTimeout(r, 60));
             runner.completeStep('role');
 
             runner.startStep('save');
@@ -251,11 +245,9 @@ export const StaffAccessManager: React.FC = () => {
       ],
       execute: async (runner) => {
         runner.startStep('prep');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('prep');
 
         runner.startStep('pin');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('pin');
 
         runner.startStep('save');
@@ -305,11 +297,9 @@ export const StaffAccessManager: React.FC = () => {
           ],
           execute: async (runner) => {
             runner.startStep('prep');
-            await new Promise(r => setTimeout(r, 80));
             runner.completeStep('prep');
 
             runner.startStep('status');
-            await new Promise(r => setTimeout(r, 60));
             runner.completeStep('status');
 
             runner.startStep('save');
@@ -880,19 +870,15 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       ],
       execute: async (runner) => {
         runner.startStep('prep');
-        await new Promise(r => setTimeout(r, 100));
         runner.completeStep('prep');
 
         runner.startStep('account');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('account');
 
         runner.startStep('perms');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('perms');
 
         runner.startStep('pin');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('pin');
 
         runner.startStep('save');
@@ -910,7 +896,6 @@ const StaffProvisioner: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         runner.completeStep('save');
 
         runner.startStep('finish');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('finish');
 
         return res;

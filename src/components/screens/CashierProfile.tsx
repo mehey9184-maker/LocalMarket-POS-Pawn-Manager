@@ -191,38 +191,116 @@ export const CashierProfile: React.FC = () => {
 
     const hasNewLogo = Boolean(logoPreview && logoFile);
 
+    // Derive meaningful changed fields dynamically
+    const changedItems: { id: string; label: string; detail?: string }[] = [];
+
+    if (shopForm.shop_name.trim() !== (shopProfile.shop_name || '').trim()) {
+      changedItems.push({
+        id: 'name',
+        label: 'Shop name changed',
+        detail: shopForm.shop_name.trim()
+      });
+    }
+
+    if (shopForm.trading_name.trim() !== (shopProfile.trading_name || '').trim()) {
+      changedItems.push({
+        id: 'trading',
+        label: 'Trading name updated',
+        detail: shopForm.trading_name.trim() || 'Cleared'
+      });
+    }
+
+    if (shopForm.phone.trim() !== (shopProfile.phone || '').trim()) {
+      changedItems.push({
+        id: 'phone',
+        label: 'Primary phone updated',
+        detail: shopForm.phone.trim()
+      });
+    }
+
+    if (shopForm.email.trim() !== (shopProfile.email || '').trim()) {
+      changedItems.push({
+        id: 'email',
+        label: 'Email address updated',
+        detail: shopForm.email.trim()
+      });
+    }
+
+    if (
+      shopForm.address.trim() !== (shopProfile.address || '').trim() ||
+      shopForm.city.trim() !== (shopProfile.city || '').trim() ||
+      shopForm.province.trim() !== (shopProfile.province || '').trim() ||
+      shopForm.postal_code.trim() !== (shopProfile.postal_code || '').trim()
+    ) {
+      changedItems.push({
+        id: 'address',
+        label: 'Branch address updated',
+        detail: [shopForm.address.trim(), shopForm.city.trim(), shopForm.province.trim(), shopForm.postal_code.trim()].filter(Boolean).join(', ')
+      });
+    }
+
+    if (shopForm.vat_number.trim() !== (shopProfile.vat_number || '').trim()) {
+      changedItems.push({
+        id: 'vat',
+        label: 'VAT details updated',
+        detail: shopForm.vat_number.trim() || 'Cleared'
+      });
+    }
+
+    if (shopForm.saps_dealer_license.trim() !== (shopProfile.saps_dealer_license || '').trim()) {
+      changedItems.push({
+        id: 'saps',
+        label: 'SAPS licence details updated',
+        detail: shopForm.saps_dealer_license.trim() || 'Cleared'
+      });
+    }
+
+    if (shopForm.registration_number.trim() !== (shopProfile.registration_number || '').trim()) {
+      changedItems.push({
+        id: 'reg',
+        label: 'Registration number updated',
+        detail: shopForm.registration_number.trim() || 'Cleared'
+      });
+    }
+
+    if (hasNewLogo) {
+      changedItems.push({
+        id: 'branding',
+        label: 'Shop branding updated',
+        detail: 'New store logo asset prepared'
+      });
+    }
+
+    const steps = [
+      { id: 'prep', label: 'Preparing your shop changes' },
+      ...changedItems.map(item => ({
+        id: item.id,
+        label: item.label,
+        detail: item.detail
+      })),
+      { id: 'save', label: isOnline ? 'Saving shop profile' : 'Saving shop profile locally' },
+      { id: 'confirm', label: 'Confirming your changes' },
+      { id: 'finish', label: 'Finishing' }
+    ];
+
     await shopProgress.runSequence({
       title: 'Saving Shop Profile',
       subtitle: "We're taking care of your changes.",
       isOffline: !isOnline,
       offlineNotice: 'Changes will be saved locally on this device and queued for cloud sync.',
-      steps: [
-        { id: 'prep', label: 'Preparing your changes' },
-        { id: 'info', label: `Saving shop name: ${shopForm.shop_name}` },
-        { id: 'contact', label: 'Saving contact details & branch address' },
-        { id: 'branding', label: hasNewLogo ? 'Processing & saving shop logo' : 'Saving branding' },
-        { id: 'compliance', label: 'Saving statutory compliance & license info' },
-        { id: 'sync', label: isOnline ? 'Confirming changes securely' : 'Saving on this computer' },
-        { id: 'finish', label: 'Finishing shop profile' }
-      ],
+      steps,
       execute: async (runner) => {
+        // 1. Preparation & changed items become active and complete immediately
         runner.startStep('prep');
-        await new Promise(r => setTimeout(r, 120));
         runner.completeStep('prep');
 
-        runner.startStep('info');
-        let finalLogoUrl = shopForm.logo_url;
-
-        runner.completeStep('info');
-
-        runner.startStep('contact');
-        if (shopForm.phone.trim()) {
-          runner.updateStepDetail('contact', `Phone: ${shopForm.phone} · Address: ${shopForm.address || 'Standard'}`);
+        for (const item of changedItems) {
+          runner.startStep(item.id);
+          runner.completeStep(item.id);
         }
-        await new Promise(r => setTimeout(r, 100));
-        runner.completeStep('contact');
 
-        runner.startStep('branding');
+        // 2. Real async logo preparation if needed (without fake timers)
+        let finalLogoUrl = shopForm.logo_url;
         if (hasNewLogo && logoPreview && logoFile) {
           try {
             localStorage.setItem(`shop_logo_local_${shopProfile.id}`, logoPreview);
@@ -241,14 +319,10 @@ export const CashierProfile: React.FC = () => {
             console.warn('Logo upload warning (preserved locally):', uploadErr);
           }
         }
-        runner.completeStep('branding');
 
-        runner.startStep('compliance');
-        await new Promise(r => setTimeout(r, 80));
-        runner.completeStep('compliance');
-
-        runner.startStep('sync');
-        await updateShopProfile({
+        // 3. Real persistence step
+        runner.startStep('save');
+        const res = await updateShopProfile({
           ...shopForm,
           logo_url: finalLogoUrl?.startsWith('data:image/') ? (shopProfile.logo_url || '') : finalLogoUrl,
           metadata: {
@@ -256,20 +330,34 @@ export const CashierProfile: React.FC = () => {
             ...(finalLogoUrl && !finalLogoUrl.startsWith('data:image/') ? { logo_url: finalLogoUrl } : {})
           }
         });
-        runner.completeStep('sync');
 
+        if (!res.success) {
+          throw new Error(res.error || 'Failed to save shop profile.');
+        }
+        runner.completeStep('save');
+
+        // 4. Confirming changes truthfully
+        runner.startStep('confirm');
+        if (res.persistence === 'cloud') {
+          runner.updateStepDetail('confirm', 'Changes saved and confirmed on server');
+        } else {
+          runner.updateStepDetail('confirm', 'Saved on this computer · Cloud sync queued');
+        }
+        runner.completeStep('confirm');
+
+        // 5. Finishing
         runner.startStep('finish');
-        await new Promise(r => setTimeout(r, 100));
         runner.completeStep('finish');
 
-        return true;
+        return res;
       },
-      successTitle: 'Shop Profile Saved',
-      successMessage: isOnline 
-        ? `${shopForm.shop_name} settings are active and synced.`
-        : `${shopForm.shop_name} settings saved locally. Cloud sync queued.`,
+      successTitle: (res) => (res?.persistence === 'cloud' ? 'Shop Profile Saved' : 'Saved on This Computer'),
+      successMessage: (res) => (res?.persistence === 'cloud' 
+        ? `${shopForm.shop_name} settings are active and confirmed.`
+        : `${shopForm.shop_name} settings saved on this computer. Cloud sync queued.`),
       onSuccess: () => {
         setIsSavingShop(false);
+        setActiveTab('account'); // Auto-return to parent Profile context
       },
       onError: () => {
         setIsSavingShop(false);
@@ -651,7 +739,7 @@ export const CashierProfile: React.FC = () => {
                   <p className="text-stone-500 text-sm mt-1">Configure NCR loan interest caps, resale markups, and statutory registration numbers</p>
                 </div>
                 <div className="p-8 lg:p-10 bg-white border border-stone-200 rounded-3xl shadow-sm relative overflow-hidden">
-                  <BusinessRulesManager />
+                  <BusinessRulesManager onSuccess={() => setActiveTab('account')} />
                 </div>
               </motion.div>
             )}
@@ -733,11 +821,9 @@ const RefundModal: React.FC<RefundModalProps> = ({ isOpen, onClose, hasApprovalA
       ],
       execute: async (runner) => {
         runner.startStep('prep');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('prep');
 
         runner.startStep('calc');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('calc');
 
         runner.startStep('save');
@@ -751,7 +837,6 @@ const RefundModal: React.FC<RefundModalProps> = ({ isOpen, onClose, hasApprovalA
         runner.completeStep('save');
 
         runner.startStep('finish');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('finish');
 
         return res;
@@ -781,7 +866,6 @@ const RefundModal: React.FC<RefundModalProps> = ({ isOpen, onClose, hasApprovalA
       ],
       execute: async (runner) => {
         runner.startStep('auth');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('auth');
 
         runner.startStep('ledger');
@@ -792,11 +876,9 @@ const RefundModal: React.FC<RefundModalProps> = ({ isOpen, onClose, hasApprovalA
         runner.completeStep('ledger');
 
         runner.startStep('save');
-        await new Promise(r => setTimeout(r, 60));
         runner.completeStep('save');
 
         runner.startStep('finish');
-        await new Promise(r => setTimeout(r, 60));
         runner.completeStep('finish');
 
         return approved;

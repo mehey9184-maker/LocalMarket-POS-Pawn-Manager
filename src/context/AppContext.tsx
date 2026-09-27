@@ -112,7 +112,7 @@ interface AppContextType {
   
   // Shop Profile (Branch & Second Hand Dealer License)
   shopProfile: ShopProfile;
-  updateShopProfile: (updates: Partial<ShopProfile>) => Promise<void> | void;
+  updateShopProfile: (updates: Partial<ShopProfile>) => Promise<{ success: boolean; persistence?: 'cloud' | 'local'; syncQueued?: boolean; error?: string }>;
 
   // WhatsApp-Style Local Device Persistence & Trickle Sync
   isOnline: boolean;
@@ -170,7 +170,7 @@ interface AppContextType {
 
   // Business & Deal Rules Customization
   businessRules: BusinessRules;
-  updateBusinessRules: (rules: Partial<BusinessRules>, reason?: string) => Promise<void>;
+  updateBusinessRules: (rules: Partial<BusinessRules>, reason?: string) => Promise<{ success: boolean; persistence?: 'cloud' | 'local'; syncQueued?: boolean; error?: string }>;
   isRulesModalOpen: boolean;
   setIsRulesModalOpen: (open: boolean) => void;
 
@@ -295,16 +295,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return cart.reduce((sum, ci) => sum + (ci.overridePrice ?? ci.item.retailPrice) * ci.quantity, 0);
   }, [cart]);
 
-  const updateBusinessRules = useCallback(async (updates: Partial<BusinessRules>, reason?: string) => {
+  const updateBusinessRules = useCallback(async (updates: Partial<BusinessRules>, reason?: string): Promise<{ success: boolean; persistence?: 'cloud' | 'local'; syncQueued?: boolean; error?: string }> => {
     const isOwner = currentUserProfile?.role === 'owner' || currentUserProfile?.role === 'admin';
     if (!isOwner) {
       showToast('Unauthorized', 'Owner authority required to modify business rules.', 'error');
-      return;
+      return { success: false, error: 'Unauthorized: Owner authority required to modify business rules.' };
     }
 
     const nextRules = { ...businessRules, ...updates };
     const targetShopId = currentUserProfile?.shop_id;
-    if (!targetShopId) return;
+    if (!targetShopId) {
+      return { success: false, error: 'No active shop branch identified.' };
+    }
 
     // 1. Online: when authenticated as owner, attempt server persistence first
     if (navigator.onLine) {
@@ -322,7 +324,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
 
           showToast('Settings Persisted', 'Business rules updated and audited on server.', 'success');
-          return;
+          return { success: true, persistence: 'cloud' };
         } else {
           console.warn('Server rejected business rules update, queueing offline outbox sync:', res.error);
         }
@@ -349,18 +351,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     showToast('Offline Mode', 'Business rules saved locally and queued for cloud sync.', 'amber');
+    return { success: true, persistence: 'local', syncQueued: true };
   }, [businessRules, currentUserProfile, queueSyncAction, showToast]);
 
-  const updateShopProfile = useCallback(async (updates: Partial<ShopProfile>) => {
+  const updateShopProfile = useCallback(async (updates: Partial<ShopProfile>): Promise<{ success: boolean; persistence?: 'cloud' | 'local'; syncQueued?: boolean; error?: string }> => {
     const canManage = currentUserProfile?.role === 'owner' || currentUserProfile?.role === 'manager' || currentUserProfile?.role === 'admin';
     if (!canManage) {
       showToast('Unauthorized', 'Manager or Owner authority required to update store profile.', 'error');
-      return;
+      return { success: false, error: 'Unauthorized: Manager or Owner authority required to update store profile.' };
     }
 
     const next = { ...shopProfile, ...updates };
     const targetShopId = currentUserProfile?.shop_id;
-    if (!targetShopId) return;
+    if (!targetShopId) {
+      return { success: false, error: 'No active shop branch identified.' };
+    }
 
     // 1. Online: when authenticated with management privileges, attempt server persistence first
     if (navigator.onLine) {
@@ -387,7 +392,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setShopProfile(next);
           localStorage.setItem(`lm_shop_profile_${targetShopId}`, JSON.stringify(next));
           showToast('Store Profile Updated', 'Persisted to server database.', 'success');
-          return;
+          return { success: true, persistence: 'cloud' };
         } else {
           console.warn('Server rejected shop profile update, queueing offline outbox sync');
         }
@@ -405,6 +410,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await queueSyncAction('shopProfile', targetShopId, 'update', updates);
 
     showToast('Offline Mode', 'Store profile saved locally and queued for server sync.', 'amber');
+    return { success: true, persistence: 'local', syncQueued: true };
   }, [shopProfile, currentUserProfile, queueSyncAction, showToast]);
 
   // Auth Effects: Server profile & business rules are authoritative when available

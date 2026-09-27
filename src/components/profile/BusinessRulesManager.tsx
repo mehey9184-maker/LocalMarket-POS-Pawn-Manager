@@ -21,7 +21,12 @@ import {
   Loader2
 } from 'lucide-react';
 
-export const BusinessRulesManager: React.FC = () => {
+export interface BusinessRulesManagerProps {
+  onSuccess?: () => void;
+  onReturn?: () => void;
+}
+
+export const BusinessRulesManager: React.FC<BusinessRulesManagerProps> = ({ onSuccess, onReturn }) => {
   const { businessRules, updateBusinessRules, showToast, shopProfile, isOnline } = useApp();
   const { role, isOwner } = useAuth();
   const progress = useOperationProgress();
@@ -63,44 +68,62 @@ export const BusinessRulesManager: React.FC = () => {
       isOffline: !isOnline,
       steps: [
         { id: 'prep', label: 'Preparing business rule modifications' },
-        { id: 'rates', label: `Setting interest (${localRules.pawnMonthlyInterestRate}%) & markup (${localRules.defaultRetailMarkupMultiplier}x)` },
-        { id: 'audit', label: `Recording reason: "${changeReason}"` },
-        { id: 'save', label: isOnline ? 'Saving authoritative rules to server' : 'Saving rules on this device' },
+        { id: 'rates', label: `Configuring interest (${(localRules.pawnMonthlyInterestRate * 100).toFixed(1)}%) & markup (${localRules.defaultRetailMarkupMultiplier}x)` },
+        { id: 'audit', label: `Recording reason: "${changeReason.trim()}"` },
+        { id: 'save', label: isOnline ? 'Saving business rules' : 'Saving business rules locally' },
+        { id: 'confirm', label: 'Confirming changes' },
         { id: 'finish', label: 'Finishing business rules update' }
       ],
       execute: async (runner) => {
+        // 1. Preparation steps complete immediately without artificial delays
         runner.startStep('prep');
-        await new Promise(r => setTimeout(r, 100));
         runner.completeStep('prep');
 
         runner.startStep('rates');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('rates');
 
         runner.startStep('audit');
-        await new Promise(r => setTimeout(r, 80));
         runner.completeStep('audit');
 
+        // 2. Real async save call
         runner.startStep('save');
-        await updateBusinessRules(localRules, changeReason);
+        const res = await updateBusinessRules(localRules, changeReason.trim());
+        if (!res.success) {
+          throw new Error(res.error || 'Failed to save business rules.');
+        }
         runner.completeStep('save');
 
+        // 3. Confirming changes truthfully
+        runner.startStep('confirm');
+        if (res.persistence === 'cloud') {
+          runner.updateStepDetail('confirm', 'Changes confirmed on server');
+        } else {
+          runner.updateStepDetail('confirm', 'Saved on this computer · Cloud sync queued');
+        }
+        runner.completeStep('confirm');
+
+        // 4. Finishing
         runner.startStep('finish');
         if (shopProfile.id) {
-          const logs = await shopProfilesApi.getBusinessRuleAuditLogs(shopProfile.id);
-          setAuditLogs(logs as any);
+          try {
+            const logs = await shopProfilesApi.getBusinessRuleAuditLogs(shopProfile.id);
+            setAuditLogs(logs as any);
+          } catch {}
         }
         runner.completeStep('finish');
 
-        return true;
+        return res;
       },
-      successTitle: 'Business Rules Committed',
-      successMessage: isOnline
-        ? 'Authoritative rates and loan caps updated.'
-        : 'Rules saved locally on this terminal. Cloud sync queued.',
-      onSuccess: () => {
+      successTitle: (res) => (res?.persistence === 'cloud' ? 'Business Rules Saved' : 'Saved on This Computer'),
+      successMessage: (res) => (res?.persistence === 'cloud' 
+        ? 'Authoritative rates and loan caps updated.' 
+        : 'Business rules saved locally on this terminal. Cloud sync queued.'),
+      onSuccess: (res) => {
         setChangeReason('');
         setIsSaving(false);
+        if (onSuccess) {
+          onSuccess();
+        }
       },
       onError: () => {
         setIsSaving(false);
