@@ -22,6 +22,8 @@ import { MarketCheckResult } from '../../types/marketIntelligence';
 import { motion, AnimatePresence } from 'motion/react';
 import { draftService } from '../../services/draftService';
 import { storageService } from '../../services/storageService';
+import { compressImage, formatBytes } from '../../utils/imageProcessor';
+import { CameraCaptureModal } from '../common/CameraCaptureModal';
 import { DraftRecoveryModal } from '../modals/DraftRecoveryModal';
 import { WorkflowDraft } from '../../types';
 import {
@@ -133,9 +135,81 @@ export const BuyPawn: React.FC = () => {
     sourceNote: 'Item was already owned by the shop before LocalMarket onboarding'
   });
 
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  // Photo Optimization & Storage State (Local-first, cloud-second)
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [photoUploadStatus, setPhotoUploadStatus] = useState<'idle' | 'optimizing' | 'ready' | 'uploading' | 'synced' | 'local_only'>('idle');
+  const [photoMeta, setPhotoMeta] = useState<{
+    originalSize?: number;
+    compressedSize?: number;
+    dimensions?: string;
+  } | null>(null);
   const photoFileInputRef = React.useRef<HTMLInputElement>(null);
-  const photoCameraInputRef = React.useRef<HTMLInputElement>(null);
+  const currentUploadPromiseRef = React.useRef<Promise<any> | null>(null);
+
+  /**
+   * Local-First Photo Processing Pipeline:
+   * 1. Optimize image in-browser instantly via Canvas / Bitmap API (<100ms)
+   * 2. Immediately display local preview (zero user waiting)
+   * 3. Upload to Backblaze B2 in the background (non-blocking)
+   */
+  const handleProcessImage = async (fileOrBlob: File | Blob, originalFileName?: string) => {
+    setPhotoUploadStatus('optimizing');
+    const originalSize = fileOrBlob.size;
+
+    try {
+      // 1. Instant local optimization (WebP, max 1600px, quality 0.82)
+      const processed = await compressImage(fileOrBlob, {
+        maxDimension: 1600,
+        quality: 0.82,
+        fileName: originalFileName || (fileOrBlob as File).name || 'item_photo.jpg',
+      });
+
+      // 2. Immediately display local preview data URL (user continues without waiting)
+      setItemData(prev => ({ ...prev, imageUrl: processed.dataUrl }));
+      setPhotoMeta({
+        originalSize,
+        compressedSize: processed.size,
+        dimensions: `${processed.width}×${processed.height}`,
+      });
+      setPhotoUploadStatus('ready');
+
+      // 3. Background non-blocking upload to Backblaze B2 (mediated by /api/storage/upload)
+      setPhotoUploadStatus('uploading');
+      const draftItemId = itemData.serialOrImei || `intake-${Date.now()}`;
+      
+      const uploadPromise = storageService.uploadItemImage(
+        processed.blob,
+        shopProfile?.id,
+        draftItemId,
+        processed.fileName
+      ).then(uploadRes => {
+        if (uploadRes.imageUrl && !uploadRes.imageUrl.startsWith('data:image/') && !uploadRes.storageKey?.startsWith('local/')) {
+          // Successfully uploaded to remote Backblaze B2!
+          setItemData(prev => {
+            if (prev.imageUrl === processed.dataUrl) {
+              return { ...prev, imageUrl: uploadRes.imageUrl };
+            }
+            return prev;
+          });
+          setPhotoUploadStatus('synced');
+          return uploadRes.imageUrl;
+        } else {
+          setPhotoUploadStatus('local_only');
+          return null;
+        }
+      }).catch(err => {
+        console.warn('Background upload note (preserved locally):', err);
+        setPhotoUploadStatus('local_only');
+        return null;
+      });
+
+      currentUploadPromiseRef.current = uploadPromise;
+    } catch (err: any) {
+      console.error('Image optimization error:', err);
+      showToast('Image Error', err.message || 'Could not process photograph', 'error');
+      setPhotoUploadStatus('idle');
+    }
+  };
 
   const handlePhotoFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -146,35 +220,20 @@ export const BuyPawn: React.FC = () => {
       return;
     }
 
-    if (file.size > 15 * 1024 * 1024) {
-      showToast('File Too Large', 'Please select an image smaller than 15MB.', 'amber');
+    if (file.size > 20 * 1024 * 1024) {
+      showToast('File Too Large', 'Please select an image smaller than 20MB.', 'amber');
       return;
     }
 
-    setIsUploadingPhoto(true);
-    try {
-      const uploadRes = await storageService.uploadItemImage(
-        file,
-        shopProfile?.id,
-        `intake-${Date.now()}`,
-        file.name
-      );
-      setItemData(prev => ({ ...prev, imageUrl: uploadRes.imageUrl }));
-      if (uploadRes.imageUrl?.startsWith('data:image/') || uploadRes.storageKey?.startsWith('local/')) {
-        showToast('Photo Attached Locally', 'Photograph attached locally — cloud upload pending.', 'info');
-      } else {
-        showToast('Photo Uploaded', 'Photograph uploaded to Backblaze B2 storage.', 'success');
-      }
-    } catch (err: any) {
-      showToast('Upload Error', err?.message || 'Could not process photograph', 'error');
-    } finally {
-      setIsUploadingPhoto(false);
-      if (e.target) e.target.value = '';
-    }
+    await handleProcessImage(file, file.name);
+    if (e.target) e.target.value = '';
   };
 
   const handleRemovePhoto = () => {
     setItemData(prev => ({ ...prev, imageUrl: '' }));
+    setPhotoMeta(null);
+    setPhotoUploadStatus('idle');
+    currentUploadPromiseRef.current = null;
     showToast('Photo Removed', 'Image removed from item intake.', 'info');
   };
 
@@ -1894,7 +1953,7 @@ export const BuyPawn: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Hidden File Inputs */}
+                      {/* Hidden File Input */}
                       <input
                         ref={photoFileInputRef}
                         type="file"
@@ -1902,25 +1961,17 @@ export const BuyPawn: React.FC = () => {
                         className="hidden"
                         onChange={handlePhotoFileSelect}
                       />
-                      <input
-                        ref={photoCameraInputRef}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="hidden"
-                        onChange={handlePhotoFileSelect}
-                      />
 
                       <div 
-                        onClick={() => !isUploadingPhoto && photoFileInputRef.current?.click()}
+                        onClick={() => photoUploadStatus !== 'optimizing' && photoFileInputRef.current?.click()}
                         className={`flex-1 rounded-2xl bg-gray-50 border-2 border-dashed ${
                           itemData.imageUrl ? 'border-emerald-300' : 'border-gray-200 hover:border-[#C85A32]'
                         } flex flex-col items-center justify-center p-3 overflow-hidden relative min-h-[180px] cursor-pointer transition group`}
                       >
-                        {isUploadingPhoto ? (
+                        {photoUploadStatus === 'optimizing' ? (
                           <div className="flex flex-col items-center gap-2 text-[#C85A32]">
                             <Loader2 className="w-7 h-7 animate-spin" />
-                            <span className="text-xs font-semibold">Processing photo...</span>
+                            <span className="text-xs font-semibold">Optimizing photograph...</span>
                           </div>
                         ) : itemData.imageUrl ? (
                           <div className="relative w-full h-full min-h-[160px]">
@@ -1929,15 +1980,37 @@ export const BuyPawn: React.FC = () => {
                               alt="Item Intake Preview"
                               className="w-full h-full object-cover rounded-xl"
                             />
-                            {itemData.imageUrl.startsWith('data:image/') ? (
-                              <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-xs">
-                                Attached Locally (Upload Pending)
-                              </span>
-                            ) : (
-                              <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-xs">
-                                Uploaded to Storage
-                              </span>
+                            {/* Visual status pills */}
+                            <div className="absolute top-2 left-2 flex flex-col gap-1">
+                              {photoUploadStatus === 'uploading' ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-black/70 backdrop-blur-md text-amber-300 border border-amber-300/30 shadow-xs flex items-center gap-1">
+                                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                  <span>Syncing to B2 in background</span>
+                                </span>
+                              ) : photoUploadStatus === 'synced' || (!itemData.imageUrl.startsWith('data:image/') && !itemData.imageUrl.includes('local/')) ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600/90 backdrop-blur-md text-white shadow-xs flex items-center gap-1">
+                                  <CheckCircle2 className="w-2.5 h-2.5" />
+                                  <span>Uploaded to Storage</span>
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/90 backdrop-blur-md text-white shadow-xs">
+                                  Attached Locally (Sync Pending)
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Compression savings badge */}
+                            {photoMeta?.compressedSize && (
+                              <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-lg text-[10px] font-mono font-medium bg-black/75 backdrop-blur-md text-stone-200">
+                                {formatBytes(photoMeta.compressedSize)}
+                                {photoMeta.originalSize && photoMeta.originalSize > photoMeta.compressedSize && (
+                                  <span className="text-emerald-400 ml-1">
+                                    (-{Math.round((1 - photoMeta.compressedSize / photoMeta.originalSize) * 100)}%)
+                                  </span>
+                                )}
+                              </div>
                             )}
+
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center text-white text-xs font-semibold gap-1.5">
                               <Upload className="w-4 h-4" />
                               <span>Replace photo</span>
@@ -1950,7 +2023,7 @@ export const BuyPawn: React.FC = () => {
                             </div>
                             <div>
                               <p className="text-xs font-semibold text-stone-700">Click to upload photo</p>
-                              <p className="text-[10px] text-stone-400 mt-0.5">PNG, JPG, or WebP up to 15MB</p>
+                              <p className="text-[10px] text-stone-400 mt-0.5">Optimized instantly to WebP</p>
                             </div>
                           </div>
                         )}
@@ -1961,7 +2034,7 @@ export const BuyPawn: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => photoFileInputRef.current?.click()}
-                          disabled={isUploadingPhoto}
+                          disabled={photoUploadStatus === 'optimizing'}
                           className="flex-1 py-2 px-2.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
                         >
                           <Upload className="w-3.5 h-3.5 text-[#C85A32]" />
@@ -1969,12 +2042,12 @@ export const BuyPawn: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => photoCameraInputRef.current?.click()}
-                          disabled={isUploadingPhoto}
+                          onClick={() => setIsCameraOpen(true)}
+                          disabled={photoUploadStatus === 'optimizing'}
                           className="flex-1 py-2 px-2.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
                         >
                           <Camera className="w-3.5 h-3.5 text-[#C85A32]" />
-                          <span>Camera</span>
+                          <span>Live Camera</span>
                         </button>
                       </div>
                     </div>
@@ -2588,6 +2661,13 @@ export const BuyPawn: React.FC = () => {
             onDiscard={handleDiscardDraft}
           />
         )}
+
+        <CameraCaptureModal
+          isOpen={isCameraOpen}
+          onClose={() => setIsCameraOpen(false)}
+          onCapture={(blob, fileName) => handleProcessImage(blob, fileName)}
+          title="Capture Item Photograph"
+        />
       </div>
     </div>
   );

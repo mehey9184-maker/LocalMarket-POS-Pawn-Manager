@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
-import { shopProfilesApi, authApi } from '../../services/supabaseApi';
+import { shopProfilesApi } from '../../services/supabaseApi';
 import { validateAndNormalizeSaPhone } from '../../utils/phoneValidator';
-import { apiPost } from '../../utils/apiClient';
+import { createLogoImage } from '../../utils/imageProcessor';
+import { storageService } from '../../services/storageService';
 import { 
   Loader2, 
   Store, 
@@ -16,7 +17,8 @@ import {
   ArrowRight,
   Upload,
   Image as ImageIcon,
-  CheckCircle2
+  CheckCircle2,
+  Check
 } from 'lucide-react';
 
 const SA_PROVINCES = [
@@ -55,7 +57,9 @@ export const ShopSetup: React.FC = () => {
 
   // Logo Upload State
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [remoteLogoUrl, setRemoteLogoUrl] = useState<string | null>(null);
+  const [logoUploadStatus, setLogoUploadStatus] = useState<'idle' | 'ready' | 'uploading' | 'saved' | 'pending'>('idle');
+  const logoUploadPromiseRef = useRef<Promise<string | null> | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   // Validation Errors
@@ -68,7 +72,7 @@ export const ShopSetup: React.FC = () => {
     }
   }, [user, email]);
 
-  const handleLogoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -82,12 +86,50 @@ export const ShopSetup: React.FC = () => {
       return;
     }
 
-    setLogoFile(file);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setLogoPreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    try {
+      // 1. Locally process and normalize into 512x512 square logo asset
+      const processed = await createLogoImage(file, {
+        size: 512,
+        quality: 0.85,
+        fileName: file.name,
+      });
+
+      // 2. Immediately update local preview
+      setLogoPreview(processed.dataUrl);
+      setLogoUploadStatus('ready');
+
+      // 3. Start background upload to Backblaze
+      setLogoUploadStatus('uploading');
+      const uploadPromise = (async () => {
+        try {
+          const uploadRes = await storageService.uploadLogoImage(
+            processed.blob,
+            undefined,
+            processed.fileName
+          );
+          if (uploadRes.imageUrl && !uploadRes.imageUrl.startsWith('data:image/') && !uploadRes.storageKey?.startsWith('local/')) {
+            setRemoteLogoUrl(uploadRes.imageUrl);
+            setLogoUploadStatus('saved');
+            return uploadRes.imageUrl;
+          } else {
+            setLogoUploadStatus('pending');
+            return null;
+          }
+        } catch (uploadErr) {
+          console.warn('Logo background upload warning (saved locally):', uploadErr);
+          setLogoUploadStatus('pending');
+          return null;
+        }
+      })();
+
+      logoUploadPromiseRef.current = uploadPromise;
+    } catch (err: any) {
+      console.error('Logo normalization error:', err);
+      showToast('Logo Error', 'Could not process logo image.', 'error');
+      setLogoUploadStatus('idle');
+    } finally {
+      if (e.target) e.target.value = '';
+    }
   };
 
   const validate = (): boolean => {
@@ -155,32 +197,25 @@ export const ShopSetup: React.FC = () => {
     setLoading(true);
 
     try {
-      let uploadedLogoUrl: string | undefined = undefined;
-
-      // Upload logo if selected
-      if (logoPreview && logoFile) {
+      // If logo upload is still in-flight and we are online, await it
+      let uploadedLogo = remoteLogoUrl;
+      if (!uploadedLogo && logoUploadPromiseRef.current && navigator.onLine) {
         try {
-          const session = await authApi.getSession();
-          const token = session?.access_token;
-          const uploadRes = await apiPost<{ imageUrl: string }>(
-            '/api/storage/upload',
-            { image: logoPreview, itemId: 'logo' },
-            token
-          );
-          if (uploadRes.ok && uploadRes.data?.imageUrl) {
-            uploadedLogoUrl = uploadRes.data.imageUrl;
-          }
-        } catch (uploadErr) {
-          console.warn('Logo upload warning (proceeding without logo):', uploadErr);
+          const awaited = await logoUploadPromiseRef.current;
+          if (awaited) uploadedLogo = awaited;
+        } catch {
+          // ignore, fallback to local logoPreview below
         }
       }
+
+      const finalLogoUrl = uploadedLogo || logoPreview || undefined;
 
       const phoneResult = validateAndNormalizeSaPhone(phone);
       const normalizedPhone = phoneResult.normalizedNumber || phone.trim();
 
       const metadata: any = {};
-      if (uploadedLogoUrl) {
-        metadata.logo_url = uploadedLogoUrl;
+      if (finalLogoUrl) {
+        metadata.logo_url = finalLogoUrl;
       }
       if (tradingName.trim()) metadata.trading_name = tradingName.trim();
       if (regNumber.trim()) metadata.registration_number = regNumber.trim();
@@ -292,7 +327,32 @@ export const ShopSetup: React.FC = () => {
                       <Upload className="w-3.5 h-3.5 text-[#C85A32]" />
                       <span>{logoPreview ? 'Change Logo' : 'Upload Shop Logo'}</span>
                     </button>
-                    <p className="text-[11px] text-stone-400">PNG, JPG, WebP under 5MB. Displayed on receipts &amp; contracts.</p>
+
+                    {logoUploadStatus === 'uploading' && (
+                      <p className="text-[11px] text-[#C85A32] font-semibold flex items-center gap-1.5 justify-center sm:justify-start">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>Uploading logo…</span>
+                      </p>
+                    )}
+                    {logoUploadStatus === 'saved' && (
+                      <p className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1.5 justify-center sm:justify-start">
+                        <Check className="w-3 h-3" />
+                        <span>Logo saved</span>
+                      </p>
+                    )}
+                    {logoUploadStatus === 'pending' && (
+                      <p className="text-[11px] text-amber-600 font-medium flex items-center gap-1.5 justify-center sm:justify-start">
+                        <span>Logo saved locally — cloud upload pending</span>
+                      </p>
+                    )}
+                    {logoUploadStatus === 'ready' && (
+                      <p className="text-[11px] text-stone-600 font-medium flex items-center gap-1.5 justify-center sm:justify-start">
+                        <span>Logo ready</span>
+                      </p>
+                    )}
+                    {logoUploadStatus === 'idle' && (
+                      <p className="text-[11px] text-stone-400">PNG, JPG, WebP under 5MB. Standardized to 512×512.</p>
+                    )}
                   </div>
                 </div>
               </div>

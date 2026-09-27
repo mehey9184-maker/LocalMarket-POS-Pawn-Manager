@@ -337,6 +337,61 @@ async function logStaffAudit(adminClient: any, {
   }
 }
 
+interface B2AuthCache {
+  apiUrl: string;
+  authToken: string;
+  downloadUrl: string;
+  bucketId: string;
+  expiresAt: number;
+}
+
+let b2AuthCache: B2AuthCache | null = null;
+
+async function getB2Auth(keyId: string, applicationKey: string): Promise<B2AuthCache | null> {
+  const now = Date.now();
+  if (b2AuthCache && now < b2AuthCache.expiresAt - 5 * 60 * 1000) {
+    return b2AuthCache;
+  }
+
+  try {
+    const basicAuth = Buffer.from(`${keyId}:${applicationKey}`).toString("base64");
+    const authRes = await fetch("https://api.backblazeb2.com/b2api/v2/b2_authorize_account", {
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+      },
+    });
+
+    if (!authRes.ok) {
+      console.warn("B2 authorize failed:", await authRes.text());
+      b2AuthCache = null;
+      return null;
+    }
+
+    const authData: any = await authRes.json();
+    const bucketId = process.env.B2_BUCKET_ID || authData.allowed?.bucketId;
+
+    if (!bucketId) {
+      console.warn("B2 bucketId not configured and not present in application key restrictions.");
+      return null;
+    }
+
+    b2AuthCache = {
+      apiUrl: authData.apiUrl,
+      authToken: authData.authorizationToken,
+      downloadUrl: authData.downloadUrl,
+      bucketId,
+      // Backblaze tokens are valid for up to 24 hours. Cache for 23 hours to prevent edge expiry.
+      expiresAt: now + 23 * 60 * 60 * 1000,
+    };
+
+    return b2AuthCache;
+  } catch (err) {
+    console.warn("B2 authorization error:", err);
+    b2AuthCache = null;
+    return null;
+  }
+}
+
 /**
  * Server-side Backblaze B2 / Storage Helper
  * Keeps all application secrets strictly on the server.
@@ -355,75 +410,75 @@ async function uploadToBackblazeB2(
     return null;
   }
 
-  try {
-    // 1. Authorize B2 Account
-    const basicAuth = Buffer.from(`${keyId}:${applicationKey}`).toString("base64");
-    const authRes = await fetch("https://api.backblazeb2.com/b2api/v2/b2_authorize_account", {
-      headers: {
-        Authorization: `Basic ${basicAuth}`,
-      },
-    });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const auth = await getB2Auth(keyId, applicationKey);
+      if (!auth) return null;
 
-    if (!authRes.ok) {
-      console.warn("B2 authorize failed:", await authRes.text());
+      // 1. Get Upload URL
+      const uploadUrlRes = await fetch(`${auth.apiUrl}/b2api/v2/b2_get_upload_url`, {
+        method: "POST",
+        headers: {
+          Authorization: auth.authToken,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ bucketId: auth.bucketId }),
+      });
+
+      if (!uploadUrlRes.ok) {
+        const errText = await uploadUrlRes.text();
+        console.warn("B2 get_upload_url failed:", errText);
+        if (uploadUrlRes.status === 401 && attempt === 0) {
+          b2AuthCache = null;
+          continue;
+        }
+        return null;
+      }
+
+      const uploadUrlData: any = await uploadUrlRes.json();
+      const targetUploadUrl = uploadUrlData.uploadUrl;
+      const uploadAuthToken = uploadUrlData.authorizationToken;
+
+      // 2. Upload File
+      const sha1 = crypto.createHash("sha1").update(buffer).digest("hex");
+      const uploadRes = await fetch(targetUploadUrl, {
+        method: "POST",
+        headers: {
+          Authorization: uploadAuthToken,
+          "X-Bz-File-Name": encodeURIComponent(filePath),
+          "Content-Type": mimeType,
+          "Content-Length": buffer.length.toString(),
+          "X-Bz-Content-Sha1": sha1,
+        },
+        body: new Uint8Array(buffer),
+      });
+
+      if (!uploadRes.ok) {
+        const uploadErr = await uploadRes.text();
+        console.warn("B2 upload file failed:", uploadErr);
+        if (uploadRes.status === 401 && attempt === 0) {
+          b2AuthCache = null;
+          continue;
+        }
+        return null;
+      }
+
+      let publicUrl: string;
+      if (customEndpoint) {
+        const cleanedEndpoint = customEndpoint.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+        publicUrl = `https://${cleanedEndpoint}/file/${bucketName}/${filePath}`;
+      } else {
+        publicUrl = `${auth.downloadUrl}/file/${bucketName}/${filePath}`;
+      }
+
+      return { url: publicUrl, key: filePath };
+    } catch (error) {
+      console.warn("Backblaze B2 upload error (falling back to local storage):", error);
       return null;
     }
-
-    const authData: any = await authRes.json();
-    const apiUrl = authData.apiUrl;
-    const authToken = authData.authorizationToken;
-    const downloadUrl = authData.downloadUrl;
-    const bucketId = process.env.B2_BUCKET_ID || authData.allowed?.bucketId;
-
-    if (!bucketId) {
-      console.warn("B2 bucketId not configured and not present in application key restrictions.");
-      return null;
-    }
-
-    // 2. Get Upload URL
-    const uploadUrlRes = await fetch(`${apiUrl}/b2api/v2/b2_get_upload_url`, {
-      method: "POST",
-      headers: {
-        Authorization: authToken,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ bucketId }),
-    });
-
-    if (!uploadUrlRes.ok) {
-      console.warn("B2 get_upload_url failed:", await uploadUrlRes.text());
-      return null;
-    }
-
-    const uploadUrlData: any = await uploadUrlRes.json();
-    const targetUploadUrl = uploadUrlData.uploadUrl;
-    const uploadAuthToken = uploadUrlData.authorizationToken;
-
-    // 3. Upload File
-    const sha1 = crypto.createHash("sha1").update(buffer).digest("hex");
-    const uploadRes = await fetch(targetUploadUrl, {
-      method: "POST",
-      headers: {
-        Authorization: uploadAuthToken,
-        "X-Bz-File-Name": encodeURIComponent(filePath),
-        "Content-Type": mimeType,
-        "Content-Length": buffer.length.toString(),
-        "X-Bz-Content-Sha1": sha1,
-      },
-      body: new Uint8Array(buffer),
-    });
-
-    if (!uploadRes.ok) {
-      console.warn("B2 upload file failed:", await uploadRes.text());
-      return null;
-    }
-
-    const publicUrl = `${downloadUrl}/file/${bucketName}/${filePath}`;
-    return { url: publicUrl, key: filePath };
-  } catch (error) {
-    console.warn("Backblaze B2 upload error (falling back to local storage):", error);
-    return null;
   }
+
+  return null;
 }
 
 async function createApp(options: { isServerless?: boolean } = {}): Promise<express.Application> {
@@ -1087,7 +1142,8 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       }
 
       const safeShopId = (auth.profile.shop_id || "general").replace(/[^a-zA-Z0-9_-]/g, "_");
-      const { image, itemId = "item-01" } = req.body;
+      const { image, itemId = "item-01", purpose = "item" } = req.body;
+      const safePurpose = purpose === "logo" ? "logo" : "item";
 
       if (!image || typeof image !== "string") {
         return res.status(400).json({ error: "No image payload provided" });
@@ -1115,7 +1171,9 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         buffer = Buffer.from(image, "base64");
       }
 
-      const storageKey = `shops/${safeShopId}/items/${safeItemId}/${imageId}.${ext}`;
+      const storageKey = safePurpose === "logo"
+        ? `shops/${safeShopId}/branding/logo/${imageId}.${ext}`
+        : `shops/${safeShopId}/items/${safeItemId}/${imageId}.${ext}`;
 
       // Try Backblaze B2 first if configured
       const b2Result = await uploadToBackblazeB2(buffer, storageKey, mimeType);
@@ -1128,12 +1186,16 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       }
 
       // Local fallback storage
-      const localDir = path.join(UPLOAD_ROOT, "shops", safeShopId, "items", safeItemId);
+      const localDir = safePurpose === "logo"
+        ? path.join(UPLOAD_ROOT, "shops", safeShopId, "branding", "logo")
+        : path.join(UPLOAD_ROOT, "shops", safeShopId, "items", safeItemId);
       fs.mkdirSync(localDir, { recursive: true });
       const localFilePath = path.join(localDir, `${imageId}.${ext}`);
       fs.writeFileSync(localFilePath, buffer);
 
-      const localUrl = `/uploads/shops/${safeShopId}/items/${safeItemId}/${imageId}.${ext}`;
+      const localUrl = safePurpose === "logo"
+        ? `/uploads/shops/${safeShopId}/branding/logo/${imageId}.${ext}`
+        : `/uploads/shops/${safeShopId}/items/${safeItemId}/${imageId}.${ext}`;
       return res.json({
         imageUrl: localUrl,
         storageKey,

@@ -18,15 +18,18 @@ export interface StorageUploadResult {
 
 export const storageService = {
   /**
-   * Upload an item photograph.
-   * Accepts a File, Blob, or base64 Data URL.
-   * Path convention: shops/{shopId}/items/{itemId}/{imageId}.jpg
+   * Upload an item photograph or shop asset.
+   * Accepts an already-optimized File, Blob, or base64 Data URL.
+   * Path convention:
+   *   Item: shops/{shopId}/items/{itemId}/{imageId}.webp
+   *   Logo: shops/{shopId}/branding/logo/{imageId}.webp
    */
   async uploadItemImage(
     fileOrDataUrl: File | Blob | string,
     shopId?: string,
     itemId: string = `item-${Date.now()}`,
-    fileName?: string
+    fileName?: string,
+    purpose: 'item' | 'logo' = 'item'
   ): Promise<StorageUploadResult> {
     let base64Payload: string = '';
 
@@ -54,6 +57,7 @@ export const storageService = {
           shopId,
           itemId,
           fileName,
+          purpose,
         },
         token
       );
@@ -70,17 +74,32 @@ export const storageService = {
       console.warn('Storage upload note (preserving image locally):', err.message);
       // Fallback: If network or server endpoint is temporarily unavailable,
       // return genuine base64 data URL so local workflow is never blocked and the real image is preserved
+      const fallbackPath = purpose === 'logo'
+        ? `local/${shopId || 'offline'}/branding/logo/logo.webp`
+        : `local/${shopId || 'offline'}/${itemId}.webp`;
+
       if (base64Payload) {
         return {
           imageUrl: base64Payload,
-          storageKey: `local/${shopId || 'offline'}/${itemId}.jpg`,
+          storageKey: fallbackPath,
         };
       }
       return {
         imageUrl: typeof fileOrDataUrl === 'string' ? fileOrDataUrl : '',
-        storageKey: `local/${shopId || 'offline'}/${itemId}.jpg`,
+        storageKey: fallbackPath,
       };
     }
+  },
+
+  /**
+   * Dedicated helper for standardized shop logo upload
+   */
+  async uploadLogoImage(
+    fileOrDataUrl: File | Blob | string,
+    shopId?: string,
+    fileName?: string
+  ): Promise<StorageUploadResult> {
+    return this.uploadItemImage(fileOrDataUrl, shopId, 'logo', fileName, 'logo');
   },
 
   /**

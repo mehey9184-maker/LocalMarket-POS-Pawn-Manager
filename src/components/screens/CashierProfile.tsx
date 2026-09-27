@@ -32,6 +32,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useSales } from '../../context/SalesContext';
 import { authApi } from '../../services/supabaseApi';
 import { validateAndNormalizeSaPhone } from '../../utils/phoneValidator';
+import { createLogoImage } from '../../utils/imageProcessor';
+import { storageService } from '../../services/storageService';
 import { apiPost } from '../../utils/apiClient';
 import { ShopProfileAndOfflineHub } from '../profile/ShopProfileAndOfflineHub';
 import { BusinessRulesManager } from '../profile/BusinessRulesManager';
@@ -138,7 +140,7 @@ export const CashierProfile: React.FC = () => {
     }
   };
 
-  const handleLogoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -152,12 +154,15 @@ export const CashierProfile: React.FC = () => {
       return;
     }
 
-    setLogoFile(file);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setLogoPreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const processed = await createLogoImage(file, { size: 512, quality: 0.85 });
+      setLogoFile(processed.file);
+      setLogoPreview(processed.dataUrl);
+      showToast('Logo Processed', 'Logo normalized to 512×512 square asset.', 'info');
+    } catch (err: any) {
+      console.error('Logo normalization error:', err);
+      showToast('Error', 'Could not process logo image.', 'error');
+    }
   };
 
   const handleSaveShopProfile = async (e: React.FormEvent) => {
@@ -183,21 +188,16 @@ export const CashierProfile: React.FC = () => {
     try {
       let finalLogoUrl = shopForm.logo_url;
 
-      // Upload new logo if selected
+      // Upload new normalized logo if selected
       if (logoPreview && logoFile) {
         try {
-          const session = await authApi.getSession();
-          const token = session?.access_token;
-          const uploadRes = await apiPost<{ imageUrl: string }>(
-            '/api/storage/upload',
-            { image: logoPreview, itemId: 'logo' },
-            token
-          );
-          if (uploadRes.ok && uploadRes.data?.imageUrl) {
-            finalLogoUrl = uploadRes.data.imageUrl;
+          const uploadRes = await storageService.uploadLogoImage(logoPreview, shopProfile.id, logoFile.name);
+          if (uploadRes.imageUrl) {
+            finalLogoUrl = uploadRes.imageUrl;
           }
         } catch (uploadErr) {
-          console.warn('Logo upload warning:', uploadErr);
+          console.warn('Logo upload warning (preserving locally):', uploadErr);
+          finalLogoUrl = logoPreview;
         }
       }
 
