@@ -1,0 +1,1252 @@
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useApp } from '../../../context/AppContext';
+import { useAuth } from '../../../context/AuthContext';
+import { useInventory } from '../../../context/InventoryContext';
+import { useLoans } from '../../../context/LoanContext';
+import { useCustomers } from '../../../context/CustomerContext';
+import { useSellers } from '../../../context/SellerContext';
+import {
+  ItemCondition,
+  InventoryItem,
+  PawnLoan,
+  Customer,
+  Seller,
+  ItemStatus,
+  SapsEntry,
+} from '../../../types';
+import { roundRetailPrice, calculatePawnFees } from '../../../utils/pricingRules';
+import {
+  generateUniqueSku,
+  generateUniqueTransactionNumber,
+  generateUniquePawnTicket,
+} from '../../../utils/identifierGenerator';
+import { parseAndValidateRsaId } from '../../../utils/rsaIdValidator';
+import { validateAndNormalizeSaPhone } from '../../../utils/phoneValidator';
+import { focusAndScrollErrorField, formatUserFriendlyError } from '../../../utils/errorNavigator';
+import { db } from '../../../db';
+import { isSupabaseConfigured } from '../../../services/supabase';
+import { sellerTransactionsApi, pawnLoansApi } from '../../../services/supabaseApi';
+import {
+  WorkflowStep,
+  TxType,
+  ItemDraft,
+  NewIdentityDraft,
+  BatchItem,
+  CompletionResult,
+  StepperStep,
+} from './buyPawnTypes';
+import { useBuyPawnImages } from './useBuyPawnImages';
+import { useBuyPawnDrafts } from './useBuyPawnDrafts';
+import { useBuyPawnMarketCheck } from './useBuyPawnMarketCheck';
+
+const INITIAL_ITEM_DATA: ItemDraft = {
+  title: '',
+  category: 'Phones & Tech',
+  brand: '',
+  model: '',
+  serialOrImei: '',
+  condition: 'Good',
+  imageUrl: '',
+  stockLocation: 'Main Floor Display',
+  internalNote: '',
+  sourceNote: 'Item was already owned by the shop before LocalMarket onboarding',
+};
+
+const INITIAL_NEW_IDENTITY: NewIdentityDraft = {
+  fullName: '',
+  idNumber: '',
+  mobile: '',
+  address: '',
+  idType: 'RSA Smart ID',
+};
+
+export function useBuyPawnWorkflow() {
+  const { showToast, businessRules, shopProfile, setActiveContractModal, capturedRsaIdScan } =
+    useApp();
+  const { user, hasPermission } = useAuth();
+  const { addItem, inventory } = useInventory();
+  const { customers, addCustomer, updateCustomer } = useCustomers();
+  const { sellers, addSeller, updateSeller } = useSellers();
+
+  // Workflow Core State
+  const [basketItems, setBasketItems] = useState<BatchItem[]>([]);
+  const [step, setStep] = useState<WorkflowStep>('mode');
+  const [txType, setTxType] = useState<TxType>(null);
+  const [isFinalizing, setIsFinalizing] = useState(false);
+
+  // Identity State (Buy / Pawn only)
+  const [identitySearch, setIdentitySearch] = useState('');
+  const [selectedIdentity, setSelectedIdentity] = useState<Customer | Seller | null>(null);
+  const [isCreatingIdentity, setIsCreatingIdentity] = useState(false);
+  const [newIdentity, setNewIdentity] = useState<NewIdentityDraft>(INITIAL_NEW_IDENTITY);
+
+  // Item Details State (Common to all flows)
+  const [itemData, setItemData] = useState<ItemDraft>(INITIAL_ITEM_DATA);
+
+  // Valuation & Pricing State
+  const [agreedOffer, setAgreedOffer] = useState<number>(0); // Payout / Principal
+  const [costBasisInput, setCostBasisInput] = useState<string>('');
+  const [retailPriceInput, setRetailPriceInput] = useState<string>('0');
+  const [suggestedRetail, setSuggestedRetail] = useState<number>(0);
+  const [existingStockStatus, setExistingStockStatus] = useState<ItemStatus>('Retail Floor');
+
+  // Completion Result State
+  const [result, setResult] = useState<CompletionResult | null>(null);
+
+  // Integrated Sub-Hooks
+  const images = useBuyPawnImages({
+    itemData,
+    setItemData,
+    shopId: shopProfile?.id,
+    showToast,
+  });
+
+  const drafts = useBuyPawnDrafts({
+    user,
+    shopId: shopProfile?.id,
+    step,
+    txType,
+    itemData,
+    newIdentity,
+    selectedIdentity,
+    setItemData,
+    setNewIdentity,
+    setSelectedIdentity,
+    setStep,
+    setTxType,
+    hasPermission,
+    showToast,
+  });
+
+  const marketCheck = useBuyPawnMarketCheck(itemData);
+
+  // Synchronize captured RSA ID scan with customer selection/creation
+  useEffect(() => {
+    if (!capturedRsaIdScan || step !== 'customer') return;
+
+    const scannedIdClean = capturedRsaIdScan.idNumber.replace(/\s+/g, '');
+
+    if (txType === 'buy') {
+      const match = sellers.find((s) => s.idNumber.replace(/\s+/g, '') === scannedIdClean);
+      if (match) {
+        setSelectedIdentity(match);
+        setIsCreatingIdentity(false);
+        showToast(
+          'Previous Seller Found',
+          `Matched existing seller by ID #${scannedIdClean}: ${match.fullName}`,
+          'info'
+        );
+        return;
+      }
+    } else if (txType === 'pawn') {
+      const match = customers.find((c) => c.idNumber.replace(/\s+/g, '') === scannedIdClean);
+      if (match) {
+        setSelectedIdentity(match);
+        setIsCreatingIdentity(false);
+        showToast(
+          'Previous Customer Found',
+          `Matched existing customer by ID #${scannedIdClean}: ${match.fullName}`,
+          'info'
+        );
+        return;
+      }
+    }
+
+    // If no existing record matched, pre-fill captured ID number and open identity creation (NO fabricated name)
+    setIsCreatingIdentity(true);
+    setNewIdentity((prev) => ({
+      ...prev,
+      idNumber: capturedRsaIdScan.idNumber,
+      idType: 'RSA Smart ID',
+      fullName: '', // NEVER FABRICATE A NAME
+    }));
+    showToast(
+      'ID Decoded',
+      `ID #${capturedRsaIdScan.idNumber} decoded — identity still needs verification.`,
+      'info'
+    );
+  }, [capturedRsaIdScan, step, txType, customers, sellers, showToast]);
+
+  // Derived Values for Pawn
+  const pawnCalculations = useMemo(() => {
+    if (txType !== 'pawn') return null;
+    const { interest, storage, total } = calculatePawnFees(agreedOffer, businessRules);
+
+    const expiry = new Date();
+    expiry.setDate(expiry.getDate() + businessRules.defaultLoanTermDays);
+
+    return {
+      interest,
+      adminFee: storage,
+      totalRedemption: total,
+      expiryDate: expiry.toISOString().split('T')[0],
+    };
+  }, [txType, agreedOffer, businessRules]);
+
+  // Serial Number / IMEI duplicate check across store inventory
+  const duplicateSerialMatch = useMemo(() => {
+    const sn = itemData.serialOrImei.trim();
+    if (!sn || sn.toUpperCase() === 'N/A' || sn.length < 4) return null;
+    return inventory.find((i) => i.serialOrImei && i.serialOrImei.toLowerCase() === sn.toLowerCase());
+  }, [itemData.serialOrImei, inventory]);
+
+  // Dynamic Stepper Configuration
+  const workflowSteps: StepperStep[] = useMemo(() => {
+    if (txType === 'existing') {
+      return [
+        { id: 'mode', label: 'Intake Type' },
+        { id: 'item', label: 'Item Details' },
+        { id: 'valuation', label: 'Retail Price' },
+        { id: 'location', label: 'Stock Location' },
+      ];
+    }
+    if (txType === 'buy') {
+      return [
+        { id: 'mode', label: 'Intake Type' },
+        { id: 'customer', label: 'Seller Info' },
+        { id: 'item', label: 'Item Details' },
+        { id: 'valuation', label: 'Valuation' },
+        { id: 'deal', label: 'Deal Review' },
+      ];
+    }
+    if (txType === 'pawn') {
+      return [
+        { id: 'mode', label: 'Intake Type' },
+        { id: 'customer', label: 'Customer Info' },
+        { id: 'item', label: 'Item Details' },
+        { id: 'valuation', label: 'Loan Terms' },
+        { id: 'deal', label: 'Pledge Terms' },
+      ];
+    }
+    return [
+      { id: 'mode', label: 'Intake Type' },
+      { id: 'item', label: 'Details' },
+      { id: 'valuation', label: 'Pricing' },
+    ];
+  }, [txType]);
+
+  const currentStepIndex = useMemo(() => {
+    const idx = workflowSteps.findIndex((s) => s.id === step);
+    return idx >= 0 ? idx : 0;
+  }, [workflowSteps, step]);
+
+  const filteredIdentities = useMemo(() => {
+    if (!identitySearch) return [];
+    const q = identitySearch.toLowerCase();
+    const source = txType === 'buy' ? sellers : customers;
+    return source
+      .filter(
+        (c) =>
+          c.fullName.toLowerCase().includes(q) ||
+          c.idNumber.includes(q) ||
+          c.mobile.includes(q)
+      )
+      .slice(0, 5);
+  }, [txType, customers, sellers, identitySearch]);
+
+  // Handlers
+  const handleSelectTxType = useCallback(
+    (type: 'existing' | 'buy' | 'pawn') => {
+      if (type === 'buy' && !hasPermission('sellerAcquisitions')) {
+        showToast(
+          'Permission Denied',
+          'Senior Cashier or higher authority required for Buy From Person acquisitions.',
+          'error'
+        );
+        return;
+      }
+      if (type === 'pawn' && !hasPermission('pawn')) {
+        showToast(
+          'Permission Denied',
+          'Senior Cashier or higher authority required for Pawn loans.',
+          'error'
+        );
+        return;
+      }
+      setTxType(type);
+      setSelectedIdentity(null);
+      setIsCreatingIdentity(false);
+
+      if (type === 'existing') {
+        // Existing stock skips identity verification completely
+        setStep('item');
+      } else {
+        setStep('customer');
+      }
+    },
+    [hasPermission, showToast]
+  );
+
+  const selectIdentity = useCallback(
+    (identity: Customer | Seller) => {
+      setSelectedIdentity(identity);
+      setIsCreatingIdentity(false);
+      showToast(
+        `Previous ${txType === 'buy' ? 'Seller' : 'Customer'} Found`,
+        `Matched record: ${identity.fullName} (${
+          identity.verified ? 'Verified' : 'Verification pending'
+        })`,
+        'info'
+      );
+    },
+    [txType, showToast]
+  );
+
+  const handleCreateIdentity = useCallback(async () => {
+    if (!newIdentity.fullName.trim()) {
+      showToast('Validation Error', 'Full legal name is required.', 'error');
+      const nameEl = document.getElementById('new-identity-name-input');
+      if (nameEl) focusAndScrollErrorField(nameEl);
+      return;
+    }
+
+    if (!newIdentity.idNumber.trim()) {
+      showToast('Validation Error', 'ID or Passport number is required.', 'error');
+      const idEl = document.getElementById('new-identity-id-input');
+      if (idEl) focusAndScrollErrorField(idEl);
+      return;
+    }
+
+    if (newIdentity.idType === 'RSA Smart ID' || newIdentity.idType === 'Green ID Book') {
+      const idCheck = parseAndValidateRsaId(newIdentity.idNumber);
+      if (!idCheck.isValid) {
+        showToast('ID Validation Failed', idCheck.error || 'Please check the ID number.', 'error');
+        const idEl = document.getElementById('new-identity-id-input');
+        if (idEl) focusAndScrollErrorField(idEl);
+        return;
+      }
+    }
+
+    let finalMobile = newIdentity.mobile.trim();
+    if (finalMobile) {
+      const phoneCheck = validateAndNormalizeSaPhone(finalMobile);
+      if (!phoneCheck.isValid) {
+        showToast(
+          'Phone Validation Failed',
+          phoneCheck.error || 'Please check the mobile phone number.',
+          'error'
+        );
+        const phoneEl = document.getElementById('new-identity-mobile-input');
+        if (phoneEl) focusAndScrollErrorField(phoneEl);
+        return;
+      }
+      if (phoneCheck.normalizedNumber) {
+        finalMobile = phoneCheck.displayNumber || phoneCheck.normalizedNumber;
+      }
+    }
+
+    try {
+      if (txType === 'buy') {
+        const id = await addSeller({
+          fullName: newIdentity.fullName.trim(),
+          idNumber: newIdentity.idNumber.trim(),
+          idType: newIdentity.idType,
+          mobile: finalMobile,
+          address: newIdentity.address.trim(),
+          verified: false,
+        });
+        const created: Seller = {
+          id,
+          fullName: newIdentity.fullName.trim(),
+          idNumber: newIdentity.idNumber.trim(),
+          idType: newIdentity.idType,
+          mobile: finalMobile,
+          address: newIdentity.address.trim(),
+          createdAt: new Date().toISOString(),
+          verified: false,
+        };
+        setSelectedIdentity(created);
+      } else {
+        // Pawn customer: honest values without fake DOB or fake gender
+        const id = await addCustomer({
+          fullName: newIdentity.fullName.trim(),
+          idNumber: newIdentity.idNumber.trim(),
+          idType: newIdentity.idType,
+          mobile: finalMobile,
+          address: newIdentity.address.trim(),
+          verified: false,
+        });
+        const created: Customer = {
+          id,
+          fullName: newIdentity.fullName.trim(),
+          idNumber: newIdentity.idNumber.trim(),
+          idType: newIdentity.idType,
+          mobile: finalMobile,
+          address: newIdentity.address.trim(),
+          createdAt: new Date().toISOString(),
+          verified: false,
+        };
+        setSelectedIdentity(created);
+      }
+
+      setIsCreatingIdentity(false);
+      showToast(
+        `${txType === 'buy' ? 'Seller' : 'Customer'} Saved`,
+        `${newIdentity.fullName} (Verification pending)`,
+        'info'
+      );
+    } catch (err: any) {
+      showToast('Save Failed', formatUserFriendlyError(err?.message || 'Failed to save record.'), 'error');
+    }
+  }, [newIdentity, txType, addSeller, addCustomer, showToast]);
+
+  const handleExplicitVerifyIdentity = useCallback(async () => {
+    if (!selectedIdentity) return;
+    if (txType === 'buy') {
+      await updateSeller(selectedIdentity.id, { verified: true });
+      setSelectedIdentity((prev) => (prev ? { ...prev, verified: true } : null));
+      showToast(
+        'Identity Verified',
+        `Seller ${selectedIdentity.fullName} verified against physical ID document.`,
+        'success'
+      );
+    } else {
+      await updateCustomer(selectedIdentity.id, { verified: true });
+      setSelectedIdentity((prev) => (prev ? { ...prev, verified: true } : null));
+      showToast(
+        'Identity Verified',
+        `Customer ${selectedIdentity.fullName} verified against physical ID document.`,
+        'success'
+      );
+    }
+  }, [selectedIdentity, txType, updateSeller, updateCustomer, showToast]);
+
+  // 1. FINALISE EXISTING STOCK (No Seller, No Customer, No SAPS Form 21, No Pawn Loan)
+  const handleFinalizeExistingStock = useCallback(async () => {
+    setIsFinalizing(true);
+    try {
+      const sku = generateUniqueSku((s) => inventory.some((i) => i.sku === s));
+      const rawCost = costBasisInput.trim();
+      const costBasisNum =
+        rawCost !== '' && !isNaN(parseFloat(rawCost)) ? parseFloat(rawCost) : undefined;
+      const retailPriceNum = parseFloat(retailPriceInput) || 0;
+
+      const newItemPayload: Omit<InventoryItem, 'id' | 'addedAt'> = {
+        sku,
+        title: itemData.title.trim(),
+        category: itemData.category,
+        brand: itemData.brand.trim() || undefined,
+        model: itemData.model.trim() || undefined,
+        serialOrImei: itemData.serialOrImei.trim() || 'N/A',
+        condition: itemData.condition,
+        acquisitionType: 'Existing Stock',
+        costBasis: costBasisNum,
+        retailPrice: retailPriceNum,
+        status: existingStockStatus,
+        stockLocation: itemData.stockLocation.trim() || 'Main Floor Display',
+        imageUrl: itemData.imageUrl,
+        specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
+        sourceType: 'existing_stock',
+        sourceStatus: 'unknown',
+        sourceNote:
+          itemData.sourceNote || 'Item was already owned by the shop before LocalMarket onboarding',
+        internalNote: itemData.internalNote.trim() || undefined,
+      };
+
+      const itemId = await addItem(newItemPayload);
+
+      const createdItem: InventoryItem = {
+        id: itemId,
+        addedAt: new Date().toISOString(),
+        ...newItemPayload,
+      };
+
+      setResult({
+        assetTag: sku,
+        item: createdItem,
+      });
+
+      if (shopProfile?.id) {
+        await drafts.closeDraft(shopProfile.id);
+      }
+
+      setStep('completion');
+      showToast('Stock Added', `${createdItem.title} added to ${existingStockStatus}`, 'success');
+    } catch (err: any) {
+      showToast('Intake Failed', err?.message || 'Failed to complete intake', 'error');
+    } finally {
+      setIsFinalizing(false);
+    }
+  }, [
+    inventory,
+    costBasisInput,
+    retailPriceInput,
+    itemData,
+    existingStockStatus,
+    addItem,
+    shopProfile?.id,
+    drafts,
+    showToast,
+  ]);
+
+  // 2. FINALISE BUY FROM PERSON OR PAWN (Real Identities, Compliance & Transactions)
+  const handleAddToBatch = useCallback(() => {
+    if (!itemData.title.trim()) {
+      showToast('Title Required', 'Please enter an item title', 'amber');
+      return;
+    }
+
+    const newItem: BatchItem = {
+      ...itemData,
+      id: crypto.randomUUID(),
+      agreedOffer,
+      suggestedRetail,
+    };
+
+    setBasketItems((prev) => [...prev, newItem]);
+
+    // Reset item data for next entry
+    setItemData(INITIAL_ITEM_DATA);
+    setAgreedOffer(0);
+    setRetailPriceInput('0');
+
+    showToast(
+      'Item Added to Batch',
+      'You can now add another item or finalize the transaction.',
+      'success'
+    );
+    setStep('item'); // Go back to item step for next item
+  }, [itemData, agreedOffer, suggestedRetail, showToast]);
+
+  const handleFinalize = useCallback(async () => {
+    if (!selectedIdentity || !txType || isFinalizing) return;
+    if (txType === 'buy' && !hasPermission('sellerAcquisitions')) {
+      showToast(
+        'Permission Denied',
+        'Senior Cashier or higher authority required for Buy From Person acquisitions.',
+        'error'
+      );
+      return;
+    }
+    if (txType === 'pawn' && !hasPermission('pawn')) {
+      showToast(
+        'Permission Denied',
+        'Senior Cashier or higher authority required for Pawn loans.',
+        'error'
+      );
+      return;
+    }
+    if (!shopProfile?.id) {
+      showToast(
+        'Missing Shop Context',
+        'Unable to complete transaction without an active shop profile.',
+        'error'
+      );
+      return;
+    }
+    const currentShopId = shopProfile.id;
+
+    setIsFinalizing(true);
+    try {
+      // If there's a current item not in basket, add it first or validate it
+      const finalBasket = [...basketItems];
+      if (itemData.title.trim()) {
+        finalBasket.push({
+          ...itemData,
+          id: crypto.randomUUID(),
+          agreedOffer,
+          suggestedRetail,
+        });
+      }
+
+      if (finalBasket.length === 0) {
+        showToast('No Items', 'Please add at least one item to the transaction', 'amber');
+        setIsFinalizing(false);
+        return;
+      }
+
+      const transactionId = crypto.randomUUID();
+      const existingTxList = await db.sellerTransactions.where('shopId').equals(currentShopId).toArray();
+      const existingTxSet = new Set(existingTxList.map((t) => t.transactionNumber));
+      const transactionNumber = generateUniqueTransactionNumber((tn) => existingTxSet.has(tn));
+      const totalPayout = finalBasket.reduce((sum, i) => sum + i.agreedOffer, 0);
+      const nowIso = new Date().toISOString();
+
+      if (txType === 'buy') {
+        const seller = selectedIdentity as Seller;
+        const complianceStatus = seller.verified ? 'VERIFIED' : 'PENDING';
+        const inventoryItemsToAdd: InventoryItem[] = [];
+        const transactionItemsToAdd: any[] = [];
+        const sapsEntriesToAdd: SapsEntry[] = [];
+        const rpcItemsPayload: any[] = [];
+
+        const currentInventory = await db.inventory.where('shopId').equals(currentShopId).toArray();
+        const existingSkuSet = new Set(currentInventory.map((i) => i.sku));
+
+        for (const bItem of finalBasket) {
+          const itemId = bItem.id || crypto.randomUUID();
+          const sku = generateUniqueSku((s) => existingSkuSet.has(s));
+          existingSkuSet.add(sku);
+
+          const sapsId = crypto.randomUUID();
+          const sapsEntryNo = `SAPS-${new Date().getFullYear()}-${sapsId.slice(0, 8).toUpperCase()}`;
+
+          const invItem: InventoryItem = {
+            id: itemId,
+            shopId: currentShopId,
+            sku,
+            title: bItem.title,
+            category: bItem.category,
+            brand: bItem.brand?.trim() || undefined,
+            model: bItem.model?.trim() || undefined,
+            serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
+            condition: bItem.condition,
+            acquisitionType: 'Buy',
+            costBasis: bItem.agreedOffer,
+            retailPrice: bItem.suggestedRetail,
+            status: 'Retail Floor',
+            stockLocation: 'Retail Floor',
+            imageUrl: bItem.imageUrl,
+            specs: [bItem.brand, bItem.model].filter(Boolean).join(' • ') || undefined,
+            sourceType: 'seller',
+            sourceStatus: seller.verified ? 'verified' : 'pending',
+            sourceNote: `Purchased from ${seller.fullName} (${seller.idNumber})`,
+            internalNote: bItem.internalNote?.trim() || undefined,
+            addedAt: nowIso,
+          };
+          inventoryItemsToAdd.push(invItem);
+
+          transactionItemsToAdd.push({
+            id: crypto.randomUUID(),
+            sellerTransactionId: transactionId,
+            shopId: currentShopId,
+            itemId,
+            itemSku: sku,
+            itemTitle: bItem.title,
+            amountPaid: bItem.agreedOffer,
+            retailPrice: bItem.suggestedRetail,
+            serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
+            condition: bItem.condition,
+            createdAt: nowIso,
+          });
+
+          sapsEntriesToAdd.push({
+            id: sapsId,
+            shopId: currentShopId,
+            entryNumber: sapsEntryNo,
+            timestamp: nowIso,
+            customerId: seller.id,
+            customerName: seller.fullName,
+            customerIdNumber: seller.idNumber,
+            customerAddress: seller.address,
+            customerPhone: seller.mobile,
+            itemDescription: bItem.title,
+            category: bItem.category,
+            serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
+            condition: bItem.condition,
+            acquisitionType: 'Buy',
+            considerationPaid: bItem.agreedOffer,
+            officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
+            policeStationRef: shopProfile.saps_dealer_license || 'SAPS License',
+            verificationStatus: complianceStatus as any,
+            barcodeRef: sku,
+          });
+
+          rpcItemsPayload.push({
+            id: itemId,
+            sku,
+            title: bItem.title,
+            category: bItem.category,
+            brand: bItem.brand?.trim() || null,
+            model: bItem.model?.trim() || null,
+            serial_or_imei: bItem.serialOrImei?.trim() || 'N/A',
+            condition: bItem.condition,
+            amount_paid: bItem.agreedOffer,
+            retail_price: bItem.suggestedRetail,
+            image_url: bItem.imageUrl,
+            specs: [bItem.brand, bItem.model].filter(Boolean).join(' • ') || null,
+            stock_location: 'Retail Floor',
+            internal_note: bItem.internalNote?.trim() || null,
+            saps_entry_id: sapsId,
+            saps_entry_number: sapsEntryNo,
+          });
+        }
+
+        const txRecord = {
+          id: transactionId,
+          shopId: currentShopId,
+          sellerId: seller.id,
+          transactionNumber,
+          totalProposedPayout: totalPayout,
+          totalApprovedPayout: totalPayout,
+          paymentStatus: 'Paid' as const,
+          status: 'Acquired' as const,
+          complianceStatus: complianceStatus as any,
+          timestamp: nowIso,
+          items: transactionItemsToAdd,
+          sapsRef: transactionNumber,
+        };
+
+        const buyPayload = {
+          transactionId,
+          transactionNumber,
+          sellerId: seller.id,
+          items: rpcItemsPayload,
+          totalAmount: totalPayout,
+          paymentMethod: 'cash',
+          paymentStatus: 'Paid',
+          transactionStatus: 'Acquired',
+          complianceStatus,
+          sapsRef: transactionNumber,
+          officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
+          policeStationRef: shopProfile.saps_dealer_license || '',
+          shopId: currentShopId,
+        };
+
+        let syncLogStatus: 'completed' | 'pending' = 'pending';
+        let syncedAt: string | undefined = undefined;
+
+        // 1. ATOMIC SERVER RPC FIRST IF ONLINE
+        if (isSupabaseConfigured() && navigator.onLine) {
+          try {
+            const rpcRes = await sellerTransactionsApi.completeBuyAcquisitionRpc(buyPayload);
+            if (rpcRes.success) {
+              syncLogStatus = 'completed';
+              syncedAt = new Date().toISOString();
+            } else {
+              const isNetworkError = (msg?: string) => {
+                if (!msg) return false;
+                const lower = msg.toLowerCase();
+                return (
+                  lower.includes('failed to fetch') ||
+                  lower.includes('network') ||
+                  lower.includes('timeout') ||
+                  lower.includes('aborted')
+                );
+              };
+
+              if (!isNetworkError(rpcRes.error)) {
+                // Explicit server rejection - ABORT IMMEDIATELY, do not write fake local data
+                showToast('Acquisition Rejected', rpcRes.error || 'Server rejected acquisition.', 'error');
+                setIsFinalizing(false);
+                return;
+              }
+              console.warn(
+                'Network timeout during buy acquisition, saving locally for offline sync:',
+                rpcRes.error
+              );
+            }
+          } catch (err: any) {
+            console.warn(
+              'Network error during online buy acquisition, saving locally for offline sync:',
+              err?.message
+            );
+          }
+        }
+
+        // 2. ATOMIC LOCAL DEXIE COMMIT (Reflecting server success or durable offline outbox)
+        await db.transaction(
+          'rw',
+          [db.inventory, db.sellerTransactions, db.sellerTransactionItems, db.saps, db.syncLogs],
+          async () => {
+            await db.inventory.bulkAdd(inventoryItemsToAdd);
+            await db.sellerTransactionItems.bulkAdd(transactionItemsToAdd);
+            await db.sellerTransactions.add(txRecord);
+            await db.saps.bulkAdd(sapsEntriesToAdd);
+
+            await db.syncLogs.add({
+              shopId: currentShopId,
+              entityType: 'buyAcquisition',
+              entityId: transactionId,
+              action: 'create',
+              payload: buyPayload,
+              status: syncLogStatus,
+              syncedAt,
+              createdAt: nowIso,
+              retryCount: 0,
+            });
+          }
+        );
+
+        setResult({
+          assetTag: transactionNumber,
+          item: { title: `${finalBasket.length} Items`, sku: transactionNumber } as any,
+        });
+
+        await drafts.closeDraft(currentShopId);
+        setStep('completion');
+        if (syncLogStatus === 'completed') {
+          showToast(
+            'Batch Purchase Complete',
+            `${finalBasket.length} items acquired atomically and logged to SAPS`,
+            'success'
+          );
+        } else {
+          showToast(
+            'Saved Offline',
+            `${finalBasket.length} items saved locally and queued for sync`,
+            'amber'
+          );
+        }
+        return;
+      }
+
+      if (txType === 'pawn' && pawnCalculations) {
+        const pCustomer = selectedIdentity as Customer;
+        const allLoans = await db.loans.where('shopId').equals(currentShopId).toArray();
+        const ticketNumber = generateUniquePawnTicket((t) => allLoans.some((l) => l.ticketNumber === t));
+        const currentInventory = await db.inventory.where('shopId').equals(currentShopId).toArray();
+        const sku = generateUniqueSku((s) => currentInventory.some((i) => i.sku === s));
+
+        const loanId = crypto.randomUUID();
+        const itemId = crypto.randomUUID();
+        const sapsId = crypto.randomUUID();
+        const sapsEntryNo = `SAPS-${new Date().getFullYear()}-${sapsId.slice(0, 8).toUpperCase()}`;
+        const qrToken = `TKN-${loanId.slice(0, 8).toUpperCase()}`;
+        const verificationStatus = pCustomer.verified ? 'VERIFIED' : 'PENDING';
+
+        const invItem: InventoryItem = {
+          id: itemId,
+          shopId: currentShopId,
+          sku,
+          title: itemData.title,
+          category: itemData.category,
+          brand: itemData.brand?.trim() || undefined,
+          model: itemData.model?.trim() || undefined,
+          serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
+          condition: itemData.condition,
+          acquisitionType: 'Pawn',
+          costBasis: agreedOffer,
+          retailPrice: Math.round(agreedOffer * 1.85),
+          status: 'Vault Hold',
+          vaultLocation: businessRules.defaultVaultShelf,
+          stockLocation: businessRules.defaultVaultShelf,
+          pawnTicketId: ticketNumber,
+          imageUrl: itemData.imageUrl,
+          specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
+          sourceType: 'pawn',
+          sourceStatus: pCustomer.verified ? 'verified' : 'pending',
+          sourceNote: `Pawned by ${pCustomer.fullName} under Ticket ${ticketNumber}`,
+          internalNote: itemData.internalNote?.trim() || undefined,
+          addedAt: nowIso,
+        };
+
+        const loanRecord: PawnLoan = {
+          id: loanId,
+          shopId: currentShopId,
+          ticketNumber,
+          customerId: pCustomer.id,
+          customerName: pCustomer.fullName,
+          customerIdNumber: pCustomer.idNumber,
+          customerMobile: pCustomer.mobile,
+          customerAddress: pCustomer.address,
+          itemId: itemId,
+          itemTitle: itemData.title,
+          itemCategory: itemData.category,
+          serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
+          condition: itemData.condition,
+          itemImageUrl: itemData.imageUrl,
+          principal: agreedOffer,
+          ncrMonthlyRate: businessRules.pawnMonthlyInterestRate,
+          monthlyInterest: pawnCalculations.interest,
+          monthlyStorageAdminFee: pawnCalculations.adminFee,
+          totalRedemptionAmount: pawnCalculations.totalRedemption,
+          extensionFee: pawnCalculations.adminFee + pawnCalculations.interest,
+          startDate: nowIso.split('T')[0],
+          expiryDate: pawnCalculations.expiryDate,
+          daysRemaining: businessRules.defaultLoanTermDays,
+          daysElapsed: 0,
+          vaultShelf: businessRules.defaultVaultShelf,
+          status: 'Active',
+          qrToken,
+          history: [
+            {
+              date: nowIso,
+              action: 'Created',
+              amount: agreedOffer,
+              note: 'Pawn loan initiated',
+            },
+          ],
+        };
+
+        const sapsRecord: SapsEntry = {
+          id: sapsId,
+          shopId: currentShopId,
+          entryNumber: sapsEntryNo,
+          timestamp: nowIso,
+          customerId: pCustomer.id,
+          customerName: pCustomer.fullName,
+          customerIdNumber: pCustomer.idNumber,
+          customerAddress: pCustomer.address,
+          customerPhone: pCustomer.mobile,
+          itemDescription: itemData.title,
+          category: itemData.category,
+          serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
+          condition: itemData.condition,
+          acquisitionType: 'Pawn' as const,
+          considerationPaid: agreedOffer,
+          officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
+          policeStationRef: shopProfile.saps_dealer_license || 'SAPS License',
+          verificationStatus: verificationStatus as any,
+          barcodeRef: sku,
+        };
+
+        const pawnPayload = {
+          loanId,
+          ticketNumber,
+          customerId: pCustomer.id,
+          itemId,
+          itemSku: sku,
+          itemTitle: itemData.title,
+          itemCategory: itemData.category,
+          itemBrand: itemData.brand?.trim() || undefined,
+          itemModel: itemData.model?.trim() || undefined,
+          serialOrImei: itemData.serialOrImei?.trim() || 'N/A',
+          condition: itemData.condition,
+          itemImageUrl: itemData.imageUrl,
+          specs: [itemData.brand, itemData.model].filter(Boolean).join(' • ') || undefined,
+          stockLocation: businessRules.defaultVaultShelf,
+          internalNote: itemData.internalNote?.trim() || undefined,
+          principal: agreedOffer,
+          ncrMonthlyRate: businessRules.pawnMonthlyInterestRate,
+          monthlyInterest: pawnCalculations.interest,
+          monthlyStorageAdminFee: pawnCalculations.adminFee,
+          totalRedemptionAmount: pawnCalculations.totalRedemption,
+          extensionFee: pawnCalculations.adminFee + pawnCalculations.interest,
+          startDate: nowIso.split('T')[0],
+          expiryDate: pawnCalculations.expiryDate,
+          daysRemaining: businessRules.defaultLoanTermDays,
+          vaultShelf: businessRules.defaultVaultShelf,
+          qrToken,
+          officerName: user?.user_metadata?.full_name || user?.email || 'System Operator',
+          policeStationRef: shopProfile.saps_dealer_license || '',
+          sapsEntryId: sapsId,
+          sapsEntryNumber: sapsEntryNo,
+          history: loanRecord.history,
+          shopId: currentShopId,
+        };
+
+        let syncLogStatus: 'completed' | 'pending' = 'pending';
+        let syncedAt: string | undefined = undefined;
+
+        // 1. ATOMIC SERVER RPC FIRST IF ONLINE
+        if (isSupabaseConfigured() && navigator.onLine) {
+          try {
+            const rpcRes = await pawnLoansApi.completePawnIntakeRpc(pawnPayload);
+            if (rpcRes.success) {
+              syncLogStatus = 'completed';
+              syncedAt = new Date().toISOString();
+              if (rpcRes.data) {
+                const serverLoan = Array.isArray(rpcRes.data) ? rpcRes.data[0] : rpcRes.data;
+                if (serverLoan && typeof serverLoan === 'object') {
+                  if (serverLoan.monthly_interest !== undefined && serverLoan.monthly_interest !== null) {
+                    loanRecord.monthlyInterest = Number(serverLoan.monthly_interest);
+                  }
+                  if (
+                    serverLoan.monthly_storage_admin_fee !== undefined &&
+                    serverLoan.monthly_storage_admin_fee !== null
+                  ) {
+                    loanRecord.monthlyStorageAdminFee = Number(serverLoan.monthly_storage_admin_fee);
+                  }
+                  if (
+                    serverLoan.total_redemption_amount !== undefined &&
+                    serverLoan.total_redemption_amount !== null
+                  ) {
+                    loanRecord.totalRedemptionAmount = Number(serverLoan.total_redemption_amount);
+                  }
+                  if (serverLoan.expiry_date) {
+                    loanRecord.expiryDate = String(serverLoan.expiry_date);
+                  }
+                  if (
+                    serverLoan.days_remaining !== undefined &&
+                    serverLoan.days_remaining !== null
+                  ) {
+                    loanRecord.daysRemaining = Number(serverLoan.days_remaining);
+                  }
+                }
+              }
+            } else {
+              const isNetworkError = (msg?: string) => {
+                if (!msg) return false;
+                const lower = msg.toLowerCase();
+                return (
+                  lower.includes('failed to fetch') ||
+                  lower.includes('network') ||
+                  lower.includes('timeout') ||
+                  lower.includes('aborted')
+                );
+              };
+
+              if (!isNetworkError(rpcRes.error)) {
+                // Explicit server rejection - ABORT IMMEDIATELY, do not write fake local data
+                showToast('Pawn Intake Rejected', rpcRes.error || 'Server rejected pawn intake.', 'error');
+                setIsFinalizing(false);
+                return;
+              }
+              console.warn(
+                'Network timeout during pawn intake, saving locally for offline sync:',
+                rpcRes.error
+              );
+            }
+          } catch (err: any) {
+            console.warn(
+              'Network error during online pawn intake, saving locally for offline sync:',
+              err?.message
+            );
+          }
+        }
+
+        // 2. ATOMIC LOCAL DEXIE COMMIT (Reflecting server success or durable offline outbox)
+        await db.transaction('rw', [db.inventory, db.loans, db.saps, db.syncLogs], async () => {
+          await db.inventory.add(invItem);
+          await db.loans.add(loanRecord);
+          await db.saps.add(sapsRecord);
+
+          await db.syncLogs.add({
+            shopId: currentShopId,
+            entityType: 'pawnIntake',
+            entityId: loanId,
+            action: 'create',
+            payload: pawnPayload,
+            status: syncLogStatus,
+            syncedAt,
+            createdAt: nowIso,
+            retryCount: 0,
+          });
+        });
+
+        setResult({
+          assetTag: sku,
+          ticketNumber,
+          item: { id: itemId, title: itemData.title, sku } as any,
+          loan: { id: loanId, ticketNumber } as any,
+        });
+
+        await drafts.closeDraft(currentShopId);
+        setStep('completion');
+        if (syncLogStatus === 'completed') {
+          showToast(
+            'Pawn Finalized',
+            `Ticket ${ticketNumber} created and asset vaulted atomically`,
+            'success'
+          );
+        } else {
+          showToast(
+            'Saved Offline',
+            `Ticket ${ticketNumber} saved locally and queued for sync`,
+            'amber'
+          );
+        }
+      }
+    } catch (err: any) {
+      showToast('Transaction Failed', err?.message || 'Could not complete transaction', 'error');
+    } finally {
+      setIsFinalizing(false);
+    }
+  }, [
+    selectedIdentity,
+    txType,
+    isFinalizing,
+    hasPermission,
+    shopProfile?.id,
+    basketItems,
+    itemData,
+    agreedOffer,
+    suggestedRetail,
+    user,
+    drafts,
+    pawnCalculations,
+    businessRules,
+    showToast,
+  ]);
+
+  const handleNext = useCallback(() => {
+    if (step === 'mode') {
+      return;
+    }
+
+    if (step === 'customer') {
+      if (!selectedIdentity) {
+        showToast(
+          `${txType === 'buy' ? 'Seller' : 'Customer'} Required`,
+          `Please select or create a ${
+            txType === 'buy' ? 'seller' : 'customer'
+          } record before proceeding`,
+          'amber'
+        );
+        return;
+      }
+      setStep('item');
+      return;
+    }
+
+    if (step === 'item') {
+      if (!itemData.title.trim()) {
+        showToast('Title Required', 'Please enter an item description or title', 'amber');
+        const titleEl = document.getElementById('item-title-input');
+        if (titleEl) focusAndScrollErrorField(titleEl);
+        return;
+      }
+
+      if (duplicateSerialMatch) {
+        const activeStatuses = ['Retail Floor', 'Vault Hold', 'InStock', 'Reserved', 'Pawned'];
+        if (activeStatuses.includes(duplicateSerialMatch.status)) {
+          showToast('Duplicate Serial', 'This serial/IMEI already belongs to active inventory.', 'error');
+          return;
+        }
+        if (duplicateSerialMatch.status === 'Flagged') {
+          showToast('Compliance Flag', 'This serial/IMEI is flagged under compliance review.', 'error');
+          return;
+        }
+      }
+
+      if (txType === 'existing') {
+        // Suggested retail placeholder if not set
+        if (Number(retailPriceInput) === 0) {
+          const defaultPrice = itemData.category === 'Fine Jewelry & Gold' ? 3500 : 1500;
+          setRetailPriceInput(String(defaultPrice));
+        }
+        setStep('valuation');
+      } else {
+        // Buy or Pawn valuation suggestion
+        const base = itemData.category === 'Fine Jewelry & Gold' ? 2000 : 1000;
+        setAgreedOffer(base);
+        setSuggestedRetail(
+          roundRetailPrice(
+            base * businessRules.defaultRetailMarkupMultiplier,
+            businessRules.retailRoundingMode
+          )
+        );
+        setStep('valuation');
+      }
+      return;
+    }
+
+    if (step === 'valuation') {
+      if (txType === 'existing') {
+        const retailVal = parseFloat(retailPriceInput);
+        if (isNaN(retailVal) || retailVal <= 0) {
+          showToast('Invalid Price', 'Please enter a valid retail selling price', 'amber');
+          const pEl = document.getElementById('valuation-retail-price-input');
+          if (pEl) focusAndScrollErrorField(pEl);
+          return;
+        }
+        setStep('location');
+      } else {
+        if (agreedOffer <= 0) {
+          showToast('Invalid Offer', 'Please specify a negotiated offer amount', 'amber');
+          const oEl = document.getElementById('valuation-agreed-offer-input');
+          if (oEl) focusAndScrollErrorField(oEl);
+          return;
+        }
+        setStep('deal');
+      }
+      return;
+    }
+
+    if (step === 'location') {
+      // Finalize Existing Stock
+      handleFinalizeExistingStock();
+      return;
+    }
+  }, [
+    step,
+    selectedIdentity,
+    txType,
+    itemData,
+    duplicateSerialMatch,
+    retailPriceInput,
+    agreedOffer,
+    businessRules,
+    handleFinalizeExistingStock,
+    showToast,
+  ]);
+
+  const handleBack = useCallback(() => {
+    if (step === 'customer') {
+      setStep('mode');
+      setTxType(null);
+    } else if (step === 'item') {
+      if (txType === 'existing') {
+        setStep('mode');
+        setTxType(null);
+      } else {
+        setStep('customer');
+      }
+    } else if (step === 'valuation') {
+      setStep('item');
+    } else if (step === 'location') {
+      setStep('valuation');
+    } else if (step === 'deal') {
+      setStep('valuation');
+    }
+  }, [step, txType]);
+
+  const resetWorkflow = useCallback(() => {
+    drafts.setDraftId(crypto.randomUUID());
+    setStep('mode');
+    setTxType(null);
+    setSelectedIdentity(null);
+    setIsCreatingIdentity(false);
+    setAgreedOffer(0);
+    setCostBasisInput('');
+    setRetailPriceInput('0');
+    setExistingStockStatus('Retail Floor');
+    setResult(null);
+    setBasketItems([]);
+    setItemData(INITIAL_ITEM_DATA);
+    images.resetImages();
+    marketCheck.resetMarketCheck();
+  }, [drafts, images, marketCheck]);
+
+  return {
+    // State
+    step,
+    setStep,
+    txType,
+    basketItems,
+    isFinalizing,
+    identitySearch,
+    setIdentitySearch,
+    selectedIdentity,
+    setSelectedIdentity,
+    isCreatingIdentity,
+    setIsCreatingIdentity,
+    newIdentity,
+    setNewIdentity,
+    itemData,
+    setItemData,
+    agreedOffer,
+    setAgreedOffer,
+    costBasisInput,
+    setCostBasisInput,
+    retailPriceInput,
+    setRetailPriceInput,
+    suggestedRetail,
+    setSuggestedRetail,
+    existingStockStatus,
+    setExistingStockStatus,
+    result,
+    pawnCalculations,
+    duplicateSerialMatch,
+    workflowSteps,
+    currentStepIndex,
+    filteredIdentities,
+
+    // Sub-hook states & actions
+    images,
+    drafts,
+    marketCheck,
+
+    // Context & Rules
+    businessRules,
+    hasPermission,
+    showToast,
+    setActiveContractModal,
+
+    // Workflow actions
+    actions: {
+      selectTxType: handleSelectTxType,
+      next: handleNext,
+      back: handleBack,
+      selectIdentity,
+      createIdentity: handleCreateIdentity,
+      explicitVerifyIdentity: handleExplicitVerifyIdentity,
+      clearSelectedIdentity: () => setSelectedIdentity(null),
+      addToBatch: handleAddToBatch,
+      finalizeExistingStock: handleFinalizeExistingStock,
+      finalize: handleFinalize,
+      reset: resetWorkflow,
+    },
+  };
+}
