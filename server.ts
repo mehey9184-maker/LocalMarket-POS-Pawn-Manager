@@ -1288,15 +1288,43 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       }
 
       const safeShopId = authoritativeShopId.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const { image, itemId = "item-01", purpose = "item" } = req.body;
-      const safePurpose = purpose === "logo" ? "logo" : "item";
+      const { image, itemId = "item-01", purpose } = req.body;
+
+      // 1. Explicit Purpose Parameter and Allowlist Verification
+      if (!purpose) {
+        return res.status(400).json({ error: "Missing required upload purpose parameter." });
+      }
+
+      if (purpose === "item") {
+        return res.status(403).json({
+          error: "Forbidden: Item photographs are local-only and must never be uploaded to cloud storage."
+        });
+      }
+
+      if (purpose !== "logo" && purpose !== "profile") {
+        return res.status(400).json({ error: `Invalid or unknown upload purpose: '${purpose}'.` });
+      }
+
+      // 2. Specific Authorization Rules for Profile Upload
+      const targetUserId = (itemId && itemId !== "avatar")
+        ? String(itemId).replace(/[^a-zA-Z0-9_-]/g, "_")
+        : auth.user.id;
+
+      if (purpose === "profile") {
+        const isSelf = targetUserId === auth.user.id;
+        const isAuthorizedManager = (auth.profile.role === "owner" || auth.profile.role === "admin" || auth.profile.role === "manager") && auth.profile.shop_id === authoritativeShopId;
+        
+        if (!isSelf && !isAuthorizedManager) {
+          return res.status(403).json({
+            error: "Forbidden: You are not authorized to upload a profile photo for another user."
+          });
+        }
+      }
 
       if (!image || typeof image !== "string") {
         return res.status(400).json({ error: "No image payload provided" });
       }
 
-      // Sanitize itemId to prevent path traversal
-      const safeItemId = String(itemId).replace(/[^a-zA-Z0-9_-]/g, "_");
       const imageId = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 
       let buffer: Buffer;
@@ -1317,9 +1345,10 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         buffer = Buffer.from(image, "base64");
       }
 
-      const storageKey = safePurpose === "logo"
+      // 3. Construct Standardized Cloud Paths
+      const storageKey = purpose === "logo"
         ? `shops/${safeShopId}/branding/logo/${imageId}.${ext}`
-        : `shops/${safeShopId}/items/${safeItemId}/${imageId}.${ext}`;
+        : `profiles/${safeShopId}/${targetUserId}/${imageId}.${ext}`;
 
       // Try Backblaze B2 first if configured
       const b2Result = await uploadToBackblazeB2(buffer, storageKey, mimeType);
@@ -1332,16 +1361,16 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       }
 
       // Local fallback storage
-      const localDir = safePurpose === "logo"
+      const localDir = purpose === "logo"
         ? path.join(UPLOAD_ROOT, "shops", safeShopId, "branding", "logo")
-        : path.join(UPLOAD_ROOT, "shops", safeShopId, "items", safeItemId);
+        : path.join(UPLOAD_ROOT, "profiles", safeShopId, targetUserId);
       fs.mkdirSync(localDir, { recursive: true });
       const localFilePath = path.join(localDir, `${imageId}.${ext}`);
       fs.writeFileSync(localFilePath, buffer);
 
-      const localUrl = safePurpose === "logo"
+      const localUrl = purpose === "logo"
         ? `/uploads/shops/${safeShopId}/branding/logo/${imageId}.${ext}`
-        : `/uploads/shops/${safeShopId}/items/${safeItemId}/${imageId}.${ext}`;
+        : `/uploads/profiles/${safeShopId}/${targetUserId}/${imageId}.${ext}`;
       return res.json({
         imageUrl: localUrl,
         storageKey,
