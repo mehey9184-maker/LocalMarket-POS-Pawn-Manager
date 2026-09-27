@@ -204,6 +204,73 @@ export const OperationProgressScreen: React.FC<OperationProgressScreenProps> = (
               </div>
             </div>
 
+            {/* Step-by-step Activity List showing failed step */}
+            {state.steps.length > 0 && (
+              <div className="py-2 space-y-3.5 border-y border-stone-100 my-4">
+                {state.steps.map((step) => {
+                  const isComplete = step.status === 'complete';
+                  const isActive = step.status === 'active';
+                  const isError = step.status === 'error';
+                  const isPending = step.status === 'pending';
+
+                  return (
+                    <div
+                      key={step.id}
+                      className={`flex items-start gap-3.5 transition-all duration-200 ${
+                        isPending ? 'opacity-40' : 'opacity-100'
+                      }`}
+                    >
+                      {/* Step Icon */}
+                      <div className="pt-0.5 shrink-0">
+                        {isComplete && (
+                          <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                          </div>
+                        )}
+                        {isActive && (
+                          <div className="w-5 h-5 rounded-full bg-[#C85A32]/15 text-[#C85A32] flex items-center justify-center">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          </div>
+                        )}
+                        {isError && (
+                          <div className="w-5 h-5 rounded-full bg-red-100 text-red-700 flex items-center justify-center">
+                            <AlertTriangle className="w-3 h-3" />
+                          </div>
+                        )}
+                        {isPending && (
+                          <div className="w-5 h-5 rounded-full border border-stone-300 flex items-center justify-center">
+                            <Circle className="w-1.5 h-1.5 fill-stone-300 text-transparent" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Step Label & Optional Detail */}
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className={`text-sm tracking-tight leading-snug ${
+                            isActive
+                              ? 'font-bold text-stone-900'
+                              : isComplete
+                              ? 'font-medium text-stone-800'
+                              : isError
+                              ? 'font-medium text-red-700'
+                              : 'font-normal text-stone-500'
+                          }`}
+                        >
+                          {step.label}
+                        </p>
+                        {step.detail && (
+                          <p className={`text-xs mt-0.5 font-mono truncate ${isError ? 'text-red-600' : 'text-stone-500'}`}>
+                            {step.detail}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {state.isOffline && (
               <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-600">
                 <p className="font-semibold text-stone-800">Local Integrity Safeguard</p>

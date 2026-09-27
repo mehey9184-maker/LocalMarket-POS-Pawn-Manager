@@ -298,18 +298,14 @@ export const Sell: React.FC = () => {
       isOffline: !isOnline,
       steps: [
         { id: 'prep', label: 'Preparing sale', detail: `${cart.length} item${cart.length > 1 ? 's' : ''} in basket` },
-        { id: 'payment', label: `Processing ${tenderLabel} payment`, detail: `Tendered: R ${finalAmount.toFixed(2)}` },
-        { id: 'checkout', label: isOnline ? 'Completing sale transaction' : 'Saving sale transaction locally' },
-        { id: 'receipt', label: receiptType === 'whatsapp' ? `Preparing WhatsApp slip for ${customerMobile || normalizedPhone}` : 'Preparing printable receipt' },
+        { id: 'checkout', label: isOnline ? 'Completing sale transaction' : 'Saving sale transaction locally', detail: `Tender: ${tenderLabel} R ${finalAmount.toFixed(2)}` },
+        { id: 'receipt', label: receiptType === 'whatsapp' ? `Preparing WhatsApp slip for ${customerMobile || normalizedPhone}` : 'Preparing receipt' },
         { id: 'confirm', label: 'Sale confirmed' }
       ],
       execute: async (runner) => {
-        // 1. Preparation & payment info validation complete immediately
+        // 1. Preparation step completes after validating cart & payment input
         runner.startStep('prep');
         runner.completeStep('prep');
-
-        runner.startStep('payment');
-        runner.completeStep('payment');
 
         // 2. Real atomic checkout execution
         runner.startStep('checkout');
@@ -325,7 +321,7 @@ export const Sell: React.FC = () => {
         runner.startStep('receipt');
         runner.completeStep('receipt');
 
-        // 4. Sale confirmed
+        // 4. Confirmation
         runner.startStep('confirm');
         runner.completeStep('confirm');
 
