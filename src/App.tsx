@@ -22,6 +22,7 @@ import { AccountPicker } from './components/auth/AccountPicker';
 import { ScannerModal } from './components/modals/ScannerModal';
 import { ReceiptModal } from './components/modals/ReceiptModal';
 import { ContractModal } from './components/modals/ContractModal';
+import { HelpAndInfoFAB } from './components/HelpAndInfoFAB';
 
 import { CompositeProvider } from './context/CompositeProvider';
 
@@ -96,6 +97,9 @@ const MainLayout: React.FC = () => {
 
       {/* Operational Feedback Toast */}
       <Toast />
+
+      {/* Global Help & Info Button */}
+      <HelpAndInfoFAB />
     </div>
   );
 };
