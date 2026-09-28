@@ -717,6 +717,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             // Apply validated current-shop shopProfile / businessRules state ONLY after successful local restore.
             if (data.shopProfile) {
               setShopProfile(data.shopProfile);
+              const shopId = currentUserProfile?.shop_id || data.shopProfile.id;
+              if (shopId) {
+                localStorage.setItem(`lm_shop_profile_${shopId}`, JSON.stringify(data.shopProfile));
+              }
             }
             if (data.businessRules) {
               const rulesRes = await updateBusinessRules(data.businessRules, 'Restored from device backup file');
