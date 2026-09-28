@@ -1078,3 +1078,20 @@ Performance:
 The purpose of intelligent assistance is not to make LocalMarket look sophisticated.
 
 The purpose is to make the shop worker's day easier.
+
+
+50. GLOBAL HELP & INFO FLOATING ACTION BUTTON (FAB)
+---------------------------------------------------
+To support workers contextually and reinforce the "helpful coworker" philosophy, the application features a persistent Help & Info Floating Action Button (FAB).
+
+Key characteristics:
+- Location & Style: A small, circular terracotta button anchored to the bottom-right corner of the viewport.
+- Visibility: Shown during normal operational tasks (e.g., Home, Sell, Add Stock, Inventory, Customers, Vault, SAPS Compliance Register).
+- Excluded Screens: Hidden from non-operational screens, including login, owner/staff onboarding, and Profile/Settings/admin configuration screens.
+- Tabs & Progressive Disclosure: Opens a quiet, tabbed panel with three areas:
+  * Context Guide: Contextual tips matched to the active workspace (e.g., POS register guidance emphasizing that customer details are optional).
+  * NCR & SAPS: Statutory reference summaries (Second-Hand Goods Act, NCR pledge contract terms, vault holding rules).
+  * Diagnostics: Real-time terminal network status (online/offline), sync queue stats, and cashier role profile details.
+- Branding & Platform Info: Displays subtle product metadata (application version sourced directly from package.json) and "Powered by LocalEats" attribution, keeping the shop brand dominant while remaining reachable for support.
+- Non-Intrusive: Designed purely for educational guidance and basic diagnostics. It is completely read-only, does not interfere with working controls, and does not serve as a second navigation system or documentation-heavy feature.
+

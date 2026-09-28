@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
+import packageJson from '../../package.json';
 import { 
   HelpCircle, 
   X, 
@@ -88,7 +89,7 @@ export const HelpAndInfoFAB: React.FC = () => {
           description: 'A rapid, unified interface to ring up customer sales and process payments.',
           tips: [
             'Scan a barcode or type a SKU/title to search and add stock items directly.',
-            'Link a registered customer to the transaction to track loyalty or credit.',
+            'Customer details are optional when needed for a receipt, warranty, or follow-up.',
             'Accept multiple forms of payment, then complete the transaction to issue receipts.'
           ]
         };
@@ -412,7 +413,7 @@ export const HelpAndInfoFAB: React.FC = () => {
 
                 {/* Unboxed Metadata Footer with typographic separators */}
                 <div className="text-[10px] text-gray-400 text-center pt-3 border-t border-gray-50 flex items-center justify-center gap-2">
-                  <span>LocalMarket POS v1.0.4</span>
+                  <span>LocalMarket POS v{packageJson.version}</span>
                   <span>·</span>
                   <span>Branch Secure</span>
                   <span>·</span>
