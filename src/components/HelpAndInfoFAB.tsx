@@ -99,7 +99,7 @@ export const HelpAndInfoFAB: React.FC = () => {
           description: 'The single entry point to bring new goods into your shop inventory.',
           tips: [
             'Existing Stock: Add items already owned by the business without customer records.',
-            'Buy from Person: Acquire second-hand goods outright from verified individuals.',
+            'Buy from Person: Buy second-hand goods from the seller and retain the required transaction information.',
             'Pawn: Accept valuable collateral to secure a statutory 30-day interest-bearing loan.',
             'Enter a South African ID to instantly find existing seller/customer profiles.'
           ]
@@ -288,7 +288,7 @@ export const HelpAndInfoFAB: React.FC = () => {
                     Regulatory Compliance Guide
                   </h4>
                   <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-                    LocalMarket is customized to adhere precisely to South African statutory requirements.
+                    An operational guide to how LocalMarket organizes required transactions and records.
                   </p>
                 </div>
 
@@ -297,9 +297,9 @@ export const HelpAndInfoFAB: React.FC = () => {
                     <div className="flex gap-2 items-start">
                       <div className="w-1.5 h-1.5 bg-[#C85A32] rounded-full mt-1.5 shrink-0" />
                       <div>
-                        <span className="text-xs font-semibold text-gray-800">Second-Hand Goods Act 06 of 2009</span>
+                        <span className="text-xs font-semibold text-gray-800">BUY FROM PERSON</span>
                         <p className="text-[11px] text-gray-500 mt-0.5 leading-normal">
-                          All acquired inventory (outright buy or pawn) must retain full details of the seller, physical address verification, and ID.
+                          LocalMarket keeps the seller and transaction information required for this intake workflow.
                         </p>
                       </div>
                     </div>
@@ -307,9 +307,9 @@ export const HelpAndInfoFAB: React.FC = () => {
                     <div className="flex gap-2 items-start">
                       <div className="w-1.5 h-1.5 bg-[#C85A32] rounded-full mt-1.5 shrink-0" />
                       <div>
-                        <span className="text-xs font-semibold text-gray-800">NCR Pledge Contract Regulations</span>
+                        <span className="text-xs font-semibold text-gray-800">PAWN</span>
                         <p className="text-[11px] text-gray-500 mt-0.5 leading-normal">
-                          Pawn loans are statutory agreements with a fixed 30-day redemption duration. Interest rates are regulated and capped to protect consumers.
+                          LocalMarket keeps the customer, loan, collateral and required compliance records together.
                         </p>
                       </div>
                     </div>
@@ -317,9 +317,9 @@ export const HelpAndInfoFAB: React.FC = () => {
                     <div className="flex gap-2 items-start">
                       <div className="w-1.5 h-1.5 bg-[#C85A32] rounded-full mt-1.5 shrink-0" />
                       <div>
-                        <span className="text-xs font-semibold text-gray-800">Vault Hold Period Lock</span>
+                        <span className="text-xs font-semibold text-gray-800">VAULT</span>
                         <p className="text-[11px] text-gray-500 mt-0.5 leading-normal">
-                          Collateral must remain safely held in the Vault. It cannot be sold or put on the shop floor before formal loan forfeit occurs.
+                          Pledged collateral remains controlled until the applicable loan process allows it to move to the next stage.
                         </p>
                       </div>
                     </div>
