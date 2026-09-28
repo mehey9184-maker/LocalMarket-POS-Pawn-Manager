@@ -13,6 +13,7 @@ interface AuthContextType {
   role: UserRole;
   shopId: string | null;
   isLoading: boolean;
+  isProfileLoading: boolean;
   isOwner: boolean;
   isManager: boolean;
   isSeniorCashier: boolean;
@@ -60,6 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [users, setUsers] = useState<ProfileRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [managerElevation, setManagerElevation] = useState(false);
   const [isAccountPickerOpen, setIsAccountPickerOpen] = useState(false);
 
@@ -76,43 +78,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Request sequencers for safe asynchronous commits (Generation Guard)
   const profileRequestSeq = useRef(0);
   const staffRequestSeq = useRef(0);
+  const activeProfileUserId = useRef<string | null>(null);
+  const inFlightProfilePromise = useRef<Promise<void> | null>(null);
 
   const isSwitchingRef = useRef(false);
   isSwitchingRef.current = switchState !== 'idle';
 
   const switchOperationRef = useRef(false);
 
-  const fetchProfile = async (userId: string) => {
-    const requestId = ++profileRequestSeq.current;
-    try {
-      const p = await profilesApi.getProfileById(userId);
-      
-      // Check generation validity
-      if (requestId !== profileRequestSeq.current) return;
-      
-      // Verify the authenticated user is still the same before committing
-      const currentUser = await authApi.getUser();
-      if (!currentUser || currentUser.id !== userId) return;
-
-      setProfile(p);
-
-      if (p?.shop_id) {
-        const staffRequestId = ++staffRequestSeq.current;
-        const allStaff = await profilesApi.getProfilesByShop(p.shop_id);
-        
-        if (staffRequestId !== staffRequestSeq.current) return;
-        setUsers(allStaff);
-      }
-    } catch (err) {
-      console.warn('Failed to load profile for user:', userId, err);
-      if (profileRequestSeq.current === requestId) {
-        setProfile(null);
-      }
+  const fetchProfile = (userId: string): Promise<void> => {
+    // Single-flight deduplication: if a profile request is already in-flight for this exact userId,
+    // share the existing promise to prevent competing fetches and generation invalidations.
+    if (inFlightProfilePromise.current && activeProfileUserId.current === userId) {
+      return inFlightProfilePromise.current;
     }
+
+    const requestId = ++profileRequestSeq.current;
+    activeProfileUserId.current = userId;
+    setIsProfileLoading(true);
+
+    const promise = (async () => {
+      try {
+        const p = await profilesApi.getProfileById(userId);
+        
+        // Check generation validity
+        if (requestId !== profileRequestSeq.current) return;
+        
+        // Verify the authenticated user is still the same before committing
+        const currentUser = await authApi.getUser();
+        if (!currentUser || currentUser.id !== userId) return;
+
+        setProfile(p);
+
+        if (p?.shop_id) {
+          const staffRequestId = ++staffRequestSeq.current;
+          const allStaff = await profilesApi.getProfilesByShop(p.shop_id);
+          
+          if (staffRequestId !== staffRequestSeq.current) return;
+          setUsers(allStaff);
+        }
+      } catch (err) {
+        console.warn('Failed to load profile for user:', userId, err);
+        if (profileRequestSeq.current === requestId) {
+          setProfile(null);
+        }
+      } finally {
+        if (profileRequestSeq.current === requestId) {
+          setIsProfileLoading(false);
+          inFlightProfilePromise.current = null;
+        }
+      }
+    })();
+
+    inFlightProfilePromise.current = promise;
+    return promise;
   };
 
   const refreshProfile = async () => {
     if (user?.id) {
+      inFlightProfilePromise.current = null;
       await fetchProfile(user.id);
     }
   };
@@ -177,15 +201,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const newUser = newSession?.user ?? null;
           setUser(newUser);
           if (newUser?.id && !isSwitchingRef.current) {
+            inFlightProfilePromise.current = null;
             fetchProfile(newUser.id);
           }
           break;
         }
         case 'SIGNED_OUT': {
           activeToken = null;
+          activeProfileUserId.current = null;
+          inFlightProfilePromise.current = null;
           setSession(null);
           setUser(null);
           setProfile(null);
+          setIsProfileLoading(false);
           setManagerElevation(false);
           break;
         }
@@ -219,9 +247,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } else if (activeToken) {
           activeToken = null;
+          activeProfileUserId.current = null;
+          inFlightProfilePromise.current = null;
           setSession(null);
           setUser(null);
           setProfile(null);
+          setIsProfileLoading(false);
         }
       }
     };
@@ -246,9 +277,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } else if (activeToken) {
         activeToken = null;
+        activeProfileUserId.current = null;
+        inFlightProfilePromise.current = null;
         setSession(null);
         setUser(null);
         setProfile(null);
+        setIsProfileLoading(false);
       }
     };
 
@@ -357,6 +391,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    profileRequestSeq.current++;
+    staffRequestSeq.current++;
+    activeProfileUserId.current = null;
+    inFlightProfilePromise.current = null;
+    setIsProfileLoading(false);
     try {
       const { terminalService } = await import('../services/terminalService');
       await terminalService.clearLocalSession();
@@ -367,6 +406,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSession(null);
     setUser(null);
     setProfile(null);
+    setIsProfileLoading(false);
     setManagerElevation(false);
     setSwitchState('idle');
     setSwitchTarget(null);
@@ -401,6 +441,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Increment sequencer so any running background fetchProfile is canceled/ignored
     profileRequestSeq.current++;
     staffRequestSeq.current++;
+    activeProfileUserId.current = targetStaffId;
+    inFlightProfilePromise.current = null;
+    setIsProfileLoading(true);
 
     setSwitchState('loading_profile');
     try {
@@ -439,6 +482,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const currentUser = await authApi.getUser();
       setUser(currentUser);
       setProfile(freshProfile);
+      setIsProfileLoading(false);
 
       setSwitchState('acquiring_terminal');
 
@@ -511,6 +555,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true };
 
     } catch (err: any) {
+      setIsProfileLoading(false);
       console.error("Account switch step completion failed:", err);
       const errMsg = err?.message || 'Failed to complete account switch';
       setSwitchState('error');
@@ -649,6 +694,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       role: rawRole,
       shopId,
       isLoading, 
+      isProfileLoading,
       isOwner,
       isManager, 
       isSeniorCashier,

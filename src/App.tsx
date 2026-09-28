@@ -30,11 +30,13 @@ import { useAuth } from './context/AuthContext';
 
 const MainLayout: React.FC = () => {
   const { activeTab, setActiveTab } = useApp();
-  const { user, profile, isLoading: authLoading, isSwitchingAccount } = useAuth();
+  const { user, profile, isLoading: authLoading, isProfileLoading, isSwitchingAccount } = useAuth();
 
   // Session-based navigation enforcement
   React.useEffect(() => {
-    if (authLoading || isSwitchingAccount) return;
+    // Guard against routing during auth initialization, profile hydration, or account switching.
+    // An already-configured shop must NEVER evaluate !hasShop while profile is still resolving.
+    if (authLoading || (user && isProfileLoading) || isSwitchingAccount) return;
 
     const isEmailConfirmed = user?.email_confirmed_at || user?.confirmed_at;
     const hasShop = profile?.shop_id;
@@ -50,9 +52,9 @@ const MainLayout: React.FC = () => {
     } else if (!user && activeTab !== 'auth') {
       setActiveTab('auth');
     }
-  }, [user, authLoading, activeTab, setActiveTab, profile, isSwitchingAccount]);
+  }, [user, authLoading, isProfileLoading, activeTab, setActiveTab, profile, isSwitchingAccount]);
 
-  if (authLoading) {
+  if (authLoading || (user && isProfileLoading)) {
     return (
       <div className="h-screen w-screen bg-[#F5F6F8] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">

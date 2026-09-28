@@ -18,6 +18,7 @@ import { runOfflineQueueSyncTests } from './offlineQueueSync.test';
 import { runInventoryPaginationTests } from './inventoryPagination.test';
 import { runImageStoragePolicyTests } from './imageStoragePolicy.test';
 import { runBackupIsolationTests } from './backupIsolation.test';
+import { runStartupHydrationTests } from './startupHydration.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -39,6 +40,7 @@ export async function runAllTests() {
   await runImageStoragePolicyTests();
   await runBackupIsolationTests();
   await runTerminalSessionTests();
+  await runStartupHydrationTests();
   runIntelligentAssistanceTests();
   await runResumableWorkTests();
   runPrintingTests();

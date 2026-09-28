@@ -5,7 +5,7 @@ export type ItemCondition = 'Mint' | 'Excellent' | 'Good' | 'Fair' | 'Damaged';
 export type ItemStatus = 'Vault Hold' | 'Retail Floor' | 'Sold' | 'Redeemed' | 'Reserved' | 'Flagged' | 'InStock' | 'Forfeited' | 'Pending Forfeit' | 'Returned' | 'Reversed';
 export type LoanStatus = 'Active' | 'Extended' | 'Redeemed' | 'Forfeited' | 'Archived' | 'Pending Forfeit';
 export type PaymentMethod = 'cash' | 'card' | 'eft' | 'snapscan';
-export type ReceiptDelivery = 'thermal' | 'whatsapp' | 'sms';
+export type ReceiptDelivery = 'thermal' | 'whatsapp' | 'sms' | 'none';
 
 export interface RsaIdScanResult {
   idNumber: string;

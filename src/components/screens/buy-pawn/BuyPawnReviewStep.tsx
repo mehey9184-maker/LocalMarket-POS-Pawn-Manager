@@ -174,9 +174,13 @@ export const BuyPawnReviewStep: React.FC<BuyPawnReviewStepProps> = ({
               <FileText className="w-6 h-6" />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-gray-900">SAPS Form 21 Ready</h4>
+              <h4 className="text-xs font-bold text-gray-900">
+                {txType === 'buy' ? 'Statutory Register Intake' : 'Regulated Pledge Record'}
+              </h4>
               <p className="text-xs text-gray-500 mt-0.5">
-                Finalizing will assign asset tags, record the transaction in the statutory register, and print receipts.
+                {txType === 'buy'
+                  ? 'Finalizing assigns asset tags, records the transaction in the statutory register, and generates transaction documentation.'
+                  : 'Finalizing assigns asset tags, records the loan and collateral in the statutory register, and generates pawn contract documentation.'}
               </p>
             </div>
           </div>

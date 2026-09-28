@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
+import { useSync } from '../../context/SyncContext';
 import { PaymentMethod, ReceiptDelivery, InventoryItem } from '../../types';
 import { validateAndNormalizeSaPhone } from '../../utils/phoneValidator';
 import { focusAndScrollErrorField } from '../../utils/errorNavigator';
@@ -16,17 +17,15 @@ import {
   Banknote,
   CheckCircle2,
   X,
-  ChevronRight,
   Plus,
   Minus,
   ShoppingCart,
   Zap,
-  Info,
   Smartphone,
   Printer,
   AlertTriangle,
-  Lock,
-  Loader2
+  Loader2,
+  MapPin
 } from 'lucide-react';
 
 const CartItemRow: React.FC<{ 
@@ -52,16 +51,7 @@ const CartItemRow: React.FC<{
     setIsEditingPrice(false);
   };
 
-  const getBadgeStyle = () => {
-    switch (ci.item.acquisitionType) {
-      case 'Existing Stock':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'Buy':
-        return 'bg-orange-50 text-[#C85A32] border-[#C85A32]/20';
-      default:
-        return 'bg-gray-100 text-gray-700 border-gray-200';
-    }
-  };
+  const effectivePrice = (ci.overridePrice ?? ci.item.retailPrice) * ci.quantity;
 
   return (
     <motion.div
@@ -90,11 +80,6 @@ const CartItemRow: React.FC<{
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           <span className="text-[10px] font-mono text-gray-500 font-semibold">{ci.item.sku}</span>
-          {ci.item.acquisitionType && (
-            <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold border ${getBadgeStyle()}`}>
-              {ci.item.acquisitionType}
-            </span>
-          )}
         </div>
       </div>
 
@@ -118,26 +103,22 @@ const CartItemRow: React.FC<{
             }`}
             title={canEditPrice ? 'Click to override retail price (Manager / Pricing permission)' : 'Retail Selling Price (Fixed)'}
           >
-            R {((ci.overridePrice ?? ci.item.retailPrice) * ci.quantity).toLocaleString()}
+            R {effectivePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         )}
 
-        {ci.item.acquisitionType ? (
-          <span className="text-[10px] font-mono font-bold text-gray-500 bg-white border border-gray-200 px-2 py-0.5 rounded-lg" title="Unique item — quantity is 1">
-            Qty: 1
-          </span>
-        ) : (
+        {!ci.item.acquisitionType && (
           <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-1 py-0.5">
             <button 
               onClick={() => onUpdateQuantity(ci.item.id, ci.quantity - 1)}
-              className="text-gray-400 hover:text-gray-700 p-0.5"
+              className="text-gray-400 hover:text-gray-700 p-0.5 cursor-pointer"
             >
               <Minus className="w-2.5 h-2.5" />
             </button>
             <span className="text-[11px] font-bold text-gray-800 font-mono px-1">{ci.quantity}</span>
             <button 
               onClick={() => onUpdateQuantity(ci.item.id, ci.quantity + 1)}
-              className="text-gray-400 hover:text-gray-700 p-0.5"
+              className="text-gray-400 hover:text-gray-700 p-0.5 cursor-pointer"
             >
               <Plus className="w-2.5 h-2.5" />
             </button>
@@ -147,7 +128,8 @@ const CartItemRow: React.FC<{
 
       <button 
         onClick={() => onRemove(ci.item.id)}
-        className="p-1.5 text-gray-400 hover:text-red-500 transition"
+        className="p-1.5 text-gray-400 hover:text-red-500 transition cursor-pointer"
+        title="Remove item"
       >
         <Trash2 className="w-3.5 h-3.5" />
       </button>
@@ -167,11 +149,13 @@ export const Sell: React.FC = () => {
     completeCheckout,
     showToast,
     setIsScannerModalOpen,
-    isOnline
+    shopProfile
   } = useApp();
 
   const { hasPermission, isOwner, isManager } = useAuth();
+  const { isOnline, syncStatus } = useSync();
   const canEditPrice = hasPermission('pricing') || isOwner || isManager;
+  const canSellReserved = isOwner || isManager || hasPermission('inventory');
   const saleProgress = useOperationProgress();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -181,10 +165,10 @@ export const Sell: React.FC = () => {
   const [receiptType, setReceiptType] = useState<ReceiptDelivery>('thermal');
   const [customerMobile, setCustomerMobile] = useState<string>('');
   const [mobileError, setMobileError] = useState<string | null>(null);
-  const [isInputFocused, setIsInputFocused] = useState(true);
-  const isSubmittingRef = useRef(false);
   
+  const isCheckingOutRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const cashInputRef = useRef<HTMLInputElement>(null);
   const mobileInputRef = useRef<HTMLInputElement>(null);
 
   const handleProtectedPriceUpdate = (itemId: string, newPrice: number) => {
@@ -210,11 +194,19 @@ export const Sell: React.FC = () => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return floorItems.slice(0, 16);
 
-    return floorItems.filter(item => 
-      item.title.toLowerCase().includes(q) ||
-      item.sku.toLowerCase().includes(q) ||
-      (item.serialOrImei && item.serialOrImei.toLowerCase().includes(q))
-    ).slice(0, 24);
+    const queryWords = q.split(/\s+/);
+
+    return floorItems.filter(item => {
+      const targetText = [
+        item.title,
+        item.sku,
+        item.serialOrImei || '',
+        item.brand || '',
+        item.model || ''
+      ].join(' ').toLowerCase();
+
+      return queryWords.every(word => targetText.includes(word));
+    }).slice(0, 24);
   }, [floorItems, searchQuery]);
 
   const total = useMemo(() => {
@@ -224,43 +216,78 @@ export const Sell: React.FC = () => {
   const numTendered = parseFloat(cashTendered) || 0;
   const changeDue = Math.max(0, numTendered - total);
 
+  const isVatRegistered = Boolean(shopProfile?.vat_number && shopProfile.vat_number.trim().length > 0);
+  const vatRate = isVatRegistered ? 0.15 : 0;
+  const vatAmount = isVatRegistered ? (total - (total / (1 + vatRate))) : 0;
+  const subtotal = total - vatAmount;
+
+  const handleTileClick = (item: InventoryItem) => {
+    if (item.status === 'Reserved' && !canSellReserved) {
+      showToast('Reserved Stock', 'Reserved stock needs Manager or Owner approval.', 'amber');
+      return;
+    }
+    addToCart(item);
+    setSearchQuery('');
+    searchInputRef.current?.focus();
+  };
+
   const handleBarcodeSearchSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     const cleanQuery = searchQuery.trim();
-    if (!cleanQuery || isSubmittingRef.current) return;
+    if (!cleanQuery || isCheckingOutRef.current) return;
 
-    isSubmittingRef.current = true;
-
-    const exactMatch = floorItems.find(
+    // Check across all inventory for exact SKU, serial, or pawn ticket
+    const anyExactMatch = inventory.find(
       item =>
         item.sku.toLowerCase() === cleanQuery.toLowerCase() ||
         (item.serialOrImei && item.serialOrImei.toLowerCase() === cleanQuery.toLowerCase()) ||
-        (item.pawnTicketId && item.pawnTicketId.toLowerCase() === `#${cleanQuery.toLowerCase()}`)
+        (item.pawnTicketId && item.pawnTicketId.toLowerCase() === `#${cleanQuery.toLowerCase()}`) ||
+        (item.pawnTicketId && item.pawnTicketId.toLowerCase() === cleanQuery.toLowerCase())
     );
 
-    if (exactMatch) {
-      addToCart(exactMatch);
-      setSearchQuery('');
-      showToast('Item Scanned', `Added ${exactMatch.title} (${exactMatch.sku}) to basket.`, 'success');
+    if (anyExactMatch) {
+      if (anyExactMatch.status === 'Sold' || anyExactMatch.status === 'Redeemed') {
+        showToast('Item Unavailable', `Item found (${anyExactMatch.title}) — currently Sold.`, 'amber');
+      } else if (anyExactMatch.status === 'Vault Hold') {
+        showToast('Item Unavailable', `Item found (${anyExactMatch.title}) — currently in Vault.`, 'amber');
+      } else if (anyExactMatch.status === 'Reserved') {
+        if (!canSellReserved) {
+          showToast('Reserved Stock', 'Reserved stock needs Manager or Owner approval.', 'amber');
+        } else {
+          addToCart(anyExactMatch);
+          setSearchQuery('');
+        }
+      } else if (anyExactMatch.status === 'Retail Floor') {
+        addToCart(anyExactMatch);
+        setSearchQuery('');
+      } else {
+        showToast('Item Unavailable', `Item found (${anyExactMatch.title}) — currently ${anyExactMatch.status}.`, 'amber');
+      }
     } else if (filteredItems.length === 1) {
-      addToCart(filteredItems[0]);
-      setSearchQuery('');
-      showToast('Item Scanned', `Added ${filteredItems[0].title} (${filteredItems[0].sku}) to basket.`, 'success');
-    } else if (filteredItems.length === 0) {
+      const item = filteredItems[0];
+      if (item.status === 'Reserved' && !canSellReserved) {
+        showToast('Reserved Stock', 'Reserved stock needs Manager or Owner approval.', 'amber');
+      } else {
+        addToCart(item);
+        setSearchQuery('');
+      }
+    } else if (filteredItems.length > 1) {
+      showToast('Multiple Matches', `${filteredItems.length} matches — choose one.`, 'info');
+    } else {
       showToast('Item Not Found', `No available stock matching "${cleanQuery}"`, 'error');
     }
-    
-    setTimeout(() => {
-      isSubmittingRef.current = false;
-      searchInputRef.current?.focus();
-    }, 100);
+
+    searchInputRef.current?.focus();
   };
 
   const handleCompleteSale = async () => {
-    if (cart.length === 0 || isProcessing) return;
+    if (isCheckingOutRef.current || cart.length === 0 || isProcessing) return;
     
     if (selectedTender === 'cash' && numTendered < total) {
-      showToast('Payment Incomplete', `Cash tendered (R${numTendered}) is less than total R${total}`, 'amber');
+      showToast('Payment Incomplete', `Cash tendered (R ${numTendered.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) is less than total R ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'amber');
+      if (cashInputRef.current) {
+        focusAndScrollErrorField(cashInputRef.current);
+      }
       return;
     }
 
@@ -287,6 +314,7 @@ export const Sell: React.FC = () => {
       setMobileError(null);
     }
 
+    isCheckingOutRef.current = true;
     setIsProcessing(true);
 
     const tenderLabel = selectedTender === 'cash' ? 'Cash' : selectedTender === 'card' ? 'Card' : 'EFT';
@@ -294,20 +322,19 @@ export const Sell: React.FC = () => {
 
     await saleProgress.runSequence({
       title: 'Finalizing Sale',
-      subtitle: `${cart.length} item${cart.length > 1 ? 's' : ''} • R ${total.toFixed(2)}`,
+      subtitle: `${cart.length} item${cart.length > 1 ? 's' : ''} • R ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       isOffline: !isOnline,
+      holdDurationMs: 0, // No artificial ceremony delay
       steps: [
         { id: 'prep', label: 'Preparing sale', detail: `${cart.length} item${cart.length > 1 ? 's' : ''} in basket` },
-        { id: 'checkout', label: isOnline ? 'Completing sale transaction' : 'Saving sale transaction locally', detail: `Tender: ${tenderLabel} R ${finalAmount.toFixed(2)}` },
+        { id: 'checkout', label: isOnline ? 'Completing sale transaction' : 'Saving sale transaction locally', detail: `Tender: ${tenderLabel} R ${finalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
         { id: 'receipt', label: receiptType === 'whatsapp' ? `Preparing WhatsApp slip for ${customerMobile || normalizedPhone}` : 'Preparing receipt' },
         { id: 'confirm', label: 'Sale confirmed' }
       ],
       execute: async (runner) => {
-        // 1. Preparation step completes after validating cart & payment input
         runner.startStep('prep');
         runner.completeStep('prep');
 
-        // 2. Real atomic checkout execution
         runner.startStep('checkout');
         const sale = await completeCheckout(
           selectedTender, 
@@ -317,30 +344,31 @@ export const Sell: React.FC = () => {
         );
         runner.completeStep('checkout');
 
-        // 3. Receipt preparation
         runner.startStep('receipt');
         runner.completeStep('receipt');
 
-        // 4. Confirmation
         runner.startStep('confirm');
         runner.completeStep('confirm');
 
         return sale;
       },
       successTitle: 'Sale Complete',
-      successMessage: `R ${total.toFixed(2)} received. ${changeDue > 0 ? `Change: R ${changeDue.toFixed(2)}. ` : ''}${receiptType === 'whatsapp' ? 'WhatsApp slip sent.' : 'Receipt ready.'}`,
+      successMessage: (sale) => `R ${sale.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} received. ${sale.change > 0 ? `Change: R ${sale.change.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. ` : ''}${receiptType === 'whatsapp' ? 'WhatsApp message ready.' : receiptType === 'thermal' ? 'Receipt ready to print.' : 'Sale complete.'}`,
       onSuccess: () => {
         setCashTendered('');
         setCustomerMobile('');
         setMobileError(null);
         setSearchQuery('');
+        isCheckingOutRef.current = false;
         setIsProcessing(false);
         searchInputRef.current?.focus();
       },
       onError: () => {
+        isCheckingOutRef.current = false;
         setIsProcessing(false);
       },
       onClose: () => {
+        isCheckingOutRef.current = false;
         setIsProcessing(false);
       }
     });
@@ -351,12 +379,17 @@ export const Sell: React.FC = () => {
       if (e.key === 'F1') { e.preventDefault(); setSelectedTender('cash'); }
       if (e.key === 'F2') { e.preventDefault(); setSelectedTender('card'); }
       if (e.key === 'F3') { e.preventDefault(); setSelectedTender('eft'); }
-      if (e.key === 'Escape') { e.preventDefault(); clearCart(); }
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleCompleteSale(); }
+      // Escape no longer clears basket per safety requirements
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { 
+        e.preventDefault(); 
+        if (!isCheckingOutRef.current && !isProcessing) {
+          handleCompleteSale(); 
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, selectedTender, numTendered, total, receiptType, customerMobile]);
+  }, [cart, selectedTender, numTendered, total, receiptType, customerMobile, isProcessing]);
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row bg-[#F5F6F8] overflow-hidden">
@@ -376,7 +409,7 @@ export const Sell: React.FC = () => {
             <div className="flex items-center gap-2">
               <button 
                 onClick={() => setIsScannerModalOpen(true)}
-                className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition flex items-center gap-2 text-xs font-semibold"
+                className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition flex items-center gap-2 text-xs font-semibold cursor-pointer"
                 title="Open Camera Scanner"
               >
                 <Camera className="w-3.5 h-3.5" />
@@ -392,39 +425,61 @@ export const Sell: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setIsInputFocused(true)}
-              onBlur={() => setIsInputFocused(false)}
-              placeholder="Scan item or search by name / SKU..."
+              placeholder="Scan item or search by name, SKU, brand, model..."
               className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#C85A32] focus:bg-white rounded-xl pl-11 pr-4 py-3 text-sm text-gray-900 font-mono placeholder:text-gray-400 transition-all outline-none"
             />
           </form>
+          {filteredItems.length > 1 && searchQuery.trim() !== '' && (
+            <p className="text-[11px] text-gray-500 font-medium px-1">
+              {filteredItems.length} matches — choose one or press Enter for exact match.
+            </p>
+          )}
         </div>
 
         {/* Results Grid */}
         <div className="flex-1 overflow-y-auto p-5 no-scrollbar">
           {filteredItems.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredItems.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => { addToCart(item); setSearchQuery(''); searchInputRef.current?.focus(); }}
-                  className="bg-white border border-gray-200 hover:border-[#C85A32] rounded-xl p-3.5 flex flex-col text-left transition group shadow-xs hover:shadow-sm active:scale-98 cursor-pointer"
-                >
-                  <div className="aspect-square rounded-lg bg-gray-100 mb-2.5 overflow-hidden border border-gray-100">
-                    <img src={item.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-xs font-semibold text-gray-900 truncate">{item.title}</h3>
-                    <p className="text-[10px] font-mono text-gray-400 font-semibold">{item.sku}</p>
-                  </div>
-                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between mt-2">
-                    <span className="text-sm font-bold text-gray-900 font-mono">
-                      R {item.retailPrice.toLocaleString()}
-                    </span>
-                    <Plus className="w-4 h-4 text-[#C85A32]" />
-                  </div>
-                </button>
-              ))}
+              {filteredItems.map(item => {
+                const isReserved = item.status === 'Reserved';
+                const itemLocation = item.stockLocation || item.vaultLocation;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleTileClick(item)}
+                    className={`bg-white border rounded-xl p-3.5 flex flex-col text-left transition group shadow-xs hover:shadow-sm active:scale-98 cursor-pointer ${
+                      isReserved ? 'border-amber-300 bg-amber-50/40 hover:border-amber-500' : 'border-gray-200 hover:border-[#C85A32]'
+                    }`}
+                  >
+                    <div className="aspect-square rounded-lg bg-gray-100 mb-2.5 overflow-hidden border border-gray-100 relative">
+                      <img src={item.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="" />
+                      {isReserved && (
+                        <span className="absolute top-2 right-2 text-[9px] px-1.5 py-0.5 rounded font-bold bg-amber-200 text-amber-900 border border-amber-300 shadow-xs">
+                          Reserved
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-xs font-semibold text-gray-900 truncate">{item.title}</h3>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] font-mono text-gray-400 font-semibold">{item.sku}</span>
+                      </div>
+                      {itemLocation && (
+                        <div className="flex items-center gap-1 text-[10px] text-gray-500 mt-1">
+                          <MapPin className="w-3 h-3 text-gray-400 shrink-0" />
+                          <span className="truncate">{itemLocation}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="pt-2 border-t border-gray-100 flex items-center justify-between mt-2">
+                      <span className="text-sm font-bold text-gray-900 font-mono">
+                        R {item.retailPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      <Plus className="w-4 h-4 text-[#C85A32]" />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-2 py-12">
@@ -440,7 +495,6 @@ export const Sell: React.FC = () => {
             <span className="flex items-center gap-1.5"><kbd className="bg-gray-100 border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-gray-700 shadow-2xs">F1</kbd> Cash</span>
             <span className="flex items-center gap-1.5"><kbd className="bg-gray-100 border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-gray-700 shadow-2xs">F2</kbd> Card</span>
             <span className="flex items-center gap-1.5"><kbd className="bg-gray-100 border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-gray-700 shadow-2xs">F3</kbd> EFT</span>
-            <span className="flex items-center gap-1.5"><kbd className="bg-gray-100 border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-gray-700 shadow-2xs">Esc</kbd> Clear Cart</span>
           </div>
           <span className="flex items-center gap-1.5"><kbd className="bg-gray-100 border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-gray-700 shadow-2xs">Ctrl+Enter</kbd> Finalise</span>
         </div>
@@ -454,9 +508,22 @@ export const Sell: React.FC = () => {
             <ShoppingCart className="w-4 h-4 text-gray-500" />
             <h2 className="text-xs font-bold text-gray-800 uppercase tracking-wider">Sale Basket</h2>
           </div>
-          <span className="px-2 py-0.5 rounded bg-gray-200/70 text-[11px] font-mono font-semibold text-gray-700">
-            {cart.length} {cart.length === 1 ? 'item' : 'items'}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="px-2 py-0.5 rounded bg-gray-200/70 text-[11px] font-mono font-semibold text-gray-700">
+              {cart.length} {cart.length === 1 ? 'item' : 'items'}
+            </span>
+            {cart.length > 0 && (
+              <button
+                onClick={clearCart}
+                disabled={isProcessing}
+                className="text-xs font-medium text-gray-500 hover:text-red-600 transition flex items-center gap-1 cursor-pointer"
+                title="Clear Basket"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Clear</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Cart Items */}
@@ -487,23 +554,47 @@ export const Sell: React.FC = () => {
 
         {/* Checkout Controls */}
         <div className="p-5 bg-[#F8F9FA] border-t border-gray-200 space-y-4">
+          {/* Quiet Offline / Sync Status */}
+          {(!isOnline || syncStatus.isSyncing || syncStatus.pendingCount > 0) && (
+            <div className={`p-2 rounded-lg text-[11px] flex items-center gap-2 border ${
+              !isOnline 
+                ? 'bg-amber-50 border-amber-200 text-amber-800' 
+                : syncStatus.isSyncing 
+                  ? 'bg-blue-50 border-blue-200 text-blue-800' 
+                  : 'bg-amber-50 border-amber-200 text-amber-800'
+            }`}>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${!isOnline ? 'bg-amber-500 animate-pulse' : syncStatus.isSyncing ? 'bg-blue-500 animate-pulse' : 'bg-amber-500'}`} />
+              <span>
+                {!isOnline 
+                  ? 'Working offline — sales are saved on this computer and will sync automatically.' 
+                  : syncStatus.isSyncing 
+                    ? 'Syncing…' 
+                    : `${syncStatus.pendingCount} change${syncStatus.pendingCount > 1 ? 's' : ''} waiting to sync.`}
+              </span>
+            </div>
+          )}
+
           <div className="space-y-2 text-xs">
-            <div className="flex justify-between items-baseline text-gray-500">
-              <span>Subtotal (excl. VAT)</span>
-              <span className="font-mono font-semibold text-gray-800">
-                R {(total / 1.15).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            </div>
-            <div className="flex justify-between items-baseline text-gray-500">
-              <span>VAT (15%)</span>
-              <span className="font-mono font-semibold text-gray-800">
-                R {(total - (total / 1.15)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            </div>
+            {isVatRegistered && (
+              <>
+                <div className="flex justify-between items-baseline text-gray-500">
+                  <span>Subtotal (excl. VAT)</span>
+                  <span className="font-mono font-semibold text-gray-800">
+                    R {subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="flex justify-between items-baseline text-gray-500">
+                  <span>VAT (15%)</span>
+                  <span className="font-mono font-semibold text-gray-800">
+                    R {vatAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </>
+            )}
             <div className="flex justify-between items-baseline pt-2 border-t border-gray-200">
               <span className="text-sm font-bold text-gray-900">Total Due</span>
               <span className="text-2xl font-bold text-[#C85A32] font-mono">
-                R {total.toLocaleString()}
+                R {total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
           </div>
@@ -519,7 +610,7 @@ export const Sell: React.FC = () => {
                 <button
                   key={method.id}
                   onClick={() => setSelectedTender(method.id as any)}
-                  className={`py-2.5 rounded-xl border flex flex-col items-center gap-1 transition ${
+                  className={`py-2.5 rounded-xl border flex flex-col items-center gap-1 transition cursor-pointer ${
                     selectedTender === method.id 
                       ? 'border-[#C85A32] bg-[#FDF0EA] text-[#C85A32] font-bold shadow-xs' 
                       : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
@@ -535,7 +626,7 @@ export const Sell: React.FC = () => {
               <motion.div 
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
-                className="space-y-2 overflow-hidden"
+                className="space-y-2.5 overflow-hidden"
               >
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
@@ -543,6 +634,7 @@ export const Sell: React.FC = () => {
                     <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-mono text-xs">R</span>
                       <input 
+                        ref={cashInputRef}
                         type="number" 
                         value={cashTendered}
                         onChange={e => setCashTendered(e.target.value)}
@@ -555,11 +647,33 @@ export const Sell: React.FC = () => {
                     <label className="text-[10px] font-semibold text-gray-500 uppercase">Change Due</label>
                     <div className="w-full bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 flex items-center justify-end">
                       <span className="text-sm font-bold text-emerald-700 font-mono">
-                        R {changeDue.toFixed(2)}
+                        R {changeDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
                 </div>
+
+                {total > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setCashTendered(Math.ceil(total).toString())}
+                      className="px-2.5 py-1 rounded bg-white border border-gray-200 text-xs font-mono font-bold text-gray-700 hover:bg-gray-50 transition cursor-pointer"
+                    >
+                      Exact R {Math.ceil(total).toLocaleString()}
+                    </button>
+                    {[50, 100, 200, 500, 1000].filter(n => n >= total && n !== Math.ceil(total)).slice(0, 3).map(val => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setCashTendered(val.toString())}
+                        className="px-2.5 py-1 rounded bg-white border border-gray-200 text-xs font-mono font-bold text-[#C85A32] hover:bg-[#FDF0EA] transition cursor-pointer"
+                      >
+                        R {val.toLocaleString()}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -575,7 +689,7 @@ export const Sell: React.FC = () => {
                     setReceiptType(rt.id as any);
                     if (rt.id !== 'whatsapp') setMobileError(null);
                   }}
-                  className={`flex-1 py-1.5 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1.5 transition ${
+                  className={`flex-1 py-1.5 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                     receiptType === rt.id ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-800'
                   }`}
                  >
@@ -627,17 +741,9 @@ export const Sell: React.FC = () => {
 
           <div className="flex gap-2 pt-1">
             <button 
-              onClick={clearCart}
-              disabled={isProcessing}
-              className="p-3 rounded-xl border border-gray-200 text-gray-500 hover:text-red-500 hover:border-red-300 disabled:opacity-50 transition"
-              title="Clear Basket [Esc]"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-            <button 
               onClick={handleCompleteSale}
               disabled={isProcessing || cart.length === 0}
-              className="flex-1 py-3 rounded-xl bg-[#C85A32] disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold text-xs shadow-xs hover:bg-[#A94725] transition flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-3 rounded-xl bg-[#C85A32] disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold text-xs shadow-xs hover:bg-[#A94725] transition flex items-center justify-center gap-2 cursor-pointer"
             >
               {isProcessing ? (
                 <>

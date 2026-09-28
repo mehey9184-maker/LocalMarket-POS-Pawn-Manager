@@ -5,12 +5,12 @@ import { useAuth } from '../context/AuthContext';
 import { Loader2, MonitorOff, WifiOff, RefreshCw, LogOut } from 'lucide-react';
 
 export const TerminalGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, isSwitchingAccount } = useAuth();
+  const { user, isProfileLoading, isSwitchingAccount } = useAuth();
   const { session, conflict, isLoading, isOfflineRevalidation, switchTerminal, reconnectTerminal } = useTerminalSession();
 
   if (!user || isSwitchingAccount) return <>{children}</>;
 
-  if (isLoading) {
+  if (isProfileLoading || isLoading) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-stone-50/90 backdrop-blur-md z-[100]">
         <div className="bg-white border border-stone-200 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl space-y-4">

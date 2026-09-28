@@ -1095,3 +1095,43 @@ Key characteristics:
 - Branding & Platform Info: Displays subtle product metadata (application version sourced directly from package.json) and "Powered by LocalEats" attribution, keeping the shop brand dominant while remaining reachable for support.
 - Non-Intrusive: Designed purely for educational guidance and basic diagnostics. It is completely read-only, does not interfere with working controls, and does not serve as a second navigation system or documentation-heavy feature.
 
+
+51. SENIOR CASHIER SELL / POS UX REFINEMENTS
+------------------------------------------
+To maximize counter speed and psychological safety during retail sales, the Point of Sale (POS) interface incorporates the following design and workflow rules:
+- Escape Safety: Escape does not clear the basket, preventing accidental multi-item loss. Basket clearing is explicit via a dedicated header control.
+- Double Checkout Prevention: Submission guards prevent duplicate checkout requests via mouse or keyboard shortcuts.
+- Reserved Stock Guardrails: Reserved stock restrictions are highlighted with calm amber treatments and surfaced prior to selection for unauthorized staff.
+- Robust Local Search: Search recognizes titles, brands, models, SKUs, and serial/IMEI numbers with multi-word support. Ambiguous search results prompt the cashier to choose.
+- Cash Efficiency: Compact quick-tender options (Exact, R50, R100, R200, R500, R1000) reduce typing. Cash underpayment focuses and scrolls to the Tendered field with a clear warning.
+- Tax Transparency: VAT display reflects the shop's actual VAT-registration state (hiding VAT lines for non-VAT registered stores).
+- Honest Receipt Workflows: Receipt statuses are truthful (no false delivery claims), and "No Receipt" skips unnecessary receipt steps cleanly.
+- Zero Ceremony Progress: Successful sale processing executes without artificial ceremony delay.
+- Quiet Status: Unobtrusive offline and pending sync status indicators keep workers informed without technical jargon.
+
+
+52. ADD STOCK TRUST & WORKFLOW RELIABILITY HARDENING
+-----------------------------------------------------
+To reinforce trust, worker agency, and regulatory accuracy during stock intake, the Add Stock and Intake flows adhere to the following rules:
+- No Invented Starting Financial Values: LocalMarket never auto-fills arbitrary initial money amounts (e.g. R1,000, R2,000, R1,500, R3,500) into payout, retail, or loan fields. Starting values are 0 or empty until the cashier explicitly enters them or chooses to apply genuine Market Check intelligence.
+- Transparent Valuation Attribution: Valuation interfaces honestly identify the origin of all financial figures:
+  * Genuine Market Guidance: When Market Check intelligence is executed, suggested buy/retail ranges are clearly marked with their empirical market source.
+  * Counter-Negotiated Amounts: Cashier-entered payouts or loan principals are identified as entered at the counter, never falsely labelled as calculated by an automated condition algorithm.
+  * Standard Markup Transparency: Projected retail prices are calculated directly from the shop's defined retail markup multiplier rule.
+- Honest Compliance & Documentation Copy: Intake review screens accurately describe transaction logging without premature or inaccurate promises (e.g., removing false claims that finalizing "will print receipts").
+- Truthful Hardware Dispatch: Completion screens dispatch labels directly to connected thermal hardware or print drivers without falsely asserting that an asset label is "printed" prior to hardware execution.
+- Mode-Specific Actions: Existing Stock workflows remain strictly item-only, omitting customer/seller notifications. WhatsApp notifications are offered exclusively for real customer/seller transactions with valid, normalized phone numbers.
+- Zero Ceremony Intake: Finalizing stock, purchases, and pawn loans executes immediately without artificial ceremony delay (holdDurationMs: 0).
+- Strict Three-Mode Integrity: Existing Stock (shop-owned, no seller, no customer, no pawn loan), Buy From Person (real seller, statutory second-hand register), and Pawn (real customer, loan agreement, collateral vault custody) remain distinct and immutable.
+ 
+ 
+53. STARTUP HYDRATION & SHOP SETUP ROUTING INTEGRITY
+-----------------------------------------------------
+To eliminate startup visual flashes and prevent race conditions when evaluating store identity on boot, LocalMarket enforces the following startup and routing invariants:
+- Explicit Profile Hydration State: `AuthContext` provides an explicit `isProfileLoading` state tracking active profile resolution for authenticated users. The state transitions to true whenever an authenticated user profile is actively fetching or synchronizing, and false only when resolution finishes or the user logs out.
+- Startup Race Elimination & Single-Flight Deduplication: Initial authentication (`initAuth`) and Supabase state subscription (`INITIAL_SESSION`) coordinate through single-flight promise deduplication. Concurrent requests for the same operator identity share the active promise, preventing duplicate fetches, premature aborts, or conflicting generation increments.
+- Zero-Flash Routing Invariant: Routing guards (`App.tsx`, `MainLayout`) and session guards (`TerminalGuard`) hold during `isProfileLoading`. An authenticated operator's store profile is never evaluated as missing (`!profile?.shop_id`) while profile hydration is in progress. The UI displays the clean loading state and transitions directly to `Home` for configured stores, completely preventing brief flashes of the "Establish Your Shop Identity" (Shop Setup) page.
+- Authentic Onboarding Preservation: Genuine first-time users without an assigned store identity reach the Shop Setup onboarding screen reliably once profile hydration completes with `profile?.shop_id` confirmed falsy.
+- Non-Destructive Logout & Switch Cleanup: Logging out or initiating account switches resets `isProfileLoading` and clears request sequencers cleanly, preventing hung loaders or stale profile states.
+
+

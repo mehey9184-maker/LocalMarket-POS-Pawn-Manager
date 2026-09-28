@@ -546,7 +546,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     if (res.success && res.sale) {
-      setActiveReceiptModal(res.sale);
+      if (receiptType !== 'none') {
+        setActiveReceiptModal(res.sale);
+      } else {
+        setActiveReceiptModal(null);
+      }
       setCart([]);
       showToast('Sale Complete', `Receipt ${res.sale.receiptNumber} generated`, 'success');
       return res.sale;

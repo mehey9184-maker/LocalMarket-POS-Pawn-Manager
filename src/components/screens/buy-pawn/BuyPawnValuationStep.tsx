@@ -177,28 +177,65 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
             <div className="space-y-4">
               <div className="p-5 rounded-xl bg-gray-50 border border-gray-200 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-gray-500">Recommended Payout</span>
-                  <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-200">
-                    <TrendingUp className="w-3 h-3" />
-                    <span>Fair Estimate</span>
-                  </div>
+                  <span className="text-xs font-semibold text-gray-500">
+                    {marketCheckData?.pricing?.suggestedBuyLow != null && marketCheckData?.pricing?.suggestedBuyHigh != null
+                      ? 'Market Valuation Guidance'
+                      : 'Transaction Value'}
+                  </span>
+                  {marketCheckData?.pricing?.suggestedBuyLow != null && marketCheckData?.pricing?.suggestedBuyHigh != null ? (
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-200">
+                      <TrendingUp className="w-3 h-3" />
+                      <span>Market Check</span>
+                    </div>
+                  ) : agreedOffer > 0 ? (
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[11px] font-semibold border border-blue-200">
+                      <span>Cashier Entered</span>
+                    </div>
+                  ) : null}
                 </div>
-                <p className="text-3xl font-bold text-gray-900 font-mono">
-                  R {agreedOffer.toLocaleString()}
-                </p>
-                <p className="text-xs text-gray-500 border-t border-gray-200 pt-2">
-                  Based on {itemData.condition} condition for {itemData.category}
-                </p>
+
+                {marketCheckData?.pricing?.suggestedBuyLow != null && marketCheckData?.pricing?.suggestedBuyHigh != null ? (
+                  <>
+                    <p className="text-2xl font-bold text-gray-900 font-mono">
+                      R {marketCheckData.pricing.suggestedBuyLow.toLocaleString()} – R {marketCheckData.pricing.suggestedBuyHigh.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-gray-500 border-t border-gray-200 pt-2">
+                      Suggested range based on recent market pricing for {itemData.title || itemData.category}.
+                    </p>
+                  </>
+                ) : agreedOffer > 0 ? (
+                  <>
+                    <p className="text-3xl font-bold text-gray-900 font-mono">
+                      R {agreedOffer.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-gray-500 border-t border-gray-200 pt-2">
+                      {txType === 'buy' ? 'Cash payout' : 'Loan principal'} negotiated at the counter.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-gray-500 italic">
+                      No amount entered yet. Enter the negotiated {txType === 'buy' ? 'payout' : 'loan principal'} below, or run a Market Check.
+                    </p>
+                    <p className="text-xs text-gray-400 border-t border-gray-200 pt-2">
+                      LocalMarket does not invent starting figures.
+                    </p>
+                  </>
+                )}
               </div>
 
               {txType === 'buy' && (
                 <div className="p-4 rounded-xl bg-[#FDF0EA] border border-[#C85A32]/20 flex items-center justify-between">
                   <div>
                     <span className="text-xs font-semibold text-gray-700">Projected Retail Selling Price</span>
-                    <p className="text-xs text-gray-500">Calculated with standard markup</p>
+                    <p className="text-xs text-gray-500">
+                      {agreedOffer > 0
+                        ? `Calculated with standard ${(businessRules.defaultRetailMarkupMultiplier * 100 - 100).toFixed(0)}% markup`
+                        : 'Calculates automatically from negotiated payout'}
+                    </p>
                   </div>
                   <span className="text-lg font-bold text-[#C85A32] font-mono">
-                    R {suggestedRetail.toLocaleString()}
+                    R {suggestedRetail > 0 ? suggestedRetail.toLocaleString() : '0'}
                   </span>
                 </div>
               )}
@@ -206,7 +243,7 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
 
             <div className="space-y-4">
               <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Negotiated Final Amount (ZAR)
+                {txType === 'buy' ? 'Negotiated Payout (ZAR) *' : 'Agreed Loan Principal (ZAR) *'}
               </label>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-[#C85A32]">
@@ -215,24 +252,31 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
                 <input
                   id="valuation-agreed-offer-input"
                   type="number"
-                  value={agreedOffer}
+                  value={agreedOffer === 0 ? '' : agreedOffer}
                   onChange={(e) => {
-                    const val = Number(e.target.value);
+                    const raw = e.target.value;
+                    const val = raw === '' ? 0 : Math.max(0, Number(raw));
                     setAgreedOffer(val);
                     if (txType === 'buy') {
                       setSuggestedRetail(
-                        roundRetailPrice(
-                          val * businessRules.defaultRetailMarkupMultiplier,
-                          businessRules.retailRoundingMode
-                        )
+                        val > 0
+                          ? roundRetailPrice(
+                              val * businessRules.defaultRetailMarkupMultiplier,
+                              businessRules.retailRoundingMode
+                            )
+                          : 0
                       );
                     }
                   }}
+                  placeholder="0.00"
                   className="w-full bg-white border-2 border-[#C85A32] rounded-xl pl-10 pr-4 py-3.5 text-3xl font-bold text-gray-900 font-mono outline-none shadow-xs"
+                  autoFocus
                 />
               </div>
               <p className="text-xs text-gray-500 italic">
-                Confirm serial and asset state before proceeding to deal terms.
+                {txType === 'buy'
+                  ? 'Confirm agreed payout before reviewing deal terms.'
+                  : 'Confirm loan principal before reviewing pledge terms.'}
               </p>
             </div>
           </div>

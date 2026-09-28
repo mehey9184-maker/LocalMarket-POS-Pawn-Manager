@@ -4,7 +4,7 @@ import { TerminalSession } from '../types';
 import { useAuth } from '../context/AuthContext';
 
 export function useTerminalSession() {
-  const { user, profile, isSwitchingAccount } = useAuth();
+  const { user, profile, isProfileLoading, isSwitchingAccount } = useAuth();
   const [session, setSession] = useState<TerminalSession | null>(null);
   const [conflict, setConflict] = useState<{ active_session: any } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -19,7 +19,12 @@ export function useTerminalSession() {
       return;
     }
 
-    if (!user || !profile) {
+    if (user && isProfileLoading) {
+      // Profile is still hydrating; do not dismiss terminal loading or evaluate shop matching prematurely
+      return;
+    }
+
+    if (!user || !profile || !profile.shop_id) {
       if (currentSeq === initSeq.current) {
         setSession(null);
         setIsLoading(false);
@@ -141,7 +146,7 @@ export function useTerminalSession() {
         setIsLoading(false);
       }
     }
-  }, [user, profile, isSwitchingAccount]);
+  }, [user, profile, isProfileLoading, isSwitchingAccount]);
 
   useEffect(() => {
     checkAndInitialize();

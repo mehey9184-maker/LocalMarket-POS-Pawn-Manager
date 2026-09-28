@@ -50,7 +50,7 @@ const INITIAL_ITEM_DATA: ItemDraft = {
   imageUrl: '',
   stockLocation: 'Main Floor Display',
   internalNote: '',
-  sourceNote: 'Item was already owned by the shop before LocalMarket onboarding',
+  sourceNote: '',
 };
 
 const INITIAL_NEW_IDENTITY: NewIdentityDraft = {
@@ -60,6 +60,12 @@ const INITIAL_NEW_IDENTITY: NewIdentityDraft = {
   address: '',
   idType: 'RSA Smart ID',
 };
+
+export function isIgnoredSerialNumber(val: string): boolean {
+  const clean = val.trim().toLowerCase();
+  const ignored = ['n/a', 'na', 'none', 'unknown', 'nil', 'null', '-', '--', 'no serial', 'n.a', 'n.a.'];
+  return !clean || clean.length < 4 || ignored.includes(clean);
+}
 
 export function useBuyPawnWorkflow() {
   const { showToast, businessRules, shopProfile, setActiveContractModal, capturedRsaIdScan, isOnline } =
@@ -85,10 +91,10 @@ export function useBuyPawnWorkflow() {
   // Item Details State (Common to all flows)
   const [itemData, setItemData] = useState<ItemDraft>(INITIAL_ITEM_DATA);
 
-  // Valuation & Pricing State
+  // Valuation & Pricing State — No invented/guessed starting money
   const [agreedOffer, setAgreedOffer] = useState<number>(0); // Payout / Principal
   const [costBasisInput, setCostBasisInput] = useState<string>('');
-  const [retailPriceInput, setRetailPriceInput] = useState<string>('0');
+  const [retailPriceInput, setRetailPriceInput] = useState<string>('');
   const [suggestedRetail, setSuggestedRetail] = useState<number>(0);
   const [existingStockStatus, setExistingStockStatus] = useState<ItemStatus>('Retail Floor');
 
@@ -111,9 +117,21 @@ export function useBuyPawnWorkflow() {
     itemData,
     newIdentity,
     selectedIdentity,
+    agreedOffer,
+    suggestedRetail,
+    retailPriceInput,
+    costBasisInput,
+    existingStockStatus,
+    basketItems,
     setItemData,
     setNewIdentity,
     setSelectedIdentity,
+    setAgreedOffer,
+    setSuggestedRetail,
+    setRetailPriceInput,
+    setCostBasisInput,
+    setExistingStockStatus,
+    setBasketItems,
     setStep,
     setTxType,
     hasPermission,
@@ -185,11 +203,13 @@ export function useBuyPawnWorkflow() {
     };
   }, [txType, agreedOffer, businessRules]);
 
-  // Serial Number / IMEI duplicate check across store inventory
+  // Serial Number / IMEI duplicate check across store inventory (normalized for non-values)
   const duplicateSerialMatch = useMemo(() => {
     const sn = itemData.serialOrImei.trim();
-    if (!sn || sn.toUpperCase() === 'N/A' || sn.length < 4) return null;
-    return inventory.find((i) => i.serialOrImei && i.serialOrImei.toLowerCase() === sn.toLowerCase());
+    if (isIgnoredSerialNumber(sn)) return null;
+    return inventory.find(
+      (i) => i.serialOrImei && !isIgnoredSerialNumber(i.serialOrImei) && i.serialOrImei.toLowerCase() === sn.toLowerCase()
+    );
   }, [itemData.serialOrImei, inventory]);
 
   // Dynamic Stepper Configuration
@@ -233,16 +253,39 @@ export function useBuyPawnWorkflow() {
   }, [workflowSteps, step]);
 
   const filteredIdentities = useMemo(() => {
-    if (!identitySearch) return [];
-    const q = identitySearch.toLowerCase();
+    if (!identitySearch.trim()) return [];
+    const rawQ = identitySearch.trim().toLowerCase();
+    const cleanDigits = rawQ.replace(/\D/g, '');
+    const cleanId = rawQ.replace(/\s+/g, '');
     const source = txType === 'buy' ? sellers : customers;
+
     return source
-      .filter(
-        (c) =>
-          c.fullName.toLowerCase().includes(q) ||
-          c.idNumber.includes(q) ||
-          c.mobile.includes(q)
-      )
+      .filter((c) => {
+        // Name search
+        if (c.fullName.toLowerCase().includes(rawQ)) return true;
+
+        // ID number search (ignoring whitespace)
+        const cIdClean = c.idNumber.replace(/\s+/g, '').toLowerCase();
+        if (cIdClean.includes(cleanId)) return true;
+
+        // Phone search (normalize SA 0XXXXXXXXX and +27XXXXXXXXX)
+        if (cleanDigits.length >= 4) {
+          const cPhoneDigits = c.mobile.replace(/\D/g, '');
+          const qSignificant = cleanDigits.startsWith('27')
+            ? cleanDigits.slice(2)
+            : cleanDigits.startsWith('0')
+            ? cleanDigits.slice(1)
+            : cleanDigits;
+          const cSignificant = cPhoneDigits.startsWith('27')
+            ? cPhoneDigits.slice(2)
+            : cPhoneDigits.startsWith('0')
+            ? cPhoneDigits.slice(1)
+            : cPhoneDigits;
+          if (cSignificant.includes(qSignificant) || qSignificant.includes(cSignificant)) return true;
+        }
+
+        return false;
+      })
       .slice(0, 5);
   }, [txType, customers, sellers, identitySearch]);
 
@@ -426,6 +469,7 @@ export function useBuyPawnWorkflow() {
       title: 'Adding Stock Item',
       subtitle: `Registering ${itemData.title.trim() || 'Inventory Item'}`,
       isOffline: !isOnline,
+      holdDurationMs: 0,
       steps: [
         { id: 'prep', label: 'Preparing inventory record' },
         { id: 'media', label: itemData.imageUrl ? 'Preparing photography & catalog metadata' : 'Preparing catalog metadata' },
@@ -613,6 +657,7 @@ export function useBuyPawnWorkflow() {
         title: 'Completing Acquisition',
         subtitle: `Purchasing from ${seller.fullName}`,
         isOffline: !isOnline,
+        holdDurationMs: 0,
         steps: [
           { id: 'prep', label: 'Preparing acquisition & tags' },
           { id: 'compliance', label: `Preparing police compliance for ${seller.fullName}` },
@@ -888,6 +933,7 @@ export function useBuyPawnWorkflow() {
         title: 'Finalizing Pawn Loan',
         subtitle: `Intake for ${pCustomer.fullName}`,
         isOffline: !isOnline,
+        holdDurationMs: 0,
         steps: [
           { id: 'prep', label: 'Preparing loan agreement & vault tag' },
           { id: 'ncr', label: 'Applying business calculations & NCR rates' },
@@ -1240,22 +1286,10 @@ export function useBuyPawnWorkflow() {
       }
 
       if (txType === 'existing') {
-        // Suggested retail placeholder if not set
-        if (Number(retailPriceInput) === 0) {
-          const defaultPrice = itemData.category === 'Fine Jewelry & Gold' ? 3500 : 1500;
-          setRetailPriceInput(String(defaultPrice));
-        }
+        // Do not inject invented prices; cashier intentionally inputs retail price or applies Market Check
         setStep('valuation');
       } else {
-        // Buy or Pawn valuation suggestion
-        const base = itemData.category === 'Fine Jewelry & Gold' ? 2000 : 1000;
-        setAgreedOffer(base);
-        setSuggestedRetail(
-          roundRetailPrice(
-            base * businessRules.defaultRetailMarkupMultiplier,
-            businessRules.retailRoundingMode
-          )
-        );
+        // Do not inject invented payout/loan values; cashier intentionally inputs agreed amount or applies Market Check
         setStep('valuation');
       }
       return;
@@ -1273,7 +1307,13 @@ export function useBuyPawnWorkflow() {
         setStep('location');
       } else {
         if (agreedOffer <= 0) {
-          showToast('Invalid Offer', 'Please specify a negotiated offer amount', 'amber');
+          showToast(
+            'Amount Required',
+            txType === 'buy'
+              ? 'Please enter the negotiated payout amount'
+              : 'Please enter the agreed loan principal',
+            'amber'
+          );
           const oEl = document.getElementById('valuation-agreed-offer-input');
           if (oEl) focusAndScrollErrorField(oEl);
           return;

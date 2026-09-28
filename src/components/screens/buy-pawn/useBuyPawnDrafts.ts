@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { draftService } from '../../../services/draftService';
-import { WorkflowDraft, Customer, Seller, Permissions } from '../../../types';
-import { WorkflowStep, TxType, ItemDraft, NewIdentityDraft } from './buyPawnTypes';
+import { WorkflowDraft, Customer, Seller, Permissions, ItemStatus } from '../../../types';
+import { WorkflowStep, TxType, ItemDraft, NewIdentityDraft, BatchItem } from './buyPawnTypes';
 
 interface UseBuyPawnDraftsProps {
   user: any;
@@ -11,9 +11,21 @@ interface UseBuyPawnDraftsProps {
   itemData: ItemDraft;
   newIdentity: NewIdentityDraft;
   selectedIdentity: Customer | Seller | null;
+  agreedOffer: number;
+  suggestedRetail: number;
+  retailPriceInput: string;
+  costBasisInput: string;
+  existingStockStatus: ItemStatus;
+  basketItems: BatchItem[];
   setItemData: (data: ItemDraft) => void;
   setNewIdentity: (data: NewIdentityDraft) => void;
   setSelectedIdentity: (identity: Customer | Seller | null) => void;
+  setAgreedOffer: (val: number) => void;
+  setSuggestedRetail: (val: number) => void;
+  setRetailPriceInput: (val: string) => void;
+  setCostBasisInput: (val: string) => void;
+  setExistingStockStatus: (status: ItemStatus) => void;
+  setBasketItems: (items: BatchItem[]) => void;
   setStep: (step: WorkflowStep) => void;
   setTxType: (txType: TxType) => void;
   hasPermission: (permission: keyof Permissions) => boolean;
@@ -28,9 +40,21 @@ export function useBuyPawnDrafts({
   itemData,
   newIdentity,
   selectedIdentity,
+  agreedOffer,
+  suggestedRetail,
+  retailPriceInput,
+  costBasisInput,
+  existingStockStatus,
+  basketItems,
   setItemData,
   setNewIdentity,
   setSelectedIdentity,
+  setAgreedOffer,
+  setSuggestedRetail,
+  setRetailPriceInput,
+  setCostBasisInput,
+  setExistingStockStatus,
+  setBasketItems,
   setStep,
   setTxType,
   hasPermission,
@@ -42,7 +66,10 @@ export function useBuyPawnDrafts({
   useEffect(() => {
     if (user && shopId) {
       draftService.getActiveDrafts(user.id, shopId).then((drafts) => {
-        const relevant = drafts.filter((d) => d.workflowType === 'buy' || d.workflowType === 'pawn');
+        // Existing Stock, Buy, and Pawn drafts are all recoverable
+        const relevant = drafts.filter(
+          (d) => d.workflowType === 'buy' || d.workflowType === 'pawn' || d.workflowType === 'existing'
+        );
         setActiveDrafts(relevant);
       });
     }
@@ -57,12 +84,38 @@ export function useBuyPawnDrafts({
           userId: user.id,
           workflowType: txType,
           step: step,
-          payload: { itemData, newIdentity, selectedIdentity, txType },
+          payload: {
+            itemData,
+            newIdentity,
+            selectedIdentity,
+            txType,
+            agreedOffer,
+            suggestedRetail,
+            retailPriceInput,
+            costBasisInput,
+            existingStockStatus,
+            basketItems,
+          },
         });
       }
-    }, 2000);
+    }, 1500);
     return () => clearTimeout(timer);
-  }, [step, txType, itemData, newIdentity, selectedIdentity, draftId, user, shopId]);
+  }, [
+    step,
+    txType,
+    itemData,
+    newIdentity,
+    selectedIdentity,
+    agreedOffer,
+    suggestedRetail,
+    retailPriceInput,
+    costBasisInput,
+    existingStockStatus,
+    basketItems,
+    draftId,
+    user,
+    shopId,
+  ]);
 
   const handleContinueDraft = useCallback(
     (draft: WorkflowDraft) => {
@@ -85,13 +138,34 @@ export function useBuyPawnDrafts({
       setDraftId(draft.id);
       setTxType(draft.workflowType as TxType);
       setStep(draft.step as WorkflowStep);
-      setItemData(draft.payload.itemData);
-      setNewIdentity(draft.payload.newIdentity);
-      setSelectedIdentity(draft.payload.selectedIdentity);
+      if (draft.payload?.itemData) setItemData(draft.payload.itemData);
+      if (draft.payload?.newIdentity) setNewIdentity(draft.payload.newIdentity);
+      if (draft.payload?.selectedIdentity !== undefined) setSelectedIdentity(draft.payload.selectedIdentity);
+      if (draft.payload?.agreedOffer !== undefined) setAgreedOffer(draft.payload.agreedOffer);
+      if (draft.payload?.suggestedRetail !== undefined) setSuggestedRetail(draft.payload.suggestedRetail);
+      if (draft.payload?.retailPriceInput !== undefined) setRetailPriceInput(draft.payload.retailPriceInput);
+      if (draft.payload?.costBasisInput !== undefined) setCostBasisInput(draft.payload.costBasisInput);
+      if (draft.payload?.existingStockStatus) setExistingStockStatus(draft.payload.existingStockStatus);
+      if (draft.payload?.basketItems) setBasketItems(draft.payload.basketItems);
+
       setActiveDrafts([]);
       showToast('Draft Restored', 'Your previous work has been restored.', 'info');
     },
-    [hasPermission, setItemData, setNewIdentity, setSelectedIdentity, setStep, setTxType, showToast]
+    [
+      hasPermission,
+      setItemData,
+      setNewIdentity,
+      setSelectedIdentity,
+      setAgreedOffer,
+      setSuggestedRetail,
+      setRetailPriceInput,
+      setCostBasisInput,
+      setExistingStockStatus,
+      setBasketItems,
+      setStep,
+      setTxType,
+      showToast,
+    ]
   );
 
   const handleDiscardDraft = useCallback(
