@@ -11,10 +11,14 @@ interface BuyPawnValuationStepProps {
   itemData: ItemDraft;
   retailPriceInput: string;
   setRetailPriceInput: (val: string) => void;
+  isRetailPriceFromMarketCheck?: boolean;
+  setIsRetailPriceFromMarketCheck?: (val: boolean) => void;
   costBasisInput: string;
   setCostBasisInput: (val: string) => void;
   agreedOffer: number;
   setAgreedOffer: (val: number) => void;
+  isAgreedOfferFromMarketCheck?: boolean;
+  setIsAgreedOfferFromMarketCheck?: (val: boolean) => void;
   suggestedRetail: number;
   setSuggestedRetail: (val: number) => void;
   businessRules: any;
@@ -31,10 +35,14 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
   itemData,
   retailPriceInput,
   setRetailPriceInput,
+  isRetailPriceFromMarketCheck = false,
+  setIsRetailPriceFromMarketCheck,
   costBasisInput,
   setCostBasisInput,
   agreedOffer,
   setAgreedOffer,
+  isAgreedOfferFromMarketCheck = false,
+  setIsAgreedOfferFromMarketCheck,
   suggestedRetail,
   setSuggestedRetail,
   businessRules,
@@ -90,10 +98,20 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
             onRefresh={onRunMarketCheck}
             onApplySuggestedRetail={(retailVal) => {
               setRetailPriceInput(String(retailVal));
+              setIsRetailPriceFromMarketCheck?.(true);
             }}
             onApplySuggestedBuy={(buyLow, buyHigh) => {
               const midBuy = Math.round((buyLow + buyHigh) / 2);
               setAgreedOffer(midBuy);
+              setIsAgreedOfferFromMarketCheck?.(true);
+              if (txType === 'buy') {
+                setSuggestedRetail(
+                  roundRetailPrice(
+                    midBuy * businessRules.defaultRetailMarkupMultiplier,
+                    businessRules.retailRoundingMode
+                  )
+                );
+              }
             }}
           />
         )}
@@ -105,9 +123,17 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* RETAIL PRICE */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Retail Floor Price (ZAR) *
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  Retail Floor Price (ZAR) *
+                </label>
+                {isRetailPriceFromMarketCheck && parseFloat(retailPriceInput) > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-200">
+                    <TrendingUp className="w-3 h-3" />
+                    <span>From Market Check</span>
+                  </span>
+                )}
+              </div>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-[#C85A32]">
                   R
@@ -116,7 +142,10 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
                   id="valuation-retail-price-input"
                   type="number"
                   value={retailPriceInput}
-                  onChange={(e) => setRetailPriceInput(e.target.value)}
+                  onChange={(e) => {
+                    setIsRetailPriceFromMarketCheck?.(false);
+                    setRetailPriceInput(e.target.value);
+                  }}
                   className="w-full bg-[#F8F9FA] border-2 border-gray-200 focus:border-[#C85A32] focus:bg-white rounded-xl pl-9 pr-4 py-3 text-2xl font-bold text-gray-900 font-mono outline-none transition"
                   placeholder="0.00"
                   autoFocus
@@ -128,7 +157,7 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
             {/* OPTIONAL COST BASIS */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Cost Basis (ZAR, Optional)
+                Cost Basis (Optional)
               </label>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-gray-400">
@@ -142,7 +171,7 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
                   placeholder="0.00"
                 />
               </div>
-              <p className="text-xs text-gray-500">Historical acquisition cost if known, or leave 0.</p>
+              <p className="text-xs text-gray-500">Historical acquisition or purchase cost if known (leave blank if unknown).</p>
             </div>
           </div>
 
@@ -182,14 +211,19 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
                       ? 'Market Valuation Guidance'
                       : 'Transaction Value'}
                   </span>
-                  {marketCheckData?.pricing?.suggestedBuyLow != null && marketCheckData?.pricing?.suggestedBuyHigh != null ? (
+                  {agreedOffer > 0 && isAgreedOfferFromMarketCheck ? (
                     <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-200">
                       <TrendingUp className="w-3 h-3" />
-                      <span>Market Check</span>
+                      <span>From Market Check</span>
                     </div>
                   ) : agreedOffer > 0 ? (
                     <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[11px] font-semibold border border-blue-200">
                       <span>Cashier Entered</span>
+                    </div>
+                  ) : marketCheckData?.pricing?.suggestedBuyLow != null && marketCheckData?.pricing?.suggestedBuyHigh != null ? (
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-200">
+                      <TrendingUp className="w-3 h-3" />
+                      <span>Market Check</span>
                     </div>
                   ) : null}
                 </div>
@@ -242,9 +276,17 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
             </div>
 
             <div className="space-y-4">
-              <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                {txType === 'buy' ? 'Negotiated Payout (ZAR) *' : 'Agreed Loan Principal (ZAR) *'}
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  {txType === 'buy' ? 'Negotiated Payout (ZAR) *' : 'Agreed Loan Principal (ZAR) *'}
+                </label>
+                {isAgreedOfferFromMarketCheck && agreedOffer > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-200">
+                    <TrendingUp className="w-3 h-3" />
+                    <span>From Market Check</span>
+                  </span>
+                )}
+              </div>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-[#C85A32]">
                   R
@@ -254,6 +296,7 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
                   type="number"
                   value={agreedOffer === 0 ? '' : agreedOffer}
                   onChange={(e) => {
+                    setIsAgreedOfferFromMarketCheck?.(false);
                     const raw = e.target.value;
                     const val = raw === '' ? 0 : Math.max(0, Number(raw));
                     setAgreedOffer(val);

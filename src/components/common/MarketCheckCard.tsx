@@ -133,16 +133,6 @@ export const MarketCheckCard: React.FC<MarketCheckCardProps> = ({
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase font-mono ${getConfidenceBadgeClass(confidence)}`}>
             {confidence === 'Insufficient data' ? 'Low Data' : `${confidence} Confidence`}
           </span>
-          {onRefresh && (
-            <button
-              type="button"
-              onClick={onRefresh}
-              className="p-1 hover:bg-[#282828] rounded-lg text-gray-400 hover:text-white transition"
-              title="Refresh Market Intelligence"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
-          )}
         </div>
       </div>
 

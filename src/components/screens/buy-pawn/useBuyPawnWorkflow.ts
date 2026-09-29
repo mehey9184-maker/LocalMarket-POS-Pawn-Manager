@@ -93,8 +93,10 @@ export function useBuyPawnWorkflow() {
 
   // Valuation & Pricing State — No invented/guessed starting money
   const [agreedOffer, setAgreedOffer] = useState<number>(0); // Payout / Principal
+  const [isAgreedOfferFromMarketCheck, setIsAgreedOfferFromMarketCheck] = useState<boolean>(false);
   const [costBasisInput, setCostBasisInput] = useState<string>('');
   const [retailPriceInput, setRetailPriceInput] = useState<string>('');
+  const [isRetailPriceFromMarketCheck, setIsRetailPriceFromMarketCheck] = useState<boolean>(false);
   const [suggestedRetail, setSuggestedRetail] = useState<number>(0);
   const [existingStockStatus, setExistingStockStatus] = useState<ItemStatus>('Retail Floor');
 
@@ -593,7 +595,9 @@ export function useBuyPawnWorkflow() {
     // Reset item data for next entry
     setItemData(INITIAL_ITEM_DATA);
     setAgreedOffer(0);
+    setIsAgreedOfferFromMarketCheck(false);
     setRetailPriceInput('0');
+    setIsRetailPriceFromMarketCheck(false);
 
     showToast(
       'Item Added to Batch',
@@ -1368,8 +1372,10 @@ export function useBuyPawnWorkflow() {
     setSelectedIdentity(null);
     setIsCreatingIdentity(false);
     setAgreedOffer(0);
+    setIsAgreedOfferFromMarketCheck(false);
     setCostBasisInput('');
     setRetailPriceInput('0');
+    setIsRetailPriceFromMarketCheck(false);
     setExistingStockStatus('Retail Floor');
     setResult(null);
     setBasketItems([]);
@@ -1397,10 +1403,14 @@ export function useBuyPawnWorkflow() {
     setItemData,
     agreedOffer,
     setAgreedOffer,
+    isAgreedOfferFromMarketCheck,
+    setIsAgreedOfferFromMarketCheck,
     costBasisInput,
     setCostBasisInput,
     retailPriceInput,
     setRetailPriceInput,
+    isRetailPriceFromMarketCheck,
+    setIsRetailPriceFromMarketCheck,
     suggestedRetail,
     setSuggestedRetail,
     existingStockStatus,

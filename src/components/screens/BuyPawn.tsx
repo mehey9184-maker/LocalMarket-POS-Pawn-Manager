@@ -40,10 +40,14 @@ export const BuyPawn: React.FC = () => {
     duplicateSerialMatch,
     retailPriceInput,
     setRetailPriceInput,
+    isRetailPriceFromMarketCheck,
+    setIsRetailPriceFromMarketCheck,
     costBasisInput,
     setCostBasisInput,
     agreedOffer,
     setAgreedOffer,
+    isAgreedOfferFromMarketCheck,
+    setIsAgreedOfferFromMarketCheck,
     suggestedRetail,
     setSuggestedRetail,
     existingStockStatus,
@@ -213,10 +217,14 @@ export const BuyPawn: React.FC = () => {
                 itemData={itemData}
                 retailPriceInput={retailPriceInput}
                 setRetailPriceInput={setRetailPriceInput}
+                isRetailPriceFromMarketCheck={isRetailPriceFromMarketCheck}
+                setIsRetailPriceFromMarketCheck={setIsRetailPriceFromMarketCheck}
                 costBasisInput={costBasisInput}
                 setCostBasisInput={setCostBasisInput}
                 agreedOffer={agreedOffer}
                 setAgreedOffer={setAgreedOffer}
+                isAgreedOfferFromMarketCheck={isAgreedOfferFromMarketCheck}
+                setIsAgreedOfferFromMarketCheck={setIsAgreedOfferFromMarketCheck}
                 suggestedRetail={suggestedRetail}
                 setSuggestedRetail={setSuggestedRetail}
                 businessRules={businessRules}
@@ -249,6 +257,7 @@ export const BuyPawn: React.FC = () => {
                 selectedIdentity={selectedIdentity}
                 basketItems={basketItems}
                 agreedOffer={agreedOffer}
+                isAgreedOfferFromMarketCheck={isAgreedOfferFromMarketCheck}
                 pawnCalculations={pawnCalculations}
                 businessRules={businessRules}
                 isFinalizing={isFinalizing}

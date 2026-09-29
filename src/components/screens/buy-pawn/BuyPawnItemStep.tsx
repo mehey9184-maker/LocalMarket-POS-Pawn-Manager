@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { InventoryItem, ItemCondition } from '../../../types';
 import { getProductSuggestion } from '../../../utils/suggestionEngine';
-import { formatBytes } from '../../../utils/imageProcessor';
 import { ItemDraft, TxType, PhotoUploadStatus, PhotoMeta } from './buyPawnTypes';
 
 interface BuyPawnItemStepProps {
@@ -273,7 +272,7 @@ export const BuyPawnItemStep: React.FC<BuyPawnItemStepProps> = ({
             />
 
             <div
-              onClick={() => photoUploadStatus !== 'optimizing' && photoFileInputRef.current?.click()}
+              onClick={() => photoUploadStatus !== 'optimizing' && (itemData.imageUrl ? onOpenCamera() : onOpenCamera())}
               className={`flex-1 rounded-2xl bg-gray-50 border-2 border-dashed ${
                 itemData.imageUrl ? 'border-emerald-300' : 'border-gray-200 hover:border-[#C85A32]'
               } flex flex-col items-center justify-center p-3 overflow-hidden relative min-h-[180px] cursor-pointer transition group`}
@@ -281,7 +280,7 @@ export const BuyPawnItemStep: React.FC<BuyPawnItemStepProps> = ({
               {photoUploadStatus === 'optimizing' ? (
                 <div className="flex flex-col items-center gap-2 text-[#C85A32]">
                   <Loader2 className="w-7 h-7 animate-spin" />
-                  <span className="text-xs font-semibold">Optimizing photograph...</span>
+                  <span className="text-xs font-semibold">Processing photograph...</span>
                 </div>
               ) : itemData.imageUrl ? (
                 <div className="relative w-full h-full min-h-[160px]">
@@ -290,47 +289,17 @@ export const BuyPawnItemStep: React.FC<BuyPawnItemStepProps> = ({
                     alt="Item Intake Preview"
                     className="w-full h-full object-cover rounded-xl"
                   />
-                  {/* Visual status pills */}
+                  {/* Local Photo Badge */}
                   <div className="absolute top-2 left-2 flex flex-col gap-1">
-                    {photoUploadStatus === 'uploading' ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-black/70 backdrop-blur-md text-amber-300 border border-amber-300/30 shadow-xs flex items-center gap-1">
-                        <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                        <span>Syncing to B2 in background</span>
-                      </span>
-                    ) : photoUploadStatus === 'synced' ||
-                      (!itemData.imageUrl.startsWith('data:image/') &&
-                        !itemData.imageUrl.includes('local/') &&
-                        (itemData.imageUrl.startsWith('http://') || itemData.imageUrl.startsWith('https://'))) ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600/90 backdrop-blur-md text-white shadow-xs flex items-center gap-1">
-                        <CheckCircle2 className="w-2.5 h-2.5" />
-                        <span>Cloud Asset</span>
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-700/90 backdrop-blur-md text-white shadow-xs">
-                        Local Operational Photo
-                      </span>
-                    )}
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-800/85 backdrop-blur-md text-white shadow-xs flex items-center gap-1">
+                      <Camera className="w-2.5 h-2.5" />
+                      <span>Item Photo (Local)</span>
+                    </span>
                   </div>
 
-                  {/* Compression savings badge */}
-                  {photoMeta?.compressedSize && (
-                    <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-lg text-[10px] font-mono font-medium bg-black/75 backdrop-blur-md text-stone-200">
-                      {formatBytes(photoMeta.compressedSize)}
-                      {photoMeta.originalSize && photoMeta.originalSize > photoMeta.compressedSize && (
-                        <span className="text-emerald-400 ml-1">
-                          (-
-                          {Math.round(
-                            (1 - photoMeta.compressedSize / photoMeta.originalSize) * 100
-                          )}
-                          %)
-                        </span>
-                      )}
-                    </div>
-                  )}
-
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center text-white text-xs font-semibold gap-1.5">
-                    <Upload className="w-4 h-4" />
-                    <span>Replace photo</span>
+                    <Camera className="w-4 h-4" />
+                    <span>Retake or replace photo</span>
                   </div>
                 </div>
               ) : (
@@ -339,24 +308,15 @@ export const BuyPawnItemStep: React.FC<BuyPawnItemStepProps> = ({
                     <Camera className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-stone-700">Click to upload photo</p>
-                    <p className="text-[10px] text-stone-400 mt-0.5">Optimized instantly to WebP</p>
+                    <p className="text-xs font-semibold text-stone-700">Take item photo with camera</p>
+                    <p className="text-[10px] text-stone-400 mt-0.5">Or choose an existing image file</p>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Photo Action Buttons */}
+            {/* Photo Action Buttons - Camera First */}
             <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => photoFileInputRef.current?.click()}
-                disabled={photoUploadStatus === 'optimizing'}
-                className="flex-1 py-2 px-2.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
-              >
-                <Upload className="w-3.5 h-3.5 text-[#C85A32]" />
-                <span>Upload File</span>
-              </button>
               <button
                 type="button"
                 onClick={onOpenCamera}
@@ -364,7 +324,16 @@ export const BuyPawnItemStep: React.FC<BuyPawnItemStepProps> = ({
                 className="flex-1 py-2 px-2.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
               >
                 <Camera className="w-3.5 h-3.5 text-[#C85A32]" />
-                <span>Live Camera</span>
+                <span>Take Photo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => photoFileInputRef.current?.click()}
+                disabled={photoUploadStatus === 'optimizing'}
+                className="flex-1 py-2 px-2.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+              >
+                <Upload className="w-3.5 h-3.5 text-stone-500" />
+                <span>Upload File</span>
               </button>
             </div>
           </div>

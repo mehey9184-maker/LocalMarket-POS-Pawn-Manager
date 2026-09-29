@@ -10,6 +10,7 @@ interface BuyPawnReviewStepProps {
   selectedIdentity: Customer | Seller | null;
   basketItems: any[];
   agreedOffer: number;
+  isAgreedOfferFromMarketCheck?: boolean;
   pawnCalculations: PawnCalculations | null;
   businessRules: any;
   isFinalizing: boolean;
@@ -24,6 +25,7 @@ export const BuyPawnReviewStep: React.FC<BuyPawnReviewStepProps> = ({
   selectedIdentity,
   basketItems,
   agreedOffer,
+  isAgreedOfferFromMarketCheck = false,
   pawnCalculations,
   businessRules,
   isFinalizing,
@@ -102,7 +104,7 @@ export const BuyPawnReviewStep: React.FC<BuyPawnReviewStepProps> = ({
             <div className="flex justify-between py-1.5">
               <span className="text-gray-500">Transaction Type</span>
               <span className="font-semibold text-gray-900">
-                {txType === 'buy' ? 'Direct Purchase (Outright)' : '30-Day Pawn Loan'}
+                {txType === 'buy' ? 'Direct Purchase (Outright)' : `${businessRules?.defaultLoanTermDays ?? 30}-Day Pawn Loan`}
               </span>
             </div>
             <div className="flex justify-between py-1.5">
@@ -132,10 +134,19 @@ export const BuyPawnReviewStep: React.FC<BuyPawnReviewStepProps> = ({
 
           <div className="pt-2 border-t border-gray-200 space-y-3">
             <div className="flex justify-between items-baseline">
-              <span className="text-xs font-bold text-gray-700">Negotiated Payout</span>
-              <span className="text-2xl font-bold text-gray-900 font-mono">
-                R {agreedOffer.toLocaleString()}
+              <span className="text-xs font-bold text-gray-700">
+                {txType === 'pawn' ? 'Agreed Loan Amount' : 'Negotiated Payout'}
               </span>
+              <div className="text-right">
+                <span className="text-2xl font-bold text-gray-900 font-mono">
+                  R {agreedOffer.toLocaleString()}
+                </span>
+                {isAgreedOfferFromMarketCheck && (
+                  <span className="block text-[10px] text-emerald-600 font-semibold font-sans">
+                    From Market Check
+                  </span>
+                )}
+              </div>
             </div>
 
             {txType === 'pawn' && pawnCalculations && (
