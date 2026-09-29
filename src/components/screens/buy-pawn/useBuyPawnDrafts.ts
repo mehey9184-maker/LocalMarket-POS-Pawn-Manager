@@ -12,8 +12,10 @@ interface UseBuyPawnDraftsProps {
   newIdentity: NewIdentityDraft;
   selectedIdentity: Customer | Seller | null;
   agreedOffer: number;
+  isAgreedOfferFromMarketCheck?: boolean;
   suggestedRetail: number;
   retailPriceInput: string;
+  isRetailPriceFromMarketCheck?: boolean;
   costBasisInput: string;
   existingStockStatus: ItemStatus;
   basketItems: BatchItem[];
@@ -21,8 +23,10 @@ interface UseBuyPawnDraftsProps {
   setNewIdentity: (data: NewIdentityDraft) => void;
   setSelectedIdentity: (identity: Customer | Seller | null) => void;
   setAgreedOffer: (val: number) => void;
+  setIsAgreedOfferFromMarketCheck?: (val: boolean) => void;
   setSuggestedRetail: (val: number) => void;
   setRetailPriceInput: (val: string) => void;
+  setIsRetailPriceFromMarketCheck?: (val: boolean) => void;
   setCostBasisInput: (val: string) => void;
   setExistingStockStatus: (status: ItemStatus) => void;
   setBasketItems: (items: BatchItem[]) => void;
@@ -41,8 +45,10 @@ export function useBuyPawnDrafts({
   newIdentity,
   selectedIdentity,
   agreedOffer,
+  isAgreedOfferFromMarketCheck = false,
   suggestedRetail,
   retailPriceInput,
+  isRetailPriceFromMarketCheck = false,
   costBasisInput,
   existingStockStatus,
   basketItems,
@@ -50,8 +56,10 @@ export function useBuyPawnDrafts({
   setNewIdentity,
   setSelectedIdentity,
   setAgreedOffer,
+  setIsAgreedOfferFromMarketCheck,
   setSuggestedRetail,
   setRetailPriceInput,
+  setIsRetailPriceFromMarketCheck,
   setCostBasisInput,
   setExistingStockStatus,
   setBasketItems,
@@ -90,8 +98,10 @@ export function useBuyPawnDrafts({
             selectedIdentity,
             txType,
             agreedOffer,
+            isAgreedOfferFromMarketCheck: Boolean(isAgreedOfferFromMarketCheck),
             suggestedRetail,
             retailPriceInput,
+            isRetailPriceFromMarketCheck: Boolean(isRetailPriceFromMarketCheck),
             costBasisInput,
             existingStockStatus,
             basketItems,
@@ -107,8 +117,10 @@ export function useBuyPawnDrafts({
     newIdentity,
     selectedIdentity,
     agreedOffer,
+    isAgreedOfferFromMarketCheck,
     suggestedRetail,
     retailPriceInput,
+    isRetailPriceFromMarketCheck,
     costBasisInput,
     existingStockStatus,
     basketItems,
@@ -142,8 +154,10 @@ export function useBuyPawnDrafts({
       if (draft.payload?.newIdentity) setNewIdentity(draft.payload.newIdentity);
       if (draft.payload?.selectedIdentity !== undefined) setSelectedIdentity(draft.payload.selectedIdentity);
       if (draft.payload?.agreedOffer !== undefined) setAgreedOffer(draft.payload.agreedOffer);
+      setIsAgreedOfferFromMarketCheck?.(Boolean(draft.payload?.isAgreedOfferFromMarketCheck));
       if (draft.payload?.suggestedRetail !== undefined) setSuggestedRetail(draft.payload.suggestedRetail);
       if (draft.payload?.retailPriceInput !== undefined) setRetailPriceInput(draft.payload.retailPriceInput);
+      setIsRetailPriceFromMarketCheck?.(Boolean(draft.payload?.isRetailPriceFromMarketCheck));
       if (draft.payload?.costBasisInput !== undefined) setCostBasisInput(draft.payload.costBasisInput);
       if (draft.payload?.existingStockStatus) setExistingStockStatus(draft.payload.existingStockStatus);
       if (draft.payload?.basketItems) setBasketItems(draft.payload.basketItems);
@@ -157,8 +171,10 @@ export function useBuyPawnDrafts({
       setNewIdentity,
       setSelectedIdentity,
       setAgreedOffer,
+      setIsAgreedOfferFromMarketCheck,
       setSuggestedRetail,
       setRetailPriceInput,
+      setIsRetailPriceFromMarketCheck,
       setCostBasisInput,
       setExistingStockStatus,
       setBasketItems,

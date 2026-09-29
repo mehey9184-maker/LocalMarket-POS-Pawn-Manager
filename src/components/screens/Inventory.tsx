@@ -438,7 +438,7 @@ export const Inventory: React.FC = () => {
 
                   {canViewCostBasis && (
                     <div className="p-3 rounded-xl bg-[#F8F9FA] border border-gray-200">
-                      <span className="text-gray-400 block font-medium">Cost Basis</span>
+                      <span className="text-gray-400 block font-medium">Cost Basis (Immutable)</span>
                       <span className="text-base font-bold text-gray-700 font-mono mt-0.5 block">
                         R {selectedItem.costBasis ? selectedItem.costBasis.toLocaleString() : '0.00'}
                       </span>
