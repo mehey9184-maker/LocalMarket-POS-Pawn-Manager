@@ -166,5 +166,31 @@ export async function runMarketCheckAndPawnReviewTests() {
 
   console.log('[PASS] Test 6: Draft save, restore, legacy compatibility, and edit clearance verified');
 
+  // Test 7: Verify complete_buy_acquisition_internal migration and privilege grant
+  console.log('[Test 7] Verifying complete_buy_acquisition_internal routine privilege migration...');
+  const migrationPath = path.resolve('supabase/migrations/20260930000000_grant_complete_buy_acquisition_internal.sql');
+  assert(fs.existsSync(migrationPath), 'Migration 20260930000000_grant_complete_buy_acquisition_internal.sql must exist');
+  const migrationContent = fs.readFileSync(migrationPath, 'utf8');
+
+  const expectedSignature = 'public.complete_buy_acquisition_internal(\n    uuid, text, uuid, jsonb, numeric, text, text, text, text, text, text, text, uuid, jsonb\n)';
+  assert(
+    migrationContent.includes(expectedSignature) ||
+    migrationContent.replace(/\s+/g, ' ').includes('public.complete_buy_acquisition_internal( uuid, text, uuid, jsonb, numeric, text, text, text, text, text, text, text, uuid, jsonb )'),
+    'Migration must target the exact signature of complete_buy_acquisition_internal'
+  );
+  assert(
+    migrationContent.includes('FROM PUBLIC, anon'),
+    'Migration must explicitly revoke privileges from PUBLIC and anon'
+  );
+  assert(
+    migrationContent.includes('TO authenticated, service_role'),
+    'Migration must grant EXECUTE exclusively to authenticated and service_role'
+  );
+  assert(
+    !migrationContent.includes('TO anon') && !migrationContent.includes('TO PUBLIC'),
+    'Migration must never grant EXECUTE to anon or PUBLIC'
+  );
+  console.log('[PASS] Test 7: Migration grants EXECUTE to authenticated and service_role while denying PUBLIC and anon');
+
   console.log('=== ALL MARKET CHECK & PAWN REVIEW TERMINOLOGY TESTS PASSED ===');
 }
