@@ -192,5 +192,40 @@ export async function runMarketCheckAndPawnReviewTests() {
   );
   console.log('[PASS] Test 7: Migration grants EXECUTE to authenticated and service_role while denying PUBLIC and anon');
 
+  // Test 8: Verify complete_buy_acquisition_internal user_role enum fix migration
+  console.log('[Test 8] Verifying user_role enum-safe comparison migration...');
+  const enumFixMigrationPath = path.resolve('supabase/migrations/20260930010000_fix_complete_buy_acquisition_internal_role_enum.sql');
+  assert(fs.existsSync(enumFixMigrationPath), 'Migration 20260930010000_fix_complete_buy_acquisition_internal_role_enum.sql must exist');
+  const enumFixContent = fs.readFileSync(enumFixMigrationPath, 'utf8');
+
+  // 8.1 Must NOT contain the broken COALESCE(..., '') pattern for role
+  assert(
+    !enumFixContent.includes("COALESCE(v_caller_profile.role, '')"),
+    'Migration must eliminate COALESCE(v_caller_profile.role, \'\') pattern'
+  );
+
+  // 8.2 Must use enum-safe comparison: IS DISTINCT FROM 'admin'::public.user_role
+  assert(
+    enumFixContent.includes("v_caller_profile.role IS DISTINCT FROM 'admin'::public.user_role"),
+    'Migration must use enum-safe comparison IS DISTINCT FROM \'admin\'::public.user_role'
+  );
+
+  // 8.3 Must preserve security context
+  assert(
+    enumFixContent.includes('SECURITY DEFINER') && enumFixContent.includes('SET search_path = public, auth'),
+    'Migration must preserve SECURITY DEFINER and search_path'
+  );
+
+  // 8.4 Must preserve privilege grants
+  assert(
+    enumFixContent.includes('GRANT EXECUTE ON FUNCTION public.complete_buy_acquisition_internal') &&
+    enumFixContent.includes('TO authenticated, service_role') &&
+    enumFixContent.includes('REVOKE ALL ON FUNCTION public.complete_buy_acquisition_internal') &&
+    enumFixContent.includes('FROM PUBLIC, anon'),
+    'Migration must preserve routine privileges for authenticated and service_role while denying anon and PUBLIC'
+  );
+
+  console.log('[PASS] Test 8: User role enum-safe comparison migration verified');
+
   console.log('=== ALL MARKET CHECK & PAWN REVIEW TERMINOLOGY TESTS PASSED ===');
 }
