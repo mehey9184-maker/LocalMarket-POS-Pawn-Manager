@@ -20,20 +20,22 @@ import {
   Calendar,
   Layers,
   Edit2,
-  Check
+  Check,
+  TrendingUp
 } from 'lucide-react';
 import { InventoryItem, AcquisitionType } from '../../types';
 
 export const Inventory: React.FC = () => {
   const { inventory, setActiveTab, showToast } = useApp();
   const { isManager, isOwner, hasPermission, isAtLeastSeniorCashier } = useAuth();
-  const { changePermanentRetailPrice } = useInventory();
+  const { changePermanentRetailPrice, getPriceChangeHistory } = useInventory();
   const canViewCostBasis = isOwner || isManager || isAtLeastSeniorCashier || hasPermission('reports');
 
   const [tab, setTab] = useState<'floor' | 'vault' | 'pending'>('floor');
   const [acquisitionFilter, setAcquisitionFilter] = useState<'All' | AcquisitionType>('All');
   const [search, setSearch] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+  const [showFullPriceHistory, setShowFullPriceHistory] = useState(false);
 
   // Controlled rendering display window state (prevents DOM bloat for large catalogs)
   const [displayLimit, setDisplayLimit] = useState(48);
@@ -106,6 +108,7 @@ export const Inventory: React.FC = () => {
     setIsEditingPrice(false);
     setNewPriceValue(item.retailPrice.toString());
     setPriceChangeReason('');
+    setShowFullPriceHistory(false);
   };
 
   const handleSavePriceChange = async () => {
@@ -270,6 +273,8 @@ export const Inventory: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredItems.slice(0, displayLimit).map(item => {
                 const badge = getAcquisitionBadge(item.acquisitionType);
+                const priceChanges = getPriceChangeHistory(item.id);
+                const hasPriceChanged = priceChanges.length > 0;
                 return (
                   <motion.div
                     key={item.id}
@@ -298,7 +303,17 @@ export const Inventory: React.FC = () => {
 
                     <div className="pt-3 mt-3 border-t border-gray-100 flex items-center justify-between">
                       <div>
-                        <span className="text-[10px] text-gray-400 uppercase font-semibold block">Retail Price</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-gray-400 uppercase font-semibold block">Retail Price</span>
+                          {hasPriceChanged && (
+                            <span 
+                              data-testid={`price-changed-badge-${item.id}`}
+                              className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center"
+                            >
+                              Price changed
+                            </span>
+                          )}
+                        </div>
                         <span className="text-sm font-bold text-gray-900 font-mono">
                           R {item.retailPrice.toLocaleString()}
                         </span>
@@ -459,6 +474,87 @@ export const Inventory: React.FC = () => {
                     </span>
                   </div>
                 </div>
+
+                {/* PRICE CHANGE AUDIT HISTORY */}
+                {(() => {
+                  const priceChanges = getPriceChangeHistory(selectedItem.id);
+                  if (priceChanges.length === 0) return null;
+                  const latest = priceChanges[0];
+                  return (
+                    <div data-testid="price-history-container" className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                          <TrendingUp className="w-4 h-4 text-amber-700" />
+                          <span>Price Change History</span>
+                          <span className="px-1.5 py-0.2 rounded-full bg-amber-200/70 text-amber-900 text-[10px] font-mono">
+                            {priceChanges.length} {priceChanges.length === 1 ? 'change' : 'changes'}
+                          </span>
+                        </div>
+                        {priceChanges.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowFullPriceHistory(prev => !prev)}
+                            className="text-[11px] text-amber-800 hover:text-amber-950 font-bold underline cursor-pointer"
+                          >
+                            {showFullPriceHistory ? 'Show Latest Only' : `View Full History (${priceChanges.length})`}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Latest Adjustment Card */}
+                      <div data-testid="latest-price-change" className="bg-white rounded-lg p-3 border border-amber-200/80 space-y-2 font-mono text-[11px]">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-gray-500 uppercase text-[10px]">Latest Adjustment</span>
+                          <span className="text-gray-500 text-[10px]">
+                            {new Date(latest.timestamp).toLocaleString('en-ZA')}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2 text-sm font-bold">
+                          <span className="line-through text-gray-400 text-xs">
+                            R {latest.oldPrice.toLocaleString()}
+                          </span>
+                          <span className="text-gray-400 text-xs">→</span>
+                          <span className="text-emerald-700">
+                            R {latest.newPrice.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="pt-1.5 border-t border-amber-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-gray-600">
+                          <span className="truncate">
+                            Reason: <strong className="text-gray-800 font-sans">{latest.reason}</strong>
+                          </span>
+                          <span className="shrink-0 text-gray-500">
+                            By: <strong className="text-gray-800 font-sans">{latest.actorName}</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Chronological History List (Newest First) */}
+                      {showFullPriceHistory && priceChanges.length > 1 && (
+                        <div data-testid="full-price-history-list" className="space-y-1.5 pt-1.5 border-t border-amber-200">
+                          <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider block font-mono">
+                            Chronological History (Newest First)
+                          </span>
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                            {priceChanges.map((record, idx) => (
+                              <div key={record.id || idx} className="bg-white/80 rounded-lg p-2.5 border border-amber-100 text-[11px] font-mono space-y-1">
+                                <div className="flex items-center justify-between text-gray-500">
+                                  <span>
+                                    R {record.oldPrice.toLocaleString()} → <strong className="text-emerald-700">R {record.newPrice.toLocaleString()}</strong>
+                                  </span>
+                                  <span className="text-[10px]">{new Date(record.timestamp).toLocaleString('en-ZA')}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-gray-600 text-[10px]">
+                                  <span className="truncate max-w-[200px] font-sans">Reason: {record.reason}</span>
+                                  <span className="font-sans text-gray-500">By {record.actorName}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="px-6 py-3.5 border-t border-gray-100 bg-[#F8F9FA] flex justify-end">

@@ -20,6 +20,7 @@ import { runImageStoragePolicyTests } from './imageStoragePolicy.test';
 import { runBackupIsolationTests } from './backupIsolation.test';
 import { runStartupHydrationTests } from './startupHydration.test';
 import { runMarketCheckAndPawnReviewTests } from './marketCheckAndPawnReview.test';
+import { runInventoryPriceAndVaultPatchTests } from './inventoryPriceAndVaultPatch.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -46,6 +47,7 @@ export async function runAllTests() {
   await runResumableWorkTests();
   runPrintingTests();
   await runMarketCheckAndPawnReviewTests();
+  await runInventoryPriceAndVaultPatchTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');

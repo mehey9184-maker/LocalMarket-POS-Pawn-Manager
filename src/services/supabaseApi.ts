@@ -14,6 +14,7 @@ export {
   isAuthExpiryError, 
   withAuthRecovery 
 };
+export type { SystemLogRow };
 import { 
   Database, 
   ProfileRow, 
@@ -1936,6 +1937,37 @@ export const logsApi = {
       if (error) throw error;
       return data || [];
     });
+  },
+
+  async getPriceChangeLogs(options?: { itemId?: string; shopId?: string }): Promise<SystemLogRow[]> {
+    try {
+      return await withAuthRecovery(async (supabase) => {
+        let query = supabase
+          .from('system_logs')
+          .select('*')
+          .or('event_type.eq.RETAIL_PRICE_UPDATED,event_type.eq.RETAIL_PRICE_CHANGED')
+          .order('created_at', { ascending: false });
+
+        if (options?.shopId) {
+          query = query.eq('shop_id', options.shopId);
+        }
+
+        const { data, error } = await query;
+        if (error) return [];
+        if (!data) return [];
+
+        if (options?.itemId) {
+          return data.filter((row: SystemLogRow) => {
+            const d = row.details as Record<string, any> | null;
+            return d?.item_id === options.itemId;
+          });
+        }
+
+        return data;
+      });
+    } catch {
+      return [];
+    }
   },
 
   async createLog(

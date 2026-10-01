@@ -4,11 +4,9 @@ import { useInventory } from '../../context/InventoryContext';
 import { useLoans } from '../../context/LoanContext';
 import { useAuth } from '../../context/AuthContext';
 import { PawnLoan } from '../../types';
-import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/react';
 import * as ReactWindow from 'react-window';
 import { AutoSizer as AutoSizerComponent } from 'react-virtualized-auto-sizer';
 
-const FixedSizeGrid = (ReactWindow as any).Grid;
 const FixedSizeList = (ReactWindow as any).List;
 const AutoSizer = (AutoSizerComponent as any);
 import {
@@ -19,154 +17,29 @@ import {
   Search,
   CheckCircle2,
   X,
-  Printer,
-  Fingerprint,
   ArrowRight,
   Archive,
   Layers,
   Clock,
   ChevronRight,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  RotateCcw,
+  Banknote,
+  CreditCard,
+  Loader2,
+  Calendar,
+  Tag,
+  Hash,
+  User,
+  Phone,
+  FileText
 } from 'lucide-react';
 import { OnboardingOverlay } from '../common/OnboardingOverlay';
 
-const VaultItemRow: React.FC<{ loan: PawnLoan; onArchive: (id: string) => void; style?: React.CSSProperties }> = ({ loan, onArchive, style }) => {
-  const x = useMotionValue(0);
-  const [hasVibrated, setHasVibrated] = React.useState(false);
-
-  // Dynamic transforms for visual feedback (Tactile feel)
-  const iconScale = useTransform(x, [0, -40, -100], [0.6, 1.1, 1.4]);
-  const bgOpacity = useTransform(x, [0, -40], [0.4, 1]);
-  const overlayOpacity = useTransform(x, [0, -100], [0, 0.6]);
-  const buttonOpacity = useTransform(x, [0, -20, -50], [0, 0, 1]);
-  const buttonX = useTransform(x, [0, -50], [30, 0]);
-  const contentScale = useTransform(x, [0, -100], [1, 0.97]);
-  const contentBlur = useTransform(x, [0, -100], [0, 1.5]);
-
-  // Haptic Feedback Simulation
-  React.useEffect(() => {
-    return x.on('change', (latest) => {
-      if (latest < -50 && !hasVibrated) {
-        if ('vibrate' in navigator) navigator.vibrate(12);
-        setHasVibrated(true);
-      } else if (latest > -40 && hasVibrated) {
-        setHasVibrated(false);
-      }
-    });
-  }, [x, hasVibrated]);
-
-  return (
-    <div style={style} className="p-2">
-      <motion.div
-        layout
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="relative group overflow-hidden rounded-xl h-full min-h-[140px]"
-      >
-        {/* Swipe Background (Tactile Archive Action Reveal) */}
-        <motion.div 
-          style={{ opacity: bgOpacity }}
-          className="absolute inset-0 bg-[#C85A32] flex items-center justify-end px-6 rounded-xl border border-[#C85A32]/40 shadow-[inset_0_2px_15px_rgba(0,0,0,0.1)]"
-        >
-          <motion.div 
-            style={{ x: buttonX, opacity: buttonOpacity }}
-            className="flex flex-col items-center gap-1"
-          >
-            <motion.div style={{ scale: iconScale }} className="p-2.5 bg-white/20 rounded-full backdrop-blur-md shadow-lg">
-              <Archive className="w-6 h-6 text-white" />
-            </motion.div>
-            <span className="text-[9px] font-black text-white uppercase tracking-[0.2em] font-mono">Archive</span>
-          </motion.div>
-        </motion.div>
-
-        <motion.div
-          drag="x"
-          dragConstraints={{ left: -100, right: 0 }}
-          dragSnapToOrigin
-          dragElastic={0.1}
-          style={{ x, scale: contentScale }}
-          onDragEnd={(_, info) => {
-            if (info.offset.x < -60) {
-              onArchive(loan.id);
-            }
-          }}
-          whileDrag={{ 
-            cursor: 'grabbing',
-            transition: { type: "spring", stiffness: 600, damping: 30 } 
-          }}
-          animate={hasVibrated ? { scale: 0.98, transition: { duration: 0.1 } } : { scale: 1 }}
-          className="bg-white border border-stone-200 rounded-xl p-3.5 flex flex-col justify-between gap-3 shadow-xs relative z-10 cursor-grab active:cursor-grabbing hover:border-stone-300 transition-colors h-full"
-        >
-          {/* Tactile Overlay */}
-          <motion.div 
-            style={{ 
-              opacity: overlayOpacity,
-              backdropFilter: `blur(${contentBlur}px)`
-            }}
-            className="absolute inset-0 bg-stone-900/40 pointer-events-none rounded-xl z-30"
-          />
-
-          <div className="relative z-20">
-            <div className="flex items-center justify-between mb-2">
-              <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-mono font-bold">
-                {loan.vaultShelf}
-              </span>
-              <span className="text-[10px] text-stone-500 font-mono">{loan.ticketNumber}</span>
-            </div>
-
-            <div className="flex items-center gap-2.5">
-              <div className="w-12 h-12 rounded-lg bg-stone-50 border border-stone-200 overflow-hidden shrink-0">
-                <img
-                  src={loan.itemImageUrl}
-                  alt={loan.itemTitle}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h4 className="text-xs font-semibold text-stone-900 truncate">{loan.itemTitle}</h4>
-                <p className="text-[11px] text-stone-500 font-mono mt-0.5 truncate">
-                  Pledgor: {loan.customerName}
-                </p>
-                <p className="text-[10px] text-stone-400 font-mono mt-0.5 truncate">
-                  SN: {loan.serialOrImei}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs font-mono relative z-20">
-            <div>
-              <span className="text-[10px] text-stone-400 block uppercase tracking-tighter">Principal</span>
-              <span className="font-bold text-stone-800 tabular-nums tracking-tight text-sm">R {loan.principal.toFixed(2)}</span>
-            </div>
-            <div className="text-right">
-              <span className="text-[10px] text-stone-400 block">Term Status</span>
-              {loan.daysRemaining <= 0 ? (
-                <span className="px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 text-[10px] font-bold animate-pulse">
-                  RED ZONE: DAY {loan.daysElapsed}
-                </span>
-              ) : loan.daysRemaining <= 3 ? (
-                <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">
-                  CRITICAL: {loan.daysRemaining}d
-                </span>
-              ) : (
-                <span className="text-[11px] font-bold text-emerald-600">
-                  {loan.daysRemaining}d left
-                </span>
-              )}
-            </div>
-          </div>
-        </motion.div>
-      </motion.div>
-    </div>
-  );
-};
-
 export const VaultManager: React.FC = () => {
   const { showToast, businessRules } = useApp();
-  const { verifyManagerPin, isManager } = useAuth();
+  const { verifyManagerPin, isManager, isAtLeastSeniorCashier } = useAuth();
   const { inventory } = useInventory();
   const { 
     loans, 
@@ -175,24 +48,44 @@ export const VaultManager: React.FC = () => {
     approveForfeiture, 
     rejectForfeiture,
     batchTransferOverdue,
-    batchApproveForfeitures
+    batchApproveForfeitures,
+    redeemLoan,
+    extendLoan
   } = useLoans();
 
-  const [activeTab, setActiveTab] = useState<'overdue' | 'storage' | 'review'>('overdue');
+  // Active Vault is the practical default first view
+  const [activeTab, setActiveTab] = useState<'storage' | 'overdue' | 'review'>('storage');
   const [searchFilter, setSearchFilter] = useState('');
 
+  // Active Pawn detail drawer state
+  const [selectedLoanForDetail, setSelectedLoanForDetail] = useState<PawnLoan | null>(null);
+  const [settlementOption, setSettlementOption] = useState<'redeem' | 'extend'>('redeem');
+  const [tenderMethod, setTenderMethod] = useState<'cash' | 'card'>('cash');
+  const [isProcessingSettlement, setIsProcessingSettlement] = useState(false);
+
+  // Overdue transfer modal state
   const [selectedLoanForTransfer, setSelectedLoanForTransfer] = useState<PawnLoan | null>(null);
   const [managerPin, setManagerPin] = useState(['', '', '', '', '', '']);
   const [targetRetailPrice, setTargetRetailPrice] = useState<number>(0);
   const [isManagerModalOpen, setIsManagerModalOpen] = useState(false);
   const [isMetricsCollapsed, setIsMetricsCollapsed] = useState(false);
 
+  // Calculate live countdown / days remaining based on actual dates
+  const getLiveDaysRemaining = (loan: PawnLoan): number => {
+    if (!loan.expiryDate) return loan.daysRemaining;
+    const expiry = new Date(loan.expiryDate).getTime();
+    const now = Date.now();
+    return Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+  };
+
   const activeVaultLoans = useMemo(() => loans.filter(l => l.status === 'Active'), [loans]);
   const totalVaultOutlay = useMemo(() => activeVaultLoans.reduce((sum, l) => sum + l.principal, 0), [activeVaultLoans]);
   
-  const overdueLoans = useMemo(() => loans.filter(l => 
-    (l.daysRemaining <= 0 || l.daysElapsed > businessRules.defaultLoanTermDays) && l.status === 'Active'
-  ), [loans, businessRules.defaultLoanTermDays]);
+  const overdueLoans = useMemo(() => loans.filter(l => {
+    if (l.status !== 'Active') return false;
+    const liveRemaining = getLiveDaysRemaining(l);
+    return liveRemaining <= 0 || l.daysElapsed > businessRules.defaultLoanTermDays;
+  }), [loans, businessRules.defaultLoanTermDays]);
 
   const totalOverdueCapital = useMemo(() => overdueLoans.reduce((sum, l) => sum + l.principal, 0), [overdueLoans]);
 
@@ -200,18 +93,6 @@ export const VaultManager: React.FC = () => {
   
   const floorItems = useMemo(() => inventory.filter(i => i.status === 'Retail Floor'), [inventory]);
   const totalFloorValue = useMemo(() => floorItems.reduce((sum, i) => sum + i.retailPrice, 0), [floorItems]);
-
-  const filteredOverdue = useMemo(() => {
-    const q = searchFilter.toLowerCase().trim();
-    if (!q) return overdueLoans;
-    return overdueLoans.filter(l => 
-      l.itemTitle.toLowerCase().includes(q) || 
-      l.ticketNumber.toLowerCase().includes(q) || 
-      l.customerName.toLowerCase().includes(q) || 
-      l.vaultShelf.toLowerCase().includes(q) || 
-      l.serialOrImei.toLowerCase().includes(q)
-    );
-  }, [overdueLoans, searchFilter]);
 
   const filteredActiveStorage = useMemo(() => {
     const q = searchFilter.toLowerCase().trim();
@@ -225,6 +106,18 @@ export const VaultManager: React.FC = () => {
     );
   }, [activeVaultLoans, searchFilter]);
 
+  const filteredOverdue = useMemo(() => {
+    const q = searchFilter.toLowerCase().trim();
+    if (!q) return overdueLoans;
+    return overdueLoans.filter(l => 
+      l.itemTitle.toLowerCase().includes(q) || 
+      l.ticketNumber.toLowerCase().includes(q) || 
+      l.customerName.toLowerCase().includes(q) || 
+      l.vaultShelf.toLowerCase().includes(q) || 
+      l.serialOrImei.toLowerCase().includes(q)
+    );
+  }, [overdueLoans, searchFilter]);
+
   const filteredReviewQueue = useMemo(() => {
     const q = searchFilter.toLowerCase().trim();
     if (!q) return reviewQueueLoans;
@@ -236,6 +129,18 @@ export const VaultManager: React.FC = () => {
       l.serialOrImei.toLowerCase().includes(q)
     );
   }, [reviewQueueLoans, searchFilter]);
+
+  // Lookup matching catalog item for brand and model specifications
+  const matchingDetailInventoryItem = useMemo(() => {
+    if (!selectedLoanForDetail) return null;
+    return inventory.find(i => i.id === selectedLoanForDetail.itemId || i.pawnTicketId === selectedLoanForDetail.ticketNumber);
+  }, [selectedLoanForDetail, inventory]);
+
+  const brandModelText = useMemo(() => {
+    if (!matchingDetailInventoryItem) return null;
+    const parts = [matchingDetailInventoryItem.brand, matchingDetailInventoryItem.model].filter(Boolean);
+    return parts.length > 0 ? parts.join(' ') : null;
+  }, [matchingDetailInventoryItem]);
 
   const handleOpenTransferModal = (loan: PawnLoan) => {
     setSelectedLoanForTransfer(loan);
@@ -288,10 +193,125 @@ export const VaultManager: React.FC = () => {
     }
   };
 
+  const handleExecuteSettlement = async () => {
+    if (!selectedLoanForDetail) return;
+    setIsProcessingSettlement(true);
+    try {
+      if (settlementOption === 'redeem') {
+        const res = await redeemLoan(selectedLoanForDetail.ticketNumber, selectedLoanForDetail.totalRedemptionAmount);
+        if (res.success) {
+          showToast('Collateral Redeemed', `Ticket ${selectedLoanForDetail.ticketNumber} settled. Asset released from vault.`, 'success');
+          setSelectedLoanForDetail(null);
+        } else {
+          showToast('Redemption Failed', res.error || 'Failed to redeem loan.', 'error');
+        }
+      } else {
+        const res = await extendLoan(selectedLoanForDetail.ticketNumber, selectedLoanForDetail.extensionFee);
+        if (res.success) {
+          showToast('Term Extended', `Ticket ${selectedLoanForDetail.ticketNumber} extended by 30 days.`, 'success');
+          setSelectedLoanForDetail(null);
+        } else {
+          showToast('Extension Failed', res.error || 'Failed to extend loan.', 'error');
+        }
+      }
+    } finally {
+      setIsProcessingSettlement(false);
+    }
+  };
+
+  // Clean, easy-to-scan list row for Active Vault collateral
+  const ActiveVaultRow = ({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const loan = filteredActiveStorage[index];
+    if (!loan) return null;
+    const liveDays = getLiveDaysRemaining(loan);
+    const isOverdue = liveDays <= 0;
+    const isCritical = liveDays > 0 && liveDays <= 5;
+
+    return (
+      <div style={style} className="px-1 py-1.5">
+        <div
+          data-testid={`active-pawn-row-${loan.ticketNumber}`}
+          onClick={() => {
+            setSelectedLoanForDetail(loan);
+            setSettlementOption('redeem');
+          }}
+          className="bg-white rounded-xl p-3.5 border border-stone-200 hover:border-[#C85A32] hover:shadow-sm transition cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs h-full group"
+        >
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-14 h-14 rounded-lg bg-stone-50 border border-stone-200 overflow-hidden shrink-0 group-hover:border-[#C85A32]/40 transition">
+              <img
+                src={loan.itemImageUrl}
+                alt={loan.itemTitle}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                loading="lazy"
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-bold text-xs sm:text-sm text-stone-900 font-headline truncate group-hover:text-[#C85A32] transition">
+                  {loan.itemTitle}
+                </h4>
+                <span className="px-2 py-0.5 rounded bg-stone-50 text-[#C85A32] font-mono text-[10px] font-bold border border-stone-200">
+                  {loan.ticketNumber}
+                </span>
+                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono text-[10px] font-bold border border-emerald-200">
+                  Shelf: {loan.vaultShelf}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-stone-500 font-mono mt-1 flex-wrap">
+                <span>Pledgor: <strong className="text-stone-700 font-sans font-semibold">{loan.customerName}</strong></span>
+                {loan.serialOrImei && loan.serialOrImei !== 'N/A' && (
+                  <>
+                    <span className="text-stone-300">•</span>
+                    <span>SN: <span className="text-stone-600">{loan.serialOrImei}</span></span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between sm:justify-end gap-5 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-stone-100 shrink-0">
+            <div className="text-left sm:text-right">
+              <span className="text-[10px] text-stone-400 font-mono block uppercase">Principal</span>
+              <span className="text-sm font-bold text-stone-800 font-mono">
+                R {loan.principal.toFixed(2)}
+              </span>
+            </div>
+
+            <div className="text-right">
+              <span className="text-[10px] text-stone-400 font-mono block uppercase">Countdown</span>
+              {isOverdue ? (
+                <span className="px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-200 text-[10px] font-bold font-mono inline-flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 text-red-600" />
+                  {Math.abs(liveDays)}d Overdue
+                </span>
+              ) : isCritical ? (
+                <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold font-mono inline-flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-amber-600" />
+                  {liveDays}d left
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold font-mono inline-flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-emerald-600" />
+                  {liveDays}d left
+                </span>
+              )}
+            </div>
+
+            <div className="hidden sm:flex items-center text-stone-400 group-hover:text-[#C85A32] group-hover:translate-x-0.5 transition">
+              <ChevronRight className="w-4 h-4" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const OverdueRow = ({ index, style }: { index: number; style: React.CSSProperties }) => {
     const loan = filteredOverdue[index];
     if (!loan) return null;
-    const daysOverdue = Math.max(1, Math.abs(loan.daysRemaining));
+    const liveDays = getLiveDaysRemaining(loan);
+    const daysOverdue = Math.max(1, Math.abs(liveDays));
     return (
       <div style={style} className="px-1 py-1.5">
         <div className="bg-white rounded-xl p-3.5 border border-stone-200 hover:border-[#C85A32]/60 transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs h-full">
@@ -382,36 +402,41 @@ export const VaultManager: React.FC = () => {
           <div className="flex items-center gap-3 whitespace-nowrap animate-marquee">
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest font-mono">Vault Cooling Down:</span>
+              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest font-mono">Vault Storage:</span>
             </div>
             <div className="flex items-center gap-8 text-[11px] font-mono text-stone-600">
-              {activeVaultLoans.slice(0, 5).map(loan => (
-                <div key={loan.id} className="flex items-center gap-2">
-                  <span className="text-stone-400">{loan.ticketNumber}</span>
-                  <span className="font-bold text-stone-700">{loan.itemTitle}</span>
-                  <span className="text-emerald-600">[{loan.daysRemaining} Days Left]</span>
-                </div>
-              ))}
+              {activeVaultLoans.slice(0, 5).map(loan => {
+                const days = getLiveDaysRemaining(loan);
+                return (
+                  <div key={loan.id} className="flex items-center gap-2">
+                    <span className="text-stone-400">{loan.ticketNumber}</span>
+                    <span className="font-bold text-stone-700">{loan.itemTitle}</span>
+                    <span className={days <= 5 ? "text-amber-600 font-bold" : "text-emerald-600 font-bold"}>
+                      [{days <= 0 ? 'Overdue' : `${days} Days Left`}]
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
+        
+        {/* Real Vault Collateral metric (No fake 82% percentage) */}
         <div className="bg-white border border-stone-200 rounded-xl py-2 px-4 flex items-center justify-between shadow-xs">
           <div>
-             <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest font-mono block leading-tight">Vault Density</span>
-             <div className="flex gap-1 mt-1">
-               {[1, 2, 3, 4, 5].map(i => (
-                 <div key={i} className={`w-2.5 h-2.5 rounded-sm ${i <= 4 ? 'bg-emerald-500/40' : 'bg-stone-100'}`} />
-               ))}
-             </div>
+            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest font-mono block leading-tight">Secured Collateral</span>
+            <span className="text-xs font-bold text-stone-800 font-mono block mt-0.5">{activeVaultLoans.length} Pledges Shelved</span>
           </div>
-          <span className="text-xs font-bold text-emerald-600 font-mono">82% Full</span>
+          <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <Lock className="w-4 h-4" />
+          </div>
         </div>
       </div>
 
       {/* Metrics Header */}
       <div className="w-full space-y-2 shrink-0">
         <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-bold text-stone-400 uppercase tracking-wider font-mono">Vault Inventory & Capital Status</span>
+          <span className="text-xs font-bold text-stone-400 uppercase tracking-wider font-mono">Vault Inventory &amp; Capital Status</span>
           <button type="button" onClick={() => setIsMetricsCollapsed(prev => !prev)} className="text-xs text-[#C85A32] hover:text-[#B84E27] flex items-center gap-1 font-mono transition cursor-pointer">
             {isMetricsCollapsed ? <><span>Expand Metrics</span><ChevronDown className="w-3.5 h-3.5" /></> : <><span>Collapse to Ticker</span><ChevronUp className="w-3.5 h-3.5" /></>}
           </button>
@@ -426,7 +451,7 @@ export const VaultManager: React.FC = () => {
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-              <span className="text-stone-400">Day 31+ Overdue:</span>
+              <span className="text-stone-400">Overdue:</span>
               <strong className="text-amber-500">{overdueLoans.length}</strong>
               <span className="text-stone-500">(R {totalOverdueCapital.toLocaleString('en-ZA', { minimumFractionDigits: 2 })})</span>
             </div>
@@ -451,11 +476,11 @@ export const VaultManager: React.FC = () => {
             </div>
             <div className="bg-white rounded-xl p-4 border border-[#C85A32]/40 flex flex-col justify-between shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-[#C85A32] font-mono uppercase tracking-wider font-bold">Forfeited / Overdue Items</span>
+                <span className="text-xs text-[#C85A32] font-mono uppercase tracking-wider font-bold">Overdue / Forfeit Contracts</span>
                 <div className="px-2 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-mono font-bold flex items-center gap-1"><AlertTriangle className="w-3 h-3" /><span>Pending Action</span></div>
               </div>
               <div className="pt-2">
-                <div className="flex items-baseline gap-2"><span className="text-2xl font-black text-amber-500 font-mono">{overdueLoans.length}</span><span className="text-xs text-amber-600 font-mono">Day 31+ Contracts</span></div>
+                <div className="flex items-baseline gap-2"><span className="text-2xl font-black text-amber-500 font-mono">{overdueLoans.length}</span><span className="text-xs text-amber-600 font-mono">Contracts</span></div>
                 <div className="pt-2 mt-2 border-t border-stone-100 flex items-center justify-between text-xs font-mono"><span className="text-stone-400">Forfeited Capital:</span><span className="text-amber-500 font-bold">R {totalOverdueCapital.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}</span></div>
               </div>
             </div>
@@ -473,27 +498,63 @@ export const VaultManager: React.FC = () => {
         )}
       </div>
 
-      {/* Tabs and Search */}
+      {/* Tabs and Search - Active Vault is First and Default */}
       <div className="bg-white rounded-xl p-3 border border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs shrink-0">
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <button type="button" onClick={() => setActiveTab('overdue')} className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition flex-1 sm:flex-initial justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 cursor-pointer ${activeTab === 'overdue' ? 'bg-[#C85A32] text-white border border-[#C85A32]' : 'bg-stone-50 text-stone-500 hover:text-stone-900 border border-stone-200'}`}>
-            <AlertTriangle className="w-3.5 h-3.5" /><span>Overdue &amp; Forfeits</span><span className="px-1.5 py-0.2 rounded-full bg-stone-200/50 text-[10px] font-mono">{overdueLoans.length}</span>
+        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar">
+          <button 
+            type="button" 
+            data-testid="tab-active-vault"
+            onClick={() => setActiveTab('storage')} 
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition flex-1 sm:flex-initial justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 cursor-pointer ${activeTab === 'storage' ? 'bg-[#C85A32] text-white border border-[#C85A32]' : 'bg-stone-50 text-stone-500 hover:text-stone-900 border border-stone-200'}`}
+          >
+            <Archive className="w-3.5 h-3.5" />
+            <span>Active Vault</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${activeTab === 'storage' ? 'bg-black/20 text-white' : 'bg-stone-200/50 text-stone-600'}`}>{activeVaultLoans.length}</span>
           </button>
-          <button type="button" onClick={() => setActiveTab('review')} className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition flex-1 sm:flex-initial justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 cursor-pointer ${activeTab === 'review' ? 'bg-[#C85A32] text-white border border-[#C85A32]' : 'bg-stone-50 text-stone-500 hover:text-stone-900 border border-stone-200'}`}>
-            <ShieldCheck className="w-3.5 h-3.5" /><span>Review Queue</span><span className="px-1.5 py-0.2 rounded-full bg-stone-200/50 text-[10px] font-mono">{reviewQueueLoans.length}</span>
+          
+          <button 
+            type="button" 
+            data-testid="tab-overdue-vault"
+            onClick={() => setActiveTab('overdue')} 
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition flex-1 sm:flex-initial justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 cursor-pointer ${activeTab === 'overdue' ? 'bg-[#C85A32] text-white border border-[#C85A32]' : 'bg-stone-50 text-stone-500 hover:text-stone-900 border border-stone-200'}`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>Overdue &amp; Forfeits</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${activeTab === 'overdue' ? 'bg-black/20 text-white' : 'bg-stone-200/50 text-stone-600'}`}>{overdueLoans.length}</span>
           </button>
-          <button type="button" onClick={() => setActiveTab('storage')} className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition flex-1 sm:flex-initial justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 cursor-pointer ${activeTab === 'storage' ? 'bg-[#C85A32] text-white border border-[#C85A32]' : 'bg-stone-50 text-stone-500 hover:text-stone-900 border border-stone-200'}`}>
-            <Archive className="w-3.5 h-3.5" /><span>Active Vault</span><span className="px-1.5 py-0.2 rounded-full bg-stone-200/50 text-[10px] font-mono">{activeVaultLoans.length}</span>
+
+          <button 
+            type="button" 
+            data-testid="tab-review-vault"
+            onClick={() => setActiveTab('review')} 
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition flex-1 sm:flex-initial justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C85A32] focus-visible:ring-offset-2 cursor-pointer ${activeTab === 'review' ? 'bg-[#C85A32] text-white border border-[#C85A32]' : 'bg-stone-50 text-stone-500 hover:text-stone-900 border border-stone-200'}`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Review Queue</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${activeTab === 'review' ? 'bg-black/20 text-white' : 'bg-stone-200/50 text-stone-600'}`}>{reviewQueueLoans.length}</span>
           </button>
+
           {activeTab === 'overdue' && overdueLoans.length > 0 && (
-            <button type="button" onClick={() => { setSelectedLoanForTransfer(null); setIsManagerModalOpen(true); }} className="px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-tighter flex items-center gap-2 transition flex-1 sm:flex-initial justify-center bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-900/10 cursor-pointer"><Layers className="w-3.5 h-3.5" /><span>Batch Transfer</span></button>
+            <button type="button" onClick={() => { setSelectedLoanForTransfer(null); setIsManagerModalOpen(true); }} className="px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-tighter flex items-center gap-2 transition flex-1 sm:flex-initial justify-center bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-900/10 cursor-pointer">
+              <Layers className="w-3.5 h-3.5" /><span>Batch Transfer</span>
+            </button>
           )}
+
           {activeTab === 'review' && reviewQueueLoans.length > 0 && (
-            <button type="button" onClick={() => batchApproveForfeitures(reviewQueueLoans.map(l => l.id))} className="px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-tighter flex items-center gap-2 transition flex-1 sm:flex-initial justify-center bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/10 cursor-pointer"><CheckCircle2 className="w-3.5 h-3.5" /><span>Approve All</span></button>
+            <button type="button" onClick={() => batchApproveForfeitures(reviewQueueLoans.map(l => l.id))} className="px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-tighter flex items-center gap-2 transition flex-1 sm:flex-initial justify-center bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/10 cursor-pointer">
+              <CheckCircle2 className="w-3.5 h-3.5" /><span>Approve All</span>
+            </button>
           )}
         </div>
+
         <div className="relative w-full sm:w-72">
-          <input type="text" value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} placeholder="Search ticket, item, or bin shelf..." className="w-full bg-white border border-stone-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-[#C85A32] font-mono shadow-xs" />
+          <input 
+            type="text" 
+            value={searchFilter} 
+            onChange={(e) => setSearchFilter(e.target.value)} 
+            placeholder="Search ticket, item, or bin shelf..." 
+            className="w-full bg-white border border-stone-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-[#C85A32] font-mono shadow-xs" 
+          />
           <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2.5" />
         </div>
       </div>
@@ -502,7 +563,20 @@ export const VaultManager: React.FC = () => {
       <div className="flex-1 min-h-0 bg-stone-50/30 rounded-xl border border-stone-200 overflow-hidden relative">
         <AutoSizer>
           {({ height, width }: any) => {
-            if (activeTab === 'overdue') {
+            if (activeTab === 'storage') {
+              return (
+                <FixedSizeList
+                  height={height}
+                  width={width}
+                  itemCount={filteredActiveStorage.length}
+                  itemSize={88}
+                >
+                  {({ index, style }: any) => (
+                    <ActiveVaultRow index={index} style={style} />
+                  )}
+                </FixedSizeList>
+              );
+            } else if (activeTab === 'overdue') {
               return (
                 <FixedSizeList
                   height={height}
@@ -515,7 +589,7 @@ export const VaultManager: React.FC = () => {
                   )}
                 </FixedSizeList>
               );
-            } else if (activeTab === 'review') {
+            } else {
               return (
                 <FixedSizeList
                   height={height}
@@ -528,37 +602,19 @@ export const VaultManager: React.FC = () => {
                   )}
                 </FixedSizeList>
               );
-            } else {
-              const columnCount = width > 1024 ? 3 : width > 640 ? 2 : 1;
-              const columnWidth = width / columnCount;
-              const rowCount = Math.ceil(filteredActiveStorage.length / columnCount);
-              return (
-                <FixedSizeGrid
-                  columnCount={columnCount}
-                  columnWidth={columnWidth}
-                  height={height}
-                  rowCount={rowCount}
-                  rowHeight={160}
-                  width={width}
-                >
-                  {({ columnIndex, rowIndex, style }: any) => {
-                    const index = rowIndex * columnCount + columnIndex;
-                    const loan = filteredActiveStorage[index];
-                    if (!loan) return null;
-                    return (
-                      <VaultItemRow
-                        key={loan.id}
-                        loan={loan}
-                        onArchive={archiveLoan}
-                        style={style}
-                      />
-                    );
-                  }}
-                </FixedSizeGrid>
-              );
             }
           }}
         </AutoSizer>
+
+        {(activeTab === 'storage' && filteredActiveStorage.length === 0) && (
+          <div className="absolute inset-0 flex items-center justify-center p-8 text-center bg-stone-100/50">
+            <div>
+              <Archive className="w-8 h-8 text-stone-400 mx-auto mb-2" />
+              <p className="font-bold text-stone-800 text-sm">No Active Vault Items Found</p>
+              <p className="text-xs text-stone-500 mt-1">Collateral currently secured in the vault will appear here.</p>
+            </div>
+          </div>
+        )}
 
         {(activeTab === 'overdue' && filteredOverdue.length === 0) && (
           <div className="absolute inset-0 flex items-center justify-center p-8 text-center bg-stone-100/50">
@@ -569,18 +625,284 @@ export const VaultManager: React.FC = () => {
             </div>
           </div>
         )}
-        {(activeTab === 'storage' && filteredActiveStorage.length === 0) && (
+
+        {(activeTab === 'review' && filteredReviewQueue.length === 0) && (
           <div className="absolute inset-0 flex items-center justify-center p-8 text-center bg-stone-100/50">
             <div>
-              <Archive className="w-8 h-8 text-stone-400 mx-auto mb-2" />
-              <p className="font-bold text-stone-800 text-sm">No Active Vault Items Found</p>
-              <p className="text-xs text-stone-500 mt-1">Try searching with a different term.</p>
+              <ShieldCheck className="w-8 h-8 text-stone-400 mx-auto mb-2" />
+              <p className="font-bold text-stone-800 text-sm">Review Queue Empty</p>
+              <p className="text-xs text-stone-500 mt-1">No items currently awaiting manager forfeiture authorization.</p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Modal - kept as is but updated to use handleConfirmPinTransfer */}
+      {/* ACTIVE PAWN DETAIL DRAWER / MODAL */}
+      {selectedLoanForDetail && (
+        <div data-testid="pawn-detail-drawer" className="fixed inset-0 z-50 overflow-hidden">
+          <div 
+            onClick={() => setSelectedLoanForDetail(null)} 
+            className="absolute inset-0 bg-black/40 backdrop-blur-xs animate-in fade-in" 
+          />
+          <div className="fixed inset-y-0 right-0 max-w-full flex pl-6 sm:pl-10">
+            <div className="w-screen max-w-lg bg-white border-l border-stone-200 shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-200">
+              
+              {/* Drawer Header */}
+              <div className="p-4 bg-[#F8F9FA] border-b border-stone-200 flex items-center justify-between shrink-0">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-[#C85A32] font-mono">{selectedLoanForDetail.ticketNumber}</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono font-bold">
+                      Shelf: {selectedLoanForDetail.vaultShelf}
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-stone-900 font-headline mt-1">Vault Collateral Record</h3>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setSelectedLoanForDetail(null)} 
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+                
+                {/* 1. Item Details Card */}
+                <div className="p-4 bg-stone-50 rounded-xl border border-stone-200 space-y-3">
+                  <div className="flex gap-3.5">
+                    <div className="w-16 h-16 rounded-xl bg-white border border-stone-200 overflow-hidden shrink-0">
+                      <img 
+                        src={selectedLoanForDetail.itemImageUrl} 
+                        alt={selectedLoanForDetail.itemTitle} 
+                        className="w-full h-full object-cover" 
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <h4 className="text-sm font-bold text-stone-900 leading-snug">{selectedLoanForDetail.itemTitle}</h4>
+                      <p className="text-xs text-stone-500">
+                        Category: <strong className="text-stone-700">{selectedLoanForDetail.itemCategory}</strong> · Condition: <strong className="text-stone-700">{selectedLoanForDetail.condition}</strong>
+                      </p>
+                      {brandModelText && (
+                        <p className="text-xs text-stone-600">
+                          Brand/Model: <strong className="text-stone-800">{brandModelText}</strong>
+                        </p>
+                      )}
+                      <p className="text-[11px] font-mono text-stone-500">
+                        Serial / IMEI: <strong className="text-stone-700">{selectedLoanForDetail.serialOrImei || 'N/A'}</strong>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-stone-200/80 flex items-center justify-between text-xs font-mono">
+                    <span className="text-stone-500">Vault Location:</span>
+                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 font-bold rounded border border-emerald-200">
+                      Bin Shelf {selectedLoanForDetail.vaultShelf}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Customer / Pledgor Card */}
+                <div className="p-3.5 bg-stone-50 rounded-xl border border-stone-200 space-y-1.5 text-xs">
+                  <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider font-mono block">Pledgor Customer</span>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-stone-900">{selectedLoanForDetail.customerName}</p>
+                      <p className="text-[11px] text-stone-500 font-mono mt-0.5">Customer ID: {selectedLoanForDetail.customerId}</p>
+                      <p className="text-[11px] text-stone-500 font-mono">SA ID: {selectedLoanForDetail.customerIdNumber}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-stone-400 block font-mono">Mobile</span>
+                      <span className="text-xs font-mono font-bold text-[#C85A32]">{selectedLoanForDetail.customerMobile}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Contract Schedule & Statutory Fees */}
+                <div className="p-4 bg-[#F8F9FA] rounded-xl border border-stone-200 space-y-2 text-xs font-mono">
+                  <h4 className="text-xs font-bold text-stone-900 font-headline uppercase tracking-wider mb-2">Loan Contract &amp; NCA Breakdown</h4>
+                  
+                  <div className="flex justify-between text-stone-600">
+                    <span>Principal Lent:</span>
+                    <strong className="text-stone-900">R {selectedLoanForDetail.principal.toFixed(2)}</strong>
+                  </div>
+                  
+                  <div className="flex justify-between text-stone-600">
+                    <span>Monthly Interest (5% Cap):</span>
+                    <strong className="text-[#C85A32]">R {selectedLoanForDetail.monthlyInterest.toFixed(2)}</strong>
+                  </div>
+
+                  <div className="flex justify-between text-stone-600">
+                    <span>Storage &amp; Admin Fee:</span>
+                    <strong className="text-stone-700">R {selectedLoanForDetail.monthlyStorageAdminFee.toFixed(2)}</strong>
+                  </div>
+
+                  <div className="pt-2 border-t border-stone-200 flex justify-between items-baseline">
+                    <span className="font-bold text-stone-900">Total Redemption Amount:</span>
+                    <span className="text-base font-bold text-[#C85A32]">R {selectedLoanForDetail.totalRedemptionAmount.toFixed(2)}</span>
+                  </div>
+
+                  <div className="flex justify-between text-stone-600 pt-1">
+                    <span>30-Day Extension Fee:</span>
+                    <strong className="text-emerald-700 font-bold">R {selectedLoanForDetail.extensionFee.toFixed(2)}</strong>
+                  </div>
+
+                  <div className="pt-2 border-t border-stone-200 grid grid-cols-2 gap-2 text-[11px]">
+                    <div>
+                      <span className="text-stone-400 block text-[10px]">Start Date</span>
+                      <span className="text-stone-700">{selectedLoanForDetail.startDate}</span>
+                    </div>
+                    <div>
+                      <span className="text-stone-400 block text-[10px]">Expiry Date</span>
+                      <span className="text-stone-700">{selectedLoanForDetail.expiryDate}</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-1 flex items-center justify-between text-[11px]">
+                    <span className="text-stone-500">Live Countdown:</span>
+                    {(() => {
+                      const liveDays = getLiveDaysRemaining(selectedLoanForDetail);
+                      return liveDays <= 0 ? (
+                        <span className="px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-bold">
+                          {Math.abs(liveDays)} Days Overdue
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+                          {liveDays} Days Remaining
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* 4. Loan History */}
+                <div className="p-3.5 bg-stone-50 rounded-xl border border-stone-200 space-y-2 text-xs">
+                  <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider font-mono block">Loan History</span>
+                  {selectedLoanForDetail.history && selectedLoanForDetail.history.length > 0 ? (
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                      {selectedLoanForDetail.history.map((entry, i) => (
+                        <div key={i} className="bg-white p-2 rounded-lg border border-stone-200 text-[11px] font-mono flex items-center justify-between">
+                          <div>
+                            <span className="font-bold text-stone-800">{entry.action}</span>
+                            <span className="text-stone-400 text-[10px] ml-2">{new Date(entry.date).toLocaleDateString('en-ZA')}</span>
+                            {entry.note && <p className="text-[10px] text-stone-500 font-sans mt-0.5">{entry.note}</p>}
+                          </div>
+                          {entry.amount !== undefined && (
+                            <span className="font-bold text-stone-700">R {Number(entry.amount).toFixed(2)}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-stone-500 font-mono italic">No prior transaction history recorded.</p>
+                  )}
+                </div>
+
+                {/* 5. Counter Settlement Action Selection */}
+                <div className="space-y-2 pt-1">
+                  <label className="text-xs font-bold text-stone-700 uppercase tracking-wider font-mono block">Counter Settlement Action</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button 
+                      type="button" 
+                      onClick={() => setSettlementOption('redeem')} 
+                      className={`p-3 rounded-xl border text-left flex flex-col justify-between transition cursor-pointer ${settlementOption === 'redeem' ? 'bg-[#FDF0EA] border-[#C85A32] text-[#C85A32] shadow-xs' : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <CheckCircle2 className="w-4 h-4 text-[#C85A32]" />
+                        <span className="text-[10px] font-mono text-[#C85A32] font-bold">Release Asset</span>
+                      </div>
+                      <span className="text-xs font-bold mt-2 text-stone-900">Full Redemption</span>
+                      <span className="text-[11px] font-mono text-stone-500 mt-0.5">R {selectedLoanForDetail.totalRedemptionAmount.toFixed(2)}</span>
+                    </button>
+                    
+                    <button 
+                      type="button" 
+                      onClick={() => setSettlementOption('extend')} 
+                      className={`p-3 rounded-xl border text-left flex flex-col justify-between transition cursor-pointer ${settlementOption === 'extend' ? 'bg-[#FDF0EA] border-[#C85A32] text-[#C85A32] shadow-xs' : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <RotateCcw className="w-4 h-4 text-emerald-600" />
+                        <span className="text-[10px] font-mono text-emerald-600 font-bold">+30 Days</span>
+                      </div>
+                      <span className="text-xs font-bold mt-2 text-stone-900">Extend Loan</span>
+                      <span className="text-[11px] font-mono text-stone-500 mt-0.5">R {selectedLoanForDetail.extensionFee.toFixed(2)}</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5 pt-1">
+                    <label className="text-[10px] font-bold text-stone-500 uppercase tracking-wider font-mono block">Payment Tender</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button 
+                        type="button" 
+                        onClick={() => setTenderMethod('cash')} 
+                        className={`py-2 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${tenderMethod === 'cash' ? 'bg-[#FDF0EA] border-[#C85A32] text-[#C85A32] shadow-xs' : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'}`}
+                      >
+                        <Banknote className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Cash Tender</span>
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setTenderMethod('card')} 
+                        className={`py-2 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${tenderMethod === 'card' ? 'bg-[#FDF0EA] border-[#C85A32] text-[#C85A32] shadow-xs' : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'}`}
+                      >
+                        <CreditCard className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Card / POS</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Drawer Footer Actions */}
+              <div className="p-4 bg-[#F8F9FA] border-t border-stone-200 space-y-2 shrink-0">
+                {!isAtLeastSeniorCashier ? (
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs text-center font-medium">
+                    Senior Cashier or Manager authority required for counter settlements.
+                  </div>
+                ) : (
+                  <button 
+                    type="button" 
+                    disabled={isProcessingSettlement} 
+                    onClick={handleExecuteSettlement} 
+                    className="w-full py-3 px-4 rounded-xl bg-[#C85A32] hover:bg-[#b04d29] disabled:bg-stone-200 disabled:text-stone-400 text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 transition active:scale-[0.99] cursor-pointer"
+                  >
+                    {isProcessingSettlement ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>{settlementOption === 'redeem' ? 'Releasing asset…' : 'Extending loan…'}</span>
+                      </>
+                    ) : settlementOption === 'redeem' ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Receive Payment &amp; Release Asset</span>
+                      </>
+                    ) : (
+                      <>
+                        <RotateCcw className="w-4 h-4" />
+                        <span>Collect Fee &amp; Extend 30 Days</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                
+                <button 
+                  type="button" 
+                  disabled={isProcessingSettlement} 
+                  onClick={() => setSelectedLoanForDetail(null)} 
+                  className="w-full py-2 text-center text-xs text-stone-500 hover:text-stone-800 disabled:opacity-50 transition cursor-pointer"
+                >
+                  Cancel &amp; Close Drawer
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Overdue Manager Transfer Modal */}
       {isManagerModalOpen && selectedLoanForTransfer && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-stone-200 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 text-stone-900">
