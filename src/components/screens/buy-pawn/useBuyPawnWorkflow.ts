@@ -231,19 +231,19 @@ export function useBuyPawnWorkflow() {
     if (txType === 'buy') {
       return [
         { id: 'mode', label: 'Intake Type' },
+        { id: 'item', label: 'Evaluate Item' },
+        { id: 'valuation', label: 'Valuation & Price' },
         { id: 'customer', label: 'Seller Info' },
-        { id: 'item', label: 'Item Details' },
-        { id: 'valuation', label: 'Valuation' },
-        { id: 'deal', label: 'Deal Review' },
+        { id: 'deal', label: 'Review & Record' },
       ];
     }
     if (txType === 'pawn') {
       return [
         { id: 'mode', label: 'Intake Type' },
-        { id: 'customer', label: 'Customer Info' },
-        { id: 'item', label: 'Item Details' },
+        { id: 'customer', label: 'Borrower Info' },
+        { id: 'item', label: 'Collateral Item' },
         { id: 'valuation', label: 'Loan Terms' },
-        { id: 'deal', label: 'Pledge Terms' },
+        { id: 'deal', label: 'Review & Pledge' },
       ];
     }
     return [
@@ -321,7 +321,11 @@ export function useBuyPawnWorkflow() {
       if (type === 'existing') {
         // Existing stock skips identity verification completely
         setStep('item');
+      } else if (type === 'buy') {
+        // Buy From Person evaluates item & valuation BEFORE seller identity
+        setStep('item');
       } else {
+        // Pawn requires borrower identity upfront for persistent loan contract
         setStep('customer');
       }
     },
@@ -1289,7 +1293,13 @@ export function useBuyPawnWorkflow() {
         );
         return;
       }
-      setStep('item');
+      if (txType === 'buy') {
+        // Seller captured -> proceed to Final Review
+        setStep('deal');
+      } else {
+        // Borrower captured -> proceed to Collateral Item
+        setStep('item');
+      }
       return;
     }
 
@@ -1313,13 +1323,7 @@ export function useBuyPawnWorkflow() {
         }
       }
 
-      if (txType === 'existing') {
-        // Do not inject invented prices; cashier intentionally inputs retail price or applies Market Check
-        setStep('valuation');
-      } else {
-        // Do not inject invented payout/loan values; cashier intentionally inputs agreed amount or applies Market Check
-        setStep('valuation');
-      }
+      setStep('valuation');
       return;
     }
 
@@ -1333,15 +1337,18 @@ export function useBuyPawnWorkflow() {
           return;
         }
         setStep('location');
+      } else if (txType === 'buy') {
+        if (agreedOffer <= 0) {
+          showToast('Amount Required', 'Please enter the negotiated payout amount', 'amber');
+          const oEl = document.getElementById('valuation-agreed-offer-input');
+          if (oEl) focusAndScrollErrorField(oEl);
+          return;
+        }
+        // Item & Price evaluated -> proceed to Seller Identity capture
+        setStep('customer');
       } else {
         if (agreedOffer <= 0) {
-          showToast(
-            'Amount Required',
-            txType === 'buy'
-              ? 'Please enter the negotiated payout amount'
-              : 'Please enter the agreed loan principal',
-            'amber'
-          );
+          showToast('Amount Required', 'Please enter the agreed loan principal', 'amber');
           const oEl = document.getElementById('valuation-agreed-offer-input');
           if (oEl) focusAndScrollErrorField(oEl);
           return;
@@ -1397,13 +1404,21 @@ export function useBuyPawnWorkflow() {
 
   const handleBack = useCallback(() => {
     if (step === 'customer') {
-      setStep('mode');
-      setTxType(null);
+      if (txType === 'buy') {
+        // Back from seller identity goes to valuation
+        setStep('valuation');
+      } else {
+        // Back from borrower identity goes to intake mode
+        setStep('mode');
+        setTxType(null);
+      }
     } else if (step === 'item') {
-      if (txType === 'existing') {
+      if (txType === 'existing' || txType === 'buy') {
+        // Back from item details goes to intake mode
         setStep('mode');
         setTxType(null);
       } else {
+        // Back from pawn item details goes to borrower identity
         setStep('customer');
       }
     } else if (step === 'valuation') {
@@ -1411,7 +1426,11 @@ export function useBuyPawnWorkflow() {
     } else if (step === 'location') {
       setStep('valuation');
     } else if (step === 'deal') {
-      setStep('valuation');
+      if (txType === 'buy') {
+        setStep('customer');
+      } else {
+        setStep('valuation');
+      }
     }
   }, [step, txType]);
 

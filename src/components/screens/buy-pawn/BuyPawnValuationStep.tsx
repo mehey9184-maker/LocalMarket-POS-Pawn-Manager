@@ -28,6 +28,7 @@ interface BuyPawnValuationStepProps {
   onRunMarketCheck: () => void;
   onBack: () => void;
   onNext: () => void;
+  onAbandon?: () => void;
 }
 
 export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
@@ -52,6 +53,7 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
   onRunMarketCheck,
   onBack,
   onNext,
+  onAbandon,
 }) => {
   return (
     <motion.div
@@ -361,9 +363,24 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
           onClick={onNext}
           className="flex-1 py-3 px-6 bg-[#C85A32] text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-xs hover:bg-[#A94725] transition cursor-pointer"
         >
-          <span>{txType === 'existing' ? 'Choose Stock Location' : 'Review Deal Terms'}</span>
+          <span>
+            {txType === 'existing'
+              ? 'Choose Stock Location'
+              : txType === 'buy'
+              ? 'Purchase This Item (Seller Details)'
+              : 'Review Pledge Terms'}
+          </span>
           <ChevronRight className="w-4 h-4" />
         </button>
+        {txType === 'buy' && onAbandon && (
+          <button
+            type="button"
+            onClick={onAbandon}
+            className="px-4 py-3 rounded-xl border border-stone-300 text-stone-700 hover:text-rose-700 hover:bg-rose-50 hover:border-rose-200 transition text-xs font-semibold cursor-pointer"
+          >
+            Not Worth Buying
+          </button>
+        )}
       </div>
     </motion.div>
   );

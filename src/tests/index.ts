@@ -24,6 +24,7 @@ import { runInventoryPriceAndVaultPatchTests } from './inventoryPriceAndVaultPat
 import { runOwnerShopSettingsAndFixedRolesTests } from './ownerShopSettingsAndFixedRoles.test';
 import { runSeniorUxPhase1Tests } from './seniorUxPhase1.test';
 import { runPhase2aCashierSpeedTests } from './phase2aCashierSpeed.test';
+import { runPhase2bSecondHandIntakeTests } from './phase2bSecondHandIntake.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -54,6 +55,7 @@ export async function runAllTests() {
   runOwnerShopSettingsAndFixedRolesTests();
   runSeniorUxPhase1Tests();
   runPhase2aCashierSpeedTests();
+  await runPhase2bSecondHandIntakeTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');

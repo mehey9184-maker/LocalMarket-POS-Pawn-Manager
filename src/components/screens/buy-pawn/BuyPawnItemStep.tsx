@@ -352,7 +352,13 @@ export const BuyPawnItemStep: React.FC<BuyPawnItemStepProps> = ({
           onClick={onNext}
           className="flex-1 py-3 px-6 bg-[#C85A32] text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-xs hover:bg-[#A94725] transition"
         >
-          <span>{txType === 'existing' ? 'Set Retail Pricing' : 'Valuation Review'}</span>
+          <span>
+            {txType === 'existing'
+              ? 'Set Retail Pricing'
+              : txType === 'buy'
+              ? 'Valuation & Price'
+              : 'Loan Terms'}
+          </span>
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

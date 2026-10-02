@@ -300,7 +300,9 @@ export const BuyPawnIdentityStep: React.FC<BuyPawnIdentityStepProps> = ({
           disabled={!selectedIdentity}
           className="flex-1 py-3 px-6 bg-[#C85A32] disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-xs hover:bg-[#A94725] transition"
         >
-          <span>Item Details</span>
+          <span>
+            {txType === 'buy' ? 'Review & Record Deal' : 'Proceed to Collateral Item'}
+          </span>
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

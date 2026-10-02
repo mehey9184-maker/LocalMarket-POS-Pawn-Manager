@@ -234,6 +234,7 @@ export const BuyPawn: React.FC = () => {
                 onRunMarketCheck={marketCheck.handleRunMarketCheck}
                 onBack={actions.back}
                 onNext={actions.next}
+                onAbandon={actions.reset}
               />
             )}
 
