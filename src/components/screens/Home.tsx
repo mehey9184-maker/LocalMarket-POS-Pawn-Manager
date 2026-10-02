@@ -162,7 +162,9 @@ export const Home: React.FC = () => {
                           Add your first item
                         </h2>
                         <p className="text-sm text-stone-600 mt-1 leading-relaxed">
-                          Intake existing store inventory, record an outright purchase from a seller, or book a customer pawn loan.
+                          {(hasPermission('sellerAcquisitions') || hasPermission('pawn'))
+                            ? 'Intake existing store inventory, record an outright purchase from a seller, or book a customer pawn loan.'
+                            : 'Add existing stock to your shop inventory.'}
                         </p>
                       </div>
                     </div>
@@ -273,7 +275,11 @@ export const Home: React.FC = () => {
                   <h2 className="text-base sm:text-lg font-bold text-stone-900 group-hover:text-[#C85A32] transition-colors">
                     Add Stock
                   </h2>
-                  <p className="text-xs text-stone-400 mt-0.5">Purchases, buy-ins & pawns</p>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    {(hasPermission('sellerAcquisitions') || hasPermission('pawn'))
+                      ? 'Purchases, buy-ins & pawns'
+                      : 'Add existing stock to inventory'}
+                  </p>
                 </div>
               </button>
             )}

@@ -552,7 +552,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveReceiptModal(null);
       }
       setCart([]);
-      showToast('Sale Complete', `Receipt ${res.sale.receiptNumber} generated`, 'success');
       return res.sale;
     } else {
       showToast('Checkout Failed', res.error || 'Could not process retail sale', 'error');

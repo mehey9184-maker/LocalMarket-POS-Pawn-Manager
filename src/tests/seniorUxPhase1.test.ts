@@ -53,7 +53,15 @@ export function runSeniorUxPhase1Tests() {
     homeSrc.includes("hasPermission('inventory') || hasPermission('sellerAcquisitions') || hasPermission('pawn')"),
     'Home.tsx must allow Add Stock discoverability if staff has inventory, sellerAcquisitions, or pawn permission'
   );
-  console.log('[PASS] Home.tsx Add Stock card is discoverable for standard Cashiers');
+  assert(
+    homeSrc.includes("hasPermission('sellerAcquisitions') || hasPermission('pawn')"),
+    'Home.tsx must check sellerAcquisitions || pawn for role-aware Add Stock description'
+  );
+  assert(
+    homeSrc.includes('Add existing stock to inventory'),
+    'Home.tsx must provide cashier-friendly Add Stock description'
+  );
+  console.log('[PASS] Home.tsx Add Stock card is discoverable and role-aware for Cashiers and higher roles');
 
   // Cashier role evaluation
   const cashierHasInventory = evaluatePermission('cashier', 'inventory');
@@ -149,7 +157,10 @@ export function runSeniorUxPhase1Tests() {
   assert(!sellSrc.includes('saleProgress.runSequence'), 'Sell.tsx must not execute multi-step progress sequence on counter sales');
   assert(sellSrc.includes('completeCheckout('), 'Sell.tsx must directly invoke completeCheckout');
   assert(sellSrc.includes("'Sale Complete'"), 'Sell.tsx must provide instant clear confirmation via toast');
-  console.log('[PASS] Sell checkout is fast, direct, and non-blocking with instant toast confirmation');
+
+  // Verify AppContext completeCheckout does not emit redundant success toast
+  assert(!appContextSrc.includes("showToast('Sale Complete', `Receipt ${res.sale.receiptNumber} generated`, 'success')"), 'AppContext completeCheckout must not emit duplicate Sale Complete toast');
+  console.log('[PASS] Sell checkout is fast, direct, and non-blocking with exactly ONE success toast notification');
 
   // =========================================================================
   // 5. USER-FACING SYNC & STORAGE LANGUAGE
