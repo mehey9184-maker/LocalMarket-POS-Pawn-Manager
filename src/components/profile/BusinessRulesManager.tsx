@@ -327,7 +327,7 @@ export const BusinessRulesManager: React.FC<BusinessRulesManagerProps> = ({ onSu
                           if (e.target.checked) {
                             handleChange('maxLoanPrincipal', null);
                           } else {
-                            handleChange('maxLoanPrincipal', 15000);
+                            handleChange('maxLoanPrincipal', null);
                           }
                         }}
                         className="rounded border-stone-300 text-[#C85A32] focus:ring-[#C85A32]"

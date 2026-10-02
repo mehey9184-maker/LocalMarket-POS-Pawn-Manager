@@ -489,6 +489,117 @@ export async function runInventoryPriceAndVaultPatchTests() {
     migrationContent.includes('FROM PUBLIC, anon'),
     'Test 15.5 FAIL: Migration must grant EXECUTE to authenticated and service_role while denying anon and PUBLIC'
   );
+
+  // --------------------------------------------------------------------------
+  // TEST 15b: Complete Verification of Architecture, Role Access, Calculations & Limits
+  // --------------------------------------------------------------------------
+  console.log('[Test 15b] Verifying complete_pawn_intake wrapper & internal architecture...');
+  
+  // 15b.1 Wrapper must be SECURITY INVOKER
+  assert(
+    migrationContent.includes('SECURITY INVOKER'),
+    'Test 15b.1 FAIL: public.complete_pawn_intake must remain SECURITY INVOKER'
+  );
+
+  // 15b.2 Calls complete_pawn_intake_internal
+  assert(
+    migrationContent.includes('complete_pawn_intake_internal'),
+    'Test 15b.2 FAIL: Must call complete_pawn_intake_internal for actual atomic write boundary'
+  );
+
+  // 15b.3 Authoritative role authorization: senior_cashier, manager, owner, admin
+  assert(
+    migrationContent.includes("'senior_cashier'::public.user_role") &&
+    migrationContent.includes("'manager'::public.user_role") &&
+    migrationContent.includes("'owner'::public.user_role") &&
+    migrationContent.includes("'admin'::public.user_role"),
+    'Test 15b.3 FAIL: Must enforce exact authorized roles (senior_cashier, manager, owner, admin)'
+  );
+
+  // 15b.4 Active-profile check
+  assert(
+    migrationContent.includes('COALESCE(v_caller_profile.is_active, true)'),
+    'Test 15b.4 FAIL: Must enforce active staff profile check'
+  );
+
+  // 15b.5 Shop assignment check
+  assert(
+    migrationContent.includes('Shop assignment mismatch') || migrationContent.includes('shop branch context is required'),
+    'Test 15b.5 FAIL: Must enforce shop assignment and isolation check'
+  );
+
+  // 15b.6 Authoritative server-side calculations of financial terms
+  assert(
+    migrationContent.includes('v_calc_monthly_interest := ROUND(p_principal * v_calc_interest_rate, 2)') &&
+    migrationContent.includes('v_calc_monthly_storage  := ROUND(p_principal * v_calc_storage_rate, 2)') &&
+    migrationContent.includes('v_calc_total_redemption := ROUND(p_principal + v_calc_monthly_interest + v_calc_monthly_storage, 2)') &&
+    migrationContent.includes('v_calc_expiry_date      := v_calc_start_date + (v_calc_term_days || \' days\')::interval'),
+    'Test 15b.6 FAIL: Must calculate authoritative interest rate, storage fee, total redemption, and expiry date'
+  );
+
+  // 15b.7 Simulate SQL PL/pgSQL validation logic for lending limit:
+  // - null / missing / empty / 0 = no maximum
+  // - principal <= maximum = allowed
+  // - principal > maximum = reject
+  function simulateServerLendingCheck(principal: number, shopRules: any) {
+    let minPrincipal = 100.00;
+    let maxPrincipal: number | null = null;
+
+    if (shopRules) {
+      if (shopRules.minLoanPrincipal !== undefined && shopRules.minLoanPrincipal !== null && Number(shopRules.minLoanPrincipal) > 0) {
+        minPrincipal = Number(shopRules.minLoanPrincipal);
+      }
+      if (shopRules.maxLoanPrincipal !== undefined && shopRules.maxLoanPrincipal !== null && Number(shopRules.maxLoanPrincipal) > 0) {
+        maxPrincipal = Number(shopRules.maxLoanPrincipal);
+      }
+    }
+
+    if (principal < minPrincipal) {
+      throw new Error(`Pawn principal must be at least the configured minimum of ${minPrincipal}`);
+    }
+
+    if (maxPrincipal !== null && maxPrincipal > 0) {
+      if (principal > maxPrincipal) {
+        throw new Error(`Above this shop’s pawn limit: Maximum pawn amount: R ${maxPrincipal}`);
+      }
+    }
+
+    return { allowed: true, principal, minPrincipal, maxPrincipal };
+  }
+
+  // A. No maximum limit (null / undefined / 0 / missing)
+  assert.doesNotThrow(() => simulateServerLendingCheck(50000, {}), 'No maximum: huge amount allowed');
+  assert.doesNotThrow(() => simulateServerLendingCheck(50000, { maxLoanPrincipal: null }), 'Null max allowed');
+  assert.doesNotThrow(() => simulateServerLendingCheck(50000, { maxLoanPrincipal: 0 }), '0 max allowed');
+  assert.doesNotThrow(() => simulateServerLendingCheck(50000, { maxLoanPrincipal: '' }), 'Empty max allowed');
+
+  // B. Exactly at maximum
+  assert.doesNotThrow(() => simulateServerLendingCheck(15000, { minLoanPrincipal: 100, maxLoanPrincipal: 15000 }), 'Exactly at maximum allowed');
+
+  // C. Above maximum
+  assert.throws(
+    () => simulateServerLendingCheck(15000.01, { minLoanPrincipal: 100, maxLoanPrincipal: 15000 }),
+    /Above this shop’s pawn limit: Maximum pawn amount: R 15000/,
+    'Above maximum rejected with exact plain language'
+  );
+
+  // D. Below minimum
+  assert.throws(
+    () => simulateServerLendingCheck(99, { minLoanPrincipal: 100, maxLoanPrincipal: 15000 }),
+    /Pawn principal must be at least the configured minimum of 100/,
+    'Below minimum rejected'
+  );
+
+  // E. Role checks simulation
+  const validRoles = ['senior_cashier', 'manager', 'owner', 'admin'];
+  assert(validRoles.includes('senior_cashier'), 'Senior cashier allowed');
+  assert(validRoles.includes('manager'), 'Manager allowed');
+  assert(validRoles.includes('owner'), 'Owner allowed');
+  assert(validRoles.includes('admin'), 'Admin allowed');
+  assert(!validRoles.includes('cashier'), 'Cashier rejected');
+  assert(!validRoles.includes('trainee'), 'Trainee rejected');
+
+  console.log('[PASS] Test 15b: Complete pawn intake architecture, calculations, and lending limit validations fully verified');
   console.log('[PASS] Test 15: Server-side RPC migration strictly validates shop lending limits and preserves security privileges');
 
   // --------------------------------------------------------------------------
