@@ -297,14 +297,25 @@ export const Header: React.FC<HeaderProps> = () => {
                               </button>
                             )}
                             {statusInfo.type === 'sold' && (() => {
-                              const matchingSale = salesHistory.find(s => 
+                              const saleByItemId = salesHistory.find(s =>
                                 s.items.some(si => si.item.id === item.id)
-                              ) || salesHistory.find(s => 
-                                Boolean(item.serialOrImei) && s.items.some(si => 
-                                  Boolean(si.item.serialOrImei) && 
-                                  si.item.serialOrImei!.toLowerCase() === item.serialOrImei!.toLowerCase()
-                                )
                               );
+
+                              let matchingSale = saleByItemId;
+
+                              if (!matchingSale && item.serialOrImei) {
+                                const serialMatches = salesHistory.filter(s =>
+                                  s.items.some(si =>
+                                    Boolean(si.item.serialOrImei) &&
+                                    si.item.serialOrImei!.toLowerCase() === item.serialOrImei!.toLowerCase()
+                                  )
+                                );
+
+                                if (serialMatches.length === 1) {
+                                  matchingSale = serialMatches[0];
+                                }
+                              }
+
                               if (matchingSale) {
                                 return (
                                   <button

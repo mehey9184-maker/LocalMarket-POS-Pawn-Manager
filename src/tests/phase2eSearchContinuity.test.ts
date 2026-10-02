@@ -4,10 +4,10 @@ import { InventoryItem, PawnLoan, SaleTransaction } from '../types';
 
 /**
  * Phase 2E Final Verification Correction Test Suite:
- * Covers Tests A, B, C, D, E, F (Sold item real sale, no sale, SKU collision safety, vault with/without loan, sold/retail precedence).
+ * Covers Tests A, B, C, D, E, F, and G (Ambiguous Serial/IMEI guard).
  */
 export async function runPhase2eSearchContinuityTests() {
-  console.log('=== RUNNING PHASE 2E FINAL VERIFICATION CORRECTION TEST SUITE ===');
+  console.log('=== RUNNING PHASE 2E FINAL SERIAL/IMEI AMBIGUITY GUARD TEST SUITE ===');
 
   const mockInventory: InventoryItem[] = [
     {
@@ -126,6 +126,20 @@ export async function runPhase2eSearchContinuityTests() {
       imageUrl: '',
       acquisitionType: 'Existing Stock',
       addedAt: '2026-01-05'
+    },
+    {
+      id: 'item-duplicate-serial',
+      title: 'Item with Duplicate Serial',
+      sku: 'SKU-DUP',
+      category: 'Electronics',
+      condition: 'Good',
+      retailPrice: 1500,
+      costBasis: 800,
+      status: 'Sold',
+      serialOrImei: 'SN-DUPLICATE',
+      imageUrl: '',
+      acquisitionType: 'Buy',
+      addedAt: '2026-01-06'
     }
   ];
 
@@ -177,7 +191,6 @@ export async function runPhase2eSearchContinuityTests() {
     cashier: 'POS Cashier'
   };
 
-  // Unrelated sale whose receipt number happens to equal item C's SKU ('SKU-123')
   const collisionSale: SaleTransaction = {
     id: 'sale-collision',
     receiptNumber: 'SKU-123',
@@ -193,18 +206,61 @@ export async function runPhase2eSearchContinuityTests() {
     cashier: 'POS Cashier'
   };
 
-  const mockSales: SaleTransaction[] = [realSaleA, collisionSale];
+  // Two different sales containing items with the same serial 'SN-DUPLICATE'
+  const duplicateSale1: SaleTransaction = {
+    id: 'sale-dup-1',
+    receiptNumber: 'REC-DUP-1',
+    timestamp: '2026-01-06T10:00:00Z',
+    items: [{ item: { id: 'other-item-1', title: 'Other 1', sku: 'SKU-O1', category: 'General', condition: 'Good', retailPrice: 100, costBasis: 50, status: 'Sold', serialOrImei: 'SN-DUPLICATE', imageUrl: '', acquisitionType: 'Buy', addedAt: '2026-01-01' }, quantity: 1 }],
+    subtotal: 86.96,
+    vatAmount: 13.04,
+    total: 100,
+    tenderMethod: 'cash',
+    amountTendered: 100,
+    change: 0,
+    receiptType: 'thermal',
+    cashier: 'POS Cashier'
+  };
 
-  // Helper matching function mirroring Header.tsx sold receipt resolution
+  const duplicateSale2: SaleTransaction = {
+    id: 'sale-dup-2',
+    receiptNumber: 'REC-DUP-2',
+    timestamp: '2026-01-06T11:00:00Z',
+    items: [{ item: { id: 'other-item-2', title: 'Other 2', sku: 'SKU-O2', category: 'General', condition: 'Good', retailPrice: 100, costBasis: 50, status: 'Sold', serialOrImei: 'SN-DUPLICATE', imageUrl: '', acquisitionType: 'Buy', addedAt: '2026-01-01' }, quantity: 1 }],
+    subtotal: 86.96,
+    vatAmount: 13.04,
+    total: 100,
+    tenderMethod: 'cash',
+    amountTendered: 100,
+    change: 0,
+    receiptType: 'thermal',
+    cashier: 'POS Cashier'
+  };
+
+  const mockSales: SaleTransaction[] = [realSaleA, collisionSale, duplicateSale1, duplicateSale2];
+
+  // Helper matching function mirroring Header.tsx unambiguous serial/IMEI fallback logic
   const resolveMatchingSale = (item: InventoryItem, sales: SaleTransaction[]) => {
-    return sales.find(s => 
+    const saleByItemId = sales.find(s =>
       s.items.some(si => si.item.id === item.id)
-    ) || sales.find(s => 
-      Boolean(item.serialOrImei) && s.items.some(si => 
-        Boolean(si.item.serialOrImei) && 
-        si.item.serialOrImei!.toLowerCase() === item.serialOrImei!.toLowerCase()
-      )
     );
+
+    let matchingSale = saleByItemId;
+
+    if (!matchingSale && item.serialOrImei) {
+      const serialMatches = sales.filter(s =>
+        s.items.some(si =>
+          Boolean(si.item.serialOrImei) &&
+          si.item.serialOrImei!.toLowerCase() === item.serialOrImei!.toLowerCase()
+        )
+      );
+
+      if (serialMatches.length === 1) {
+        matchingSale = serialMatches[0];
+      }
+    }
+
+    return matchingSale;
   };
 
   // --- Test A — Sold item with real sale ---
@@ -243,8 +299,13 @@ export async function runPhase2eSearchContinuityTests() {
   assert.strictEqual(soldStatus.type, 'sold', 'Test F: Sold terminal status takes strict precedence over pawnTicketId');
   assert.strictEqual(soldStatus.linkedLoan, undefined);
 
-  console.log('[PASS] Tests A, B, C, D, E, F: All Phase 2E Final Verification Correction tests passed successfully!');
+  // --- Test G — Ambiguous Serial/IMEI Guard ---
+  const soldItemDup = mockInventory.find(i => i.id === 'item-duplicate-serial')!;
+  const matchedSaleDup = resolveMatchingSale(soldItemDup, mockSales);
+  assert.strictEqual(matchedSaleDup, undefined, 'Test G: Ambiguous serial/IMEI with multiple matching sales returns undefined (falls back to View Item, opens neither sale)');
+
+  console.log('[PASS] Tests A, B, C, D, E, F, G: All Phase 2E Final Serial/IMEI Ambiguity Guard tests passed successfully!');
   console.log('====================================================');
-  console.log('   ALL PHASE 2E FINAL VERIFICATION CORRECTION TESTS PASSED!');
+  console.log('   ALL PHASE 2E FINAL SERIAL/IMEI AMBIGUITY GUARD TESTS PASSED!');
   console.log('====================================================');
 }
