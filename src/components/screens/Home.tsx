@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 
 export const Home: React.FC = () => {
-  const { setActiveTab, shopProfile } = useApp();
+  const { setActiveTab, shopProfile, setSelectedInventoryItem } = useApp();
   const { user, hasPermission, isAtLeastSeniorCashier } = useAuth();
   const { inventory } = useInventory();
   const { loans } = useLoans();
@@ -418,26 +418,31 @@ export const Home: React.FC = () => {
                 }
 
                 if (isAtLeastSeniorCashier && readyForRetail.length > 0) {
-                  items.push(
-                    <button
-                      key="retail"
-                      onClick={() => setActiveTab('inventory')}
-                      className="w-full flex items-center justify-between p-4 bg-emerald-50/50 hover:bg-emerald-50 border border-emerald-100/80 rounded-xl transition text-left cursor-pointer group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                          <Package className="w-4 h-4" />
+                  readyForRetail.forEach(item => {
+                    items.push(
+                      <button
+                        key={`retail-${item.id}`}
+                        onClick={() => {
+                          setSelectedInventoryItem(item);
+                          setActiveTab('inventory');
+                        }}
+                        className="w-full flex items-center justify-between p-4 bg-emerald-50/50 hover:bg-emerald-50 border border-emerald-100/80 rounded-xl transition text-left cursor-pointer group animate-auth-fade"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                            <Package className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="font-bold text-stone-900 group-hover:text-emerald-700 transition-colors text-sm">
+                              {item.title} ready for retail
+                            </span>
+                            <p className="text-xs text-stone-500 mt-0.5">Finalize price and move to retail floor</p>
+                          </div>
                         </div>
-                        <div>
-                          <span className="font-bold text-stone-900 group-hover:text-emerald-700 transition-colors text-sm">
-                            {readyForRetail.length} {readyForRetail.length === 1 ? 'item' : 'items'} ready for retail
-                          </span>
-                          <p className="text-xs text-stone-500 mt-0.5">Forfeited items to be priced and moved to the retail floor</p>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
-                    </button>
-                  );
+                        <ChevronRight className="w-4 h-4 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
+                      </button>
+                    );
+                  });
                 }
 
                 if (items.length === 0) {

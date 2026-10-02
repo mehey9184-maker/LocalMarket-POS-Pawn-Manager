@@ -40,6 +40,13 @@ export const Inventory: React.FC = () => {
   React.useEffect(() => {
     if (selectedInventoryItem) {
       setSelectedItem(selectedInventoryItem);
+      if (selectedInventoryItem.status === 'Vault Hold' || selectedInventoryItem.status === 'Forfeited') {
+        setTab('vault');
+      } else if (selectedInventoryItem.status === 'Reserved' || selectedInventoryItem.status === 'Flagged') {
+        setTab('pending');
+      } else {
+        setTab('floor');
+      }
       setSelectedInventoryItem(null);
     }
   }, [selectedInventoryItem, setSelectedInventoryItem]);
