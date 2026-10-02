@@ -34,6 +34,7 @@ import {
   BatchItem,
   CompletionResult,
   StepperStep,
+  normalizeStepForTransactionType,
 } from './buyPawnTypes';
 import { useBuyPawnImages } from './useBuyPawnImages';
 import { useBuyPawnDrafts } from './useBuyPawnDrafts';
@@ -380,18 +381,15 @@ export function useBuyPawnWorkflow() {
       setIsAgreedOfferFromMarketCheck(targetMC);
       setIsCreatingIdentity(false);
 
-      // Smooth step positioning
-      if (step === 'mode') {
-        setStep(newType === 'pawn' ? 'customer' : 'item');
-      } else if (step === 'customer') {
-        if (newType === 'existing') {
-          setStep('item');
-        }
-      } else if (step === 'deal') {
-        if ((newType === 'buy' || newType === 'pawn') && !targetIdentity) {
-          setStep('customer');
-        }
-      }
+      // Deterministic cross-mode step normalization
+      const nextStep = normalizeStepForTransactionType(
+        step,
+        newType,
+        targetIdentity,
+        targetOffer,
+        retailPriceInput
+      );
+      setStep(nextStep);
 
       const modeLabel =
         newType === 'buy' ? 'Buy From Person' : newType === 'pawn' ? 'Pawn Loan' : 'Existing Stock';

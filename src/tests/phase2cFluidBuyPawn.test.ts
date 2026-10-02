@@ -1,6 +1,7 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizeStepForTransactionType } from '../components/screens/buy-pawn/buyPawnTypes';
 
 /**
  * Phase 2C Regression Test Suite: Fluid Buy ↔ Pawn Intake & State Preservation
@@ -173,6 +174,108 @@ export async function runPhase2cFluidBuyPawnTests() {
   assert.strictEqual(checkCanSwitch('senior', 'pawn'), true, 'Senior Cashier allowed switching to Pawn');
 
   console.log('[PASS] Test 5: Role permission gating verified for fluid mode switcher');
+
+  // Test 6: Verify Deterministic Cross-Mode Step Normalization (normalizeStepForTransactionType)
+  console.log('[Test 6] Verifying deterministic cross-mode step normalization...');
+
+  const dummyBorrower = { id: 'c-1', fullName: 'Jane Borrower', idNumber: '9001010000000', type: 'customer' } as any;
+  const dummySeller = { id: 's-1', fullName: 'John Seller', idNumber: '8001010000000', type: 'seller' } as any;
+
+  // 6a. Buy Item → Pawn (no borrower set) MUST land on Borrower Info ('customer')
+  assert.strictEqual(
+    normalizeStepForTransactionType('item', 'pawn', null, 0, ''),
+    'customer',
+    'Buy item -> Pawn without borrower MUST land on customer (Borrower Info)'
+  );
+
+  // 6b. Buy Valuation → Pawn (no borrower set) MUST land on Borrower Info ('customer')
+  assert.strictEqual(
+    normalizeStepForTransactionType('valuation', 'pawn', null, 0, ''),
+    'customer',
+    'Buy valuation -> Pawn without borrower MUST land on customer (Borrower Info)'
+  );
+
+  // 6c. Buy Deal → Pawn (no borrower set) MUST land on Borrower Info ('customer')
+  assert.strictEqual(
+    normalizeStepForTransactionType('deal', 'pawn', null, 0, ''),
+    'customer',
+    'Buy deal -> Pawn without borrower MUST land on customer (Borrower Info)'
+  );
+
+  // 6d. Buy Item → Pawn WITH borrower restored MUST preserve 'item' (Collateral Item)
+  assert.strictEqual(
+    normalizeStepForTransactionType('item', 'pawn', dummyBorrower, 0, ''),
+    'item',
+    'Buy item -> Pawn WITH restored borrower MUST keep item step'
+  );
+
+  // 6e. Buy Valuation → Pawn WITH borrower restored MUST preserve 'valuation' (Loan Terms)
+  assert.strictEqual(
+    normalizeStepForTransactionType('valuation', 'pawn', dummyBorrower, 5000, ''),
+    'valuation',
+    'Buy valuation -> Pawn WITH restored borrower MUST keep valuation step'
+  );
+
+  // 6f. Pawn Customer → Buy (no payout set) MUST land on 'valuation' (Valuation & Price)
+  assert.strictEqual(
+    normalizeStepForTransactionType('customer', 'buy', null, 0, ''),
+    'valuation',
+    'Pawn customer -> Buy without payout MUST land on valuation (Valuation & Price)'
+  );
+
+  // 6g. Pawn Item → Buy MUST land on 'item' (Evaluate Item)
+  assert.strictEqual(
+    normalizeStepForTransactionType('item', 'buy', null, 0, ''),
+    'item',
+    'Pawn item -> Buy MUST land on item'
+  );
+
+  // 6h. Pawn Valuation → Buy MUST land on 'valuation' (Valuation & Price)
+  assert.strictEqual(
+    normalizeStepForTransactionType('valuation', 'buy', null, 0, ''),
+    'valuation',
+    'Pawn valuation -> Buy MUST land on valuation'
+  );
+
+  // 6i. Pawn Deal → Buy (no seller, no payout) MUST land on 'valuation'
+  assert.strictEqual(
+    normalizeStepForTransactionType('deal', 'buy', null, 0, ''),
+    'valuation',
+    'Pawn deal -> Buy without seller/payout MUST land on valuation'
+  );
+
+  // 6j. Pawn Deal → Buy WITH payout but no seller MUST land on 'customer' (Seller Info)
+  assert.strictEqual(
+    normalizeStepForTransactionType('deal', 'buy', null, 8000, ''),
+    'customer',
+    'Pawn deal -> Buy with payout but no seller MUST land on customer (Seller Info)'
+  );
+
+  // 6k. Pawn Deal → Buy WITH payout AND seller MUST land on 'deal'
+  assert.strictEqual(
+    normalizeStepForTransactionType('deal', 'buy', dummySeller, 8000, ''),
+    'deal',
+    'Pawn deal -> Buy with payout and seller MUST land on deal'
+  );
+
+  // 6l. Switch to Existing Stock from any step MUST land on valid Existing Stock step ('item', 'valuation', or 'location')
+  assert.strictEqual(
+    normalizeStepForTransactionType('customer', 'existing', dummySeller, 8000, ''),
+    'item',
+    'Switching to Existing Stock from customer MUST land on item'
+  );
+  assert.strictEqual(
+    normalizeStepForTransactionType('valuation', 'existing', dummySeller, 8000, ''),
+    'valuation',
+    'Switching to Existing Stock from valuation MUST land on valuation'
+  );
+  assert.strictEqual(
+    normalizeStepForTransactionType('deal', 'existing', dummySeller, 8000, '1500'),
+    'location',
+    'Switching to Existing Stock from deal with retail price MUST land on location'
+  );
+
+  console.log('[PASS] Test 6: Deterministic cross-mode step normalization verified for all transitions');
 
   console.log('====================================================');
   console.log('   ALL PHASE 2C FLUID BUY ↔ PAWN TESTS PASSED!     ');

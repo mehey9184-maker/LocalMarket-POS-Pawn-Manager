@@ -1,7 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { draftService } from '../../../services/draftService';
 import { WorkflowDraft, Customer, Seller, Permissions, ItemStatus } from '../../../types';
-import { WorkflowStep, TxType, ItemDraft, NewIdentityDraft, BatchItem } from './buyPawnTypes';
+import {
+  WorkflowStep,
+  TxType,
+  ItemDraft,
+  NewIdentityDraft,
+  BatchItem,
+  normalizeStepForTransactionType,
+} from './buyPawnTypes';
 
 interface UseBuyPawnDraftsProps {
   user: any;
@@ -168,8 +175,9 @@ export function useBuyPawnDrafts({
         return;
       }
       setDraftId(draft.id);
-      setTxType(draft.workflowType as TxType);
-      setStep(draft.step as WorkflowStep);
+      const restoredTxType = (draft.workflowType as TxType) || null;
+      setTxType(restoredTxType);
+      
       if (draft.payload?.itemData) setItemData(draft.payload.itemData);
       if (draft.payload?.newIdentity) setNewIdentity(draft.payload.newIdentity);
       if (draft.payload?.selectedIdentity !== undefined) setSelectedIdentity(draft.payload.selectedIdentity);
@@ -185,6 +193,16 @@ export function useBuyPawnDrafts({
       if (draft.payload?.costBasisInput !== undefined) setCostBasisInput(draft.payload.costBasisInput);
       if (draft.payload?.existingStockStatus) setExistingStockStatus(draft.payload.existingStockStatus);
       if (draft.payload?.basketItems) setBasketItems(draft.payload.basketItems);
+
+      const rawStep = (draft.step as WorkflowStep) || 'mode';
+      const safeStep = normalizeStepForTransactionType(
+        rawStep,
+        restoredTxType,
+        draft.payload?.selectedIdentity || null,
+        draft.payload?.agreedOffer || 0,
+        draft.payload?.retailPriceInput || ''
+      );
+      setStep(safeStep);
 
       setActiveDrafts([]);
       showToast('Draft Restored', 'Your previous work has been restored.', 'info');

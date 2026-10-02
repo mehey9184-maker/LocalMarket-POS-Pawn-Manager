@@ -17,8 +17,8 @@ export async function runPhase2bSecondHandIntakeTests() {
   // 1a. Selecting 'buy' must set step to 'item' (Item First)
   assert(
     workflowContent.includes('handleSwitchTxType') &&
-      workflowContent.includes("setStep(newType === 'pawn' ? 'customer' : 'item')"),
-    'Test 1a: Selecting Buy From Person must navigate directly to item step'
+      workflowContent.includes('normalizeStepForTransactionType'),
+    'Test 1a: Selecting Buy From Person must navigate directly to item step via normalizeStepForTransactionType'
   );
 
   // 1b. Stepper labels for Buy From Person must reflect human workflow
