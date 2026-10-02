@@ -237,16 +237,16 @@ export const AccountPicker: React.FC = () => {
 
             <div className="space-y-3">
               <h1 className="font-headline font-bold text-2xl text-stone-900 tracking-tight">
-                We couldn't finish switching accounts
+                We couldn't switch staff
               </h1>
               <div className="text-sm text-stone-600 space-y-1">
-                <p>Signing in as:</p>
-                <p className="font-bold text-stone-900 text-base">{switchTarget?.staffName || selectedStaff?.full_name || 'Operator'}</p>
+                <p>Switching to:</p>
+                <p className="font-bold text-stone-900 text-base">{switchTarget?.staffName || selectedStaff?.full_name || 'Staff'}</p>
               </div>
               <div className="bg-red-50/50 border border-red-100 rounded-2xl p-4 mt-2 max-w-sm mx-auto text-left">
-                <p className="text-xs text-[#C85A32] font-semibold uppercase tracking-wider mb-1">Error Details</p>
+                <p className="text-xs text-[#C85A32] font-semibold uppercase tracking-wider mb-1">What happened</p>
                 <p className="text-xs text-stone-600 font-medium leading-relaxed">
-                  {switchError || 'An unexpected error occurred during terminal session security.'}
+                  {switchError || 'An unexpected error occurred while switching staff.'}
                 </p>
               </div>
             </div>
@@ -258,7 +258,7 @@ export const AccountPicker: React.FC = () => {
                   try {
                     const res = await retrySwitchAccount();
                     if (res && res.success) {
-                      showToast('Welcome Back', `Logged in as ${switchTarget?.staffName || selectedStaff?.full_name || 'Operator'}`, 'success');
+                      showToast('Welcome Back', `Logged in as ${switchTarget?.staffName || selectedStaff?.full_name || 'Staff'}`, 'success');
                       setIsAccountPickerOpen(false);
                       setSelectedStaff(null);
                       setPin('');
@@ -278,7 +278,7 @@ export const AccountPicker: React.FC = () => {
                 {isAuthenticating ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <span>Retry Switch</span>
+                  <span>Try Again</span>
                 )}
               </button>
               <button
@@ -296,7 +296,7 @@ export const AccountPicker: React.FC = () => {
                 disabled={isAuthenticating}
                 className="flex-1 bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-700 font-semibold h-12 rounded-xl border border-stone-200 transition-colors cursor-pointer"
               >
-                Cancel &amp; Sign Out
+                Sign Out
               </button>
             </div>
           </div>
@@ -314,17 +314,17 @@ export const AccountPicker: React.FC = () => {
             
             <div className="space-y-3">
               <h1 className="font-headline font-bold text-3xl text-stone-900 tracking-tight">
-                Switching account
+                Switching staff
               </h1>
               <p className="text-stone-600 text-base">
-                Signing you in as <span className="font-bold">{(selectedStaff || currentProfile)?.full_name}</span>…
+                Signing in as <span className="font-bold">{(selectedStaff || currentProfile)?.full_name}</span>…
               </p>
               <p className="text-stone-400 text-sm mt-1">
-                {switchState === 'authenticating' && 'Authorizing terminal access…'}
-                {switchState === 'loading_profile' && 'Loading operator profile…'}
-                {switchState === 'acquiring_terminal' && 'Securing this terminal…'}
-                {switchState === 'ready' && 'Terminal secured successfully.'}
-                {switchState === 'idle' && 'Please wait while this terminal is secured.'}
+                {switchState === 'authenticating' && 'Checking PIN…'}
+                {switchState === 'loading_profile' && 'Getting your workspace ready…'}
+                {switchState === 'acquiring_terminal' && 'Almost ready…'}
+                {switchState === 'ready' && 'Ready.'}
+                {switchState === 'idle' && 'Ready.'}
               </p>
             </div>
 
@@ -341,7 +341,7 @@ export const AccountPicker: React.FC = () => {
           <button
             onClick={() => setIsAccountPickerOpen(false)}
             className="absolute top-5 right-5 p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
-            aria-label="Close Account Switcher"
+            aria-label="Close Staff Switcher"
           >
             <X className="w-5 h-5" />
           </button>
@@ -349,9 +349,9 @@ export const AccountPicker: React.FC = () => {
           {!selectedStaff ? (
           <div className="text-center">
             <h1 className="font-headline font-bold text-3xl sm:text-4xl text-stone-900 mb-2 tracking-tight">
-              Switch Account
+              Switch Staff
             </h1>
-            <p className="text-stone-500 mb-8 text-sm">Choose who is using this terminal</p>
+            <p className="text-stone-500 mb-8 text-sm">Choose the staff member using this counter</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
               {activeStaff.map((staff) => (
@@ -380,7 +380,7 @@ export const AccountPicker: React.FC = () => {
                   {staff.id === currentProfile?.id && (
                     <div className="absolute top-2.5 right-2.5 flex items-center gap-1 bg-[#C85A32]/10 px-2 py-0.5 rounded-full border border-[#C85A32]/20">
                       <div className="w-1.5 h-1.5 rounded-full bg-[#C85A32] animate-pulse"></div>
-                      <span className="text-[9px] font-bold text-[#C85A32] uppercase">Active</span>
+                      <span className="text-[9px] font-bold text-[#C85A32] uppercase">You</span>
                     </div>
                   )}
                 </button>
@@ -392,7 +392,7 @@ export const AccountPicker: React.FC = () => {
                 onClick={() => { setIsAccountPickerOpen(false); logout(); }}
                 className="text-xs text-red-600 hover:text-red-700 font-semibold uppercase tracking-wider transition-colors cursor-pointer"
               >
-                Sign Out Terminal
+                Sign Out
               </button>
 
               <span className="hidden sm:inline text-stone-300">•</span>
@@ -401,7 +401,7 @@ export const AccountPicker: React.FC = () => {
                 onClick={() => setIsAccountPickerOpen(false)}
                 className="text-xs text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
               >
-                Cancel &amp; return to terminal
+                Cancel
               </button>
             </div>
           </div>
@@ -424,7 +424,7 @@ export const AccountPicker: React.FC = () => {
                 )}
               </div>
               <h2 className="font-headline font-bold text-2xl text-stone-900 tracking-tight">Welcome back, {selectedStaff.full_name}</h2>
-              <p className="text-xs text-stone-500 mt-1">Enter your 6-digit terminal PIN</p>
+              <p className="text-xs text-stone-500 mt-1">Enter your 6-digit PIN</p>
             </div>
 
             <div className="space-y-5">
@@ -441,7 +441,7 @@ export const AccountPicker: React.FC = () => {
                   <div>
                     <h4 className="font-bold text-xs text-amber-900">Too many failed attempts</h4>
                     <p className="text-[11px] text-amber-700 mt-0.5">
-                      Account temporarily locked for security
+                      Please try again when the timer ends.
                     </p>
                   </div>
                   <div className="pt-1">
@@ -466,7 +466,7 @@ export const AccountPicker: React.FC = () => {
                   onKeyDown={(e) => e.key === 'Enter' && !isLocked && handleLogin()}
                   placeholder={isLocked ? '••••••' : '6-Digit PIN'}
                   autoFocus={!isLocked}
-                  aria-label="6-Digit Terminal PIN"
+                  aria-label="6-Digit PIN"
                   className={`w-full h-12 border rounded-xl pl-12 pr-4 text-center text-xl tracking-[0.5em] font-mono transition-all outline-none ${
                     isLocked
                       ? 'bg-stone-100 border-stone-200 text-stone-400 cursor-not-allowed opacity-60'
@@ -501,12 +501,12 @@ export const AccountPicker: React.FC = () => {
                 ) : isLocked ? (
                   <>
                     <Lock className="w-4 h-4 text-stone-400" />
-                    <span>Locked ({formatTime(remainingSeconds)})</span>
+                    <span>Try again in {formatTime(remainingSeconds)}</span>
                   </>
                 ) : (
                   <>
                     <ShieldCheck className="w-4 h-4" />
-                    <span>Authorize Terminal</span>
+                    <span>Continue</span>
                   </>
                 )}
               </button>
