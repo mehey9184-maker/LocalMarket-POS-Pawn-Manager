@@ -75,14 +75,14 @@ const MainLayout: React.FC = () => {
       <Header />
 
       <main id="app-viewport" className="flex-1 flex overflow-hidden bg-[#F5F6F8]">
-        {activeTab === 'home' && <Home />}
-        {activeTab === 'sell' && <Sell />}
-        {activeTab === 'buy-pawn' && <BuyPawn />}
-        {activeTab === 'inventory' && <Inventory />}
-        {activeTab === 'vault' && <VaultManager />}
-        {activeTab === 'saps' && <SapsRegister />}
-        {activeTab === 'customers' && <Customers />}
-        {activeTab === 'profile' && <CashierProfile />}
+        <div className={`flex-1 h-full w-full ${activeTab === 'home' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><Home /></div>
+        <div className={`flex-1 h-full w-full ${activeTab === 'sell' ? 'flex flex-col lg:flex-row overflow-hidden' : 'hidden'}`}><Sell /></div>
+        <div className={`flex-1 h-full w-full ${activeTab === 'buy-pawn' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><BuyPawn /></div>
+        <div className={`flex-1 h-full w-full ${activeTab === 'inventory' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><Inventory /></div>
+        <div className={`flex-1 h-full w-full ${activeTab === 'vault' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><VaultManager /></div>
+        <div className={`flex-1 h-full w-full ${activeTab === 'saps' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><SapsRegister /></div>
+        <div className={`flex-1 h-full w-full ${activeTab === 'customers' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><Customers /></div>
+        <div className={`flex-1 h-full w-full ${activeTab === 'profile' ? 'flex flex-col md:flex-row overflow-hidden' : 'hidden'}`}><CashierProfile /></div>
       </main>
 
       {/* Hardware Scanner Camera Modal */}

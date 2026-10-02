@@ -132,8 +132,8 @@ export const CashierProfile: React.FC = () => {
 
   const sidebarItems = [
     { id: 'account', label: 'My Account', icon: User, show: true },
-    { id: 'shop', label: 'Shop Profile', icon: Building2, show: true },
-    { id: 'staff', label: 'Staff & Security', icon: UserPlus, show: hasPermission('staff') },
+    { id: 'shop', label: 'Shop Profile', icon: Building2, show: isOwner },
+    { id: 'staff', label: 'Staff & Security', icon: UserPlus, show: isOwner },
     { id: 'rules', label: 'Business Rules & Legal', icon: Sliders, show: isOwner },
     { id: 'system', label: 'System & Audit', icon: HardDrive, show: true },
   ];
@@ -546,13 +546,14 @@ export const CashierProfile: React.FC = () => {
 
             {/* 2. SHOP PROFILE */}
             {activeTab === 'shop' && (
-              <motion.div
-                key="shop"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="space-y-8"
-              >
+              isOwner ? (
+                <motion.div
+                  key="shop"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="space-y-8"
+                >
                 <div>
                   <h1 className="text-3xl sm:text-4xl font-headline font-black text-stone-900 tracking-tight">Shop Profile</h1>
                   <p className="text-stone-500 text-sm mt-1">Manage shop branding, logo, contact information and location</p>
@@ -711,7 +712,15 @@ export const CashierProfile: React.FC = () => {
                   </div>
                 </form>
               </motion.div>
-            )}
+            ) : (
+              <div className="p-12 text-center bg-white border border-stone-200 rounded-3xl space-y-3 shadow-xs">
+                <Building2 className="w-10 h-10 text-stone-300 mx-auto" />
+                <h3 className="text-base font-bold text-stone-900">Owner Access Required</h3>
+                <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                  Shop Profile settings and statutory legal compliance registrations can only be modified by the Shop Owner.
+                </p>
+              </div>
+            ))}
 
             {/* 3. STAFF & SECURITY */}
             {activeTab === 'staff' && (

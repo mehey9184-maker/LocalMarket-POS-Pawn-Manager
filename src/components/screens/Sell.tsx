@@ -139,6 +139,7 @@ const CartItemRow: React.FC<{
 
 export const Sell: React.FC = () => {
   const { 
+    activeTab,
     inventory, 
     cart, 
     addToCart, 
@@ -180,8 +181,10 @@ export const Sell: React.FC = () => {
   };
 
   useEffect(() => {
-    searchInputRef.current?.focus();
-  }, []);
+    if (activeTab === 'sell') {
+      searchInputRef.current?.focus();
+    }
+  }, [activeTab]);
 
   const floorItems = useMemo(() => {
     return inventory.filter(item => 
@@ -375,6 +378,8 @@ export const Sell: React.FC = () => {
   };
 
   useEffect(() => {
+    if (activeTab !== 'sell') return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F1') { e.preventDefault(); setSelectedTender('cash'); }
       if (e.key === 'F2') { e.preventDefault(); setSelectedTender('card'); }
@@ -389,7 +394,7 @@ export const Sell: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, selectedTender, numTendered, total, receiptType, customerMobile, isProcessing]);
+  }, [activeTab, cart, selectedTender, numTendered, total, receiptType, customerMobile, isProcessing]);
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row bg-[#F5F6F8] overflow-hidden">

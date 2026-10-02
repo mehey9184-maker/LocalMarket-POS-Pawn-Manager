@@ -130,6 +130,8 @@ function evaluateSecureUpdateStaffProfile(
     return { success: false, error: 'Managers cannot modify other Manager accounts' };
   }
 
+  const targetRoleAfterUpdate = updates.role || target.role;
+
   for (const field of Object.keys(updates)) {
     if (field === 'role') {
       const requestedRole = updates[field];
@@ -159,9 +161,32 @@ function evaluateSecureUpdateStaffProfile(
       }
     }
 
-    if (field === 'permissions' && !['owner', 'admin'].includes(caller.role)) {
-      if (updates.permissions?.staff === true) {
-        return { success: false, error: 'Managers cannot grant staff management permissions' };
+    if (field === 'permissions') {
+      const perms = updates.permissions || {};
+
+      // Fixed Role Invariants
+      if (targetRoleAfterUpdate === 'cashier') {
+        if (perms.pawn === true || perms.sellerAcquisitions === true || perms.refunds === true || perms.pricing === true || perms.reports === true || perms.staff === true) {
+          return { success: false, error: 'Cashier role permissions are fixed to Sales and Inventory.' };
+        }
+      }
+
+      if (targetRoleAfterUpdate === 'senior_cashier') {
+        if (perms.refunds === true || perms.pricing === true || perms.reports === true || perms.staff === true) {
+          return { success: false, error: 'Senior Cashier role permissions are fixed and cannot be elevated.' };
+        }
+      }
+
+      if (targetRoleAfterUpdate === 'manager') {
+        if (perms.pricing === true || perms.staff === true) {
+          return { success: false, error: 'Manager role permissions are fixed and cannot be elevated.' };
+        }
+      }
+
+      if (!['owner', 'admin'].includes(caller.role)) {
+        if (perms.staff === true) {
+          return { success: false, error: 'Managers cannot grant staff management permissions' };
+        }
       }
     }
   }
@@ -462,6 +487,53 @@ export function runStaffSecurityFinalizationTests() {
   assert(migrationSql.includes('Cannot modify or deactivate the last remaining active Owner for this shop.'), 'Migration enforces Last-Owner safety invariant');
   assert(migrationSql.includes('REVOKE ALL ON FUNCTION public.secure_update_staff_profile'), 'Migration revokes public/anon execution privileges');
   assert(migrationSql.includes('GRANT EXECUTE ON FUNCTION public.secure_update_staff_profile'), 'Migration grants execution privileges to authenticated and service_role');
+
+  // =========================================================================
+  // TEST 7: Owner-Only Shop Settings & Fixed Role Permissions
+  // =========================================================================
+  console.log('\n--- Group 7: Owner-Only Shop Settings & Fixed Role Defaults ---');
+
+  // A. Cashier Fixed Role Defaults (Sales, Inventory only)
+  const cashierElevationPawn = evaluateSecureUpdateStaffProfile(callerOwner, targetCashier, { permissions: { pawn: true } }, 1);
+  assert(cashierElevationPawn.success === false, 'Cannot elevate Cashier to have Pawn operations');
+  assert(cashierElevationPawn.error === 'Cashier role permissions are fixed to Sales and Inventory.', 'Cashier permission elevation returns exact invariant error');
+
+  const cashierElevationSeller = evaluateSecureUpdateStaffProfile(callerOwner, targetCashier, { permissions: { sellerAcquisitions: true } }, 1);
+  assert(cashierElevationSeller.success === false, 'Cannot elevate Cashier to have Seller Acquisitions');
+  assert(cashierElevationSeller.error === 'Cashier role permissions are fixed to Sales and Inventory.', 'Cashier seller intake elevation returns exact invariant error');
+
+  const cashierElevationRefunds = evaluateSecureUpdateStaffProfile(callerOwner, targetCashier, { permissions: { refunds: true } }, 1);
+  assert(cashierElevationRefunds.success === false, 'Cannot elevate Cashier to have Refunds');
+  assert(cashierElevationRefunds.error === 'Cashier role permissions are fixed to Sales and Inventory.', 'Cashier refunds elevation returns exact invariant error');
+
+  // B. Senior Cashier Fixed Role Defaults (Sales, Inventory, Pawn, Seller Intake only)
+  const seniorElevationRefunds = evaluateSecureUpdateStaffProfile(callerOwner, targetSenior, { permissions: { refunds: true } }, 1);
+  assert(seniorElevationRefunds.success === false, 'Cannot elevate Senior Cashier to have Refunds');
+  assert(seniorElevationRefunds.error === 'Senior Cashier role permissions are fixed and cannot be elevated.', 'Senior Cashier refunds elevation returns exact invariant error');
+
+  const seniorElevationPricing = evaluateSecureUpdateStaffProfile(callerOwner, targetSenior, { permissions: { pricing: true } }, 1);
+  assert(seniorElevationPricing.success === false, 'Cannot elevate Senior Cashier to have Pricing');
+  assert(seniorElevationPricing.error === 'Senior Cashier role permissions are fixed and cannot be elevated.', 'Senior Cashier pricing elevation returns exact invariant error');
+
+  // C. Manager Fixed Role Defaults (Sales, Inventory, Pawn, Seller Intake, Refunds, Reports only)
+  const managerElevationPricing = evaluateSecureUpdateStaffProfile(callerOwner, targetManager, { permissions: { pricing: true } }, 1);
+  assert(managerElevationPricing.success === false, 'Cannot elevate Manager to have Pricing');
+  assert(managerElevationPricing.error === 'Manager role permissions are fixed and cannot be elevated.', 'Manager pricing elevation returns exact invariant error');
+
+  const managerElevationStaff = evaluateSecureUpdateStaffProfile(callerOwner, targetManager, { permissions: { staff: true } }, 1);
+  assert(managerElevationStaff.success === false, 'Cannot elevate Manager to have Staff Admin authority');
+  assert(managerElevationStaff.error === 'Manager role permissions are fixed and cannot be elevated.', 'Manager staff elevation returns exact invariant error');
+
+  // D. Verify Owner-Only Shop Settings Migration File Integrity
+  const shopSettingsMigrationPath = path.resolve('supabase/migrations/20261002020000_owner_only_shop_settings_and_fixed_role_defaults.sql');
+  assert(fs.existsSync(shopSettingsMigrationPath), 'Migration 20261002020000_owner_only_shop_settings_and_fixed_role_defaults.sql exists');
+  const shopSettingsMigrationSql = fs.readFileSync(shopSettingsMigrationPath, 'utf-8');
+
+  assert(shopSettingsMigrationSql.includes('CREATE POLICY "Owners update shop profiles"'), 'Migration creates Owner-only update policy for shop_profiles');
+  assert(shopSettingsMigrationSql.includes('role IN (\'owner\', \'admin\')'), 'Migration enforces role IN (\'owner\', \'admin\') on shop_profiles updates');
+  assert(shopSettingsMigrationSql.includes('Cashier role permissions are fixed to Sales and Inventory.'), 'Migration contains Cashier fixed permissions check');
+  assert(shopSettingsMigrationSql.includes('Senior Cashier role permissions are fixed and cannot be elevated.'), 'Migration contains Senior Cashier fixed permissions check');
+  assert(shopSettingsMigrationSql.includes('Manager role permissions are fixed and cannot be elevated.'), 'Migration contains Manager fixed permissions check');
 
   console.log('====================================================');
   console.log('   ALL STAFF SECURITY FINALIZATION TESTS PASSED!   ');

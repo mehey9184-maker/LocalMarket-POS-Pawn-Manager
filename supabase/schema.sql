@@ -570,12 +570,52 @@ DROP POLICY IF EXISTS "Allow anon update shop profiles" ON public.shop_profiles;
 
 -- SHOP PROFILES POLICIES
 CREATE POLICY "Staff read active shop profiles" ON public.shop_profiles
-    FOR SELECT TO authenticated USING (is_active = true OR public.is_manager_or_owner());
+    FOR SELECT TO authenticated
+    USING (is_active = true OR EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE id = auth.uid()
+          AND role IN ('owner', 'admin', 'manager')
+    ));
 
-CREATE POLICY "Managers manage shop profiles" ON public.shop_profiles
-    FOR ALL TO authenticated
-    USING (public.is_manager_or_owner())
-    WITH CHECK (public.is_manager_or_owner());
+CREATE POLICY "Owners update shop profiles" ON public.shop_profiles
+    FOR UPDATE TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE id = auth.uid()
+              AND role IN ('owner', 'admin')
+              AND (shop_id = public.shop_profiles.id OR role = 'admin')
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE id = auth.uid()
+              AND role IN ('owner', 'admin')
+              AND (shop_id = public.shop_profiles.id OR role = 'admin')
+        )
+    );
+
+CREATE POLICY "Owners insert shop profiles" ON public.shop_profiles
+    FOR INSERT TO authenticated
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE id = auth.uid()
+              AND role IN ('owner', 'admin')
+        )
+    );
+
+CREATE POLICY "Owners delete shop profiles" ON public.shop_profiles
+    FOR DELETE TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE id = auth.uid()
+              AND role IN ('owner', 'admin')
+              AND (shop_id = public.shop_profiles.id OR role = 'admin')
+        )
+    );
 
 -- PROFILES POLICIES (No public anon read)
 CREATE POLICY "Staff read branch profiles" ON public.profiles

@@ -356,10 +356,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [businessRules, currentUserProfile, queueSyncAction, showToast]);
 
   const updateShopProfile = useCallback(async (updates: Partial<ShopProfile>): Promise<{ success: boolean; persistence?: 'cloud' | 'local'; syncQueued?: boolean; error?: string }> => {
-    const canManage = currentUserProfile?.role === 'owner' || currentUserProfile?.role === 'manager' || currentUserProfile?.role === 'admin';
-    if (!canManage) {
-      showToast('Unauthorized', 'Manager or Owner authority required to update store profile.', 'error');
-      return { success: false, error: 'Unauthorized: Manager or Owner authority required to update store profile.' };
+    const isOwner = currentUserProfile?.role === 'owner' || currentUserProfile?.role === 'admin';
+    if (!isOwner) {
+      showToast('Unauthorized', 'Owner authority required to update shop profile settings.', 'error');
+      return { success: false, error: 'Unauthorized: Owner authority required to update shop profile settings.' };
     }
 
     const next = { ...shopProfile, ...updates };

@@ -230,69 +230,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    // Foreground / visibility change handler — checks recovery only if token changed or session was missing
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible') {
-        const validSession = await authApi.getSession();
-        const freshToken = validSession?.access_token ?? null;
-        if (freshToken && validSession) {
-          if (freshToken !== activeToken) {
-            const wasMissing = !activeToken;
-            activeToken = freshToken;
-            setSession(validSession);
-            setUser(validSession.user ?? null);
-            if (wasMissing && typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('lm_session_recovered'));
-            }
-          }
-        } else if (activeToken) {
-          activeToken = null;
-          activeProfileUserId.current = null;
-          inFlightProfilePromise.current = null;
-          setSession(null);
-          setUser(null);
-          setProfile(null);
-          setIsProfileLoading(false);
-        }
-      }
-    };
-
-    // Throttled window focus handler
-    const handleWindowFocus = async () => {
-      const now = Date.now();
-      if (now - lastFocusCheck < 10000) return; // At most once every 10 seconds
-      lastFocusCheck = now;
-
-      const validSession = await authApi.getSession();
-      const freshToken = validSession?.access_token ?? null;
-      if (freshToken && validSession) {
-        if (freshToken !== activeToken) {
-          const wasMissing = !activeToken;
-          activeToken = freshToken;
-          setSession(validSession);
-          setUser(validSession.user ?? null);
-          if (wasMissing && typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('lm_session_recovered'));
-          }
-        }
-      } else if (activeToken) {
-        activeToken = null;
-        activeProfileUserId.current = null;
-        inFlightProfilePromise.current = null;
-        setSession(null);
-        setUser(null);
-        setProfile(null);
-        setIsProfileLoading(false);
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleWindowFocus);
-
     return () => {
       unsubscribe();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleWindowFocus);
     };
   }, []);
 
@@ -307,29 +246,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const shopId = profile?.shop_id || null;
 
   const hasPermission = (permission: keyof Permissions): boolean => {
-    // Owners and Admins have absolute authority
+    // 1. Owners and Admins have absolute business authority
     if (isOwner) return true;
     
-    // Check role-based defaults if specific permission JSON is missing or incomplete
-    const perms = (profile?.permissions as any) || {};
-    
-    // Explicit permission grant in the profile takes precedence
-    if (perms[permission] === true) return true;
-    if (perms[permission] === false) return false;
-
-    // Fallback to role-based sensible defaults
+    // 2. Fixed System Roles are authoritative.
+    // Stored profile.permissions JSON cannot override fixed role boundaries.
     if (isManager) {
-      // Managers get most things by default unless explicitly revoked
-      return true;
+      // Manager default permissions: Sales, Inventory, Pawn, Seller Intake, Refunds, Reports.
+      // Manager does NOT gain Shop Settings, Owner rules, or full staff management authority.
+      const managerPerms: (keyof Permissions)[] = ['sales', 'inventory', 'pawn', 'sellerAcquisitions', 'refunds', 'reports'];
+      return managerPerms.includes(permission);
     }
     
     if (isSeniorCashier) {
-      // Senior Cashiers get a subset of trusted permissions by default
+      // Senior Cashier default permissions: Sales, Inventory, Pawn, Seller Intake.
       const seniorDefaults: (keyof Permissions)[] = ['sales', 'inventory', 'pawn', 'sellerAcquisitions'];
       return seniorDefaults.includes(permission);
     }
     
-    // Standard Cashier defaults
+    // 3. Standard Cashier default permissions: Sales, Inventory.
     const cashierDefaults: (keyof Permissions)[] = ['sales', 'inventory'];
     return cashierDefaults.includes(permission);
   };

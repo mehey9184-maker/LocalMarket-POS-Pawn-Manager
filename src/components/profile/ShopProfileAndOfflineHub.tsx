@@ -121,18 +121,20 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              onClick={() => {
-                setProfileForm(shopProfile);
-                setIsEditingProfile(true);
-              }}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#C85A32] hover:bg-[#B84E27] text-white rounded-xl text-xs font-bold transition shadow-md shadow-[#C85A32]/20 cursor-pointer"
-            >
-              <Edit3 className="w-4 h-4" />
-              <span>Edit Store Info</span>
-            </button>
-          </div>
+          {isOwner && (
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={() => {
+                  setProfileForm(shopProfile);
+                  setIsEditingProfile(true);
+                }}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#C85A32] hover:bg-[#B84E27] text-white rounded-xl text-xs font-bold transition shadow-md shadow-[#C85A32]/20 cursor-pointer"
+              >
+                <Edit3 className="w-4 h-4" />
+                <span>Edit Store Info</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* COMPLIANCE & LEGAL DETAILS GRID */}
@@ -190,14 +192,16 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsRulesModalOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#C85A32] hover:bg-[#B84E27] text-white text-xs font-bold transition shadow-md shadow-[#C85A32]/20 active:scale-[0.98] cursor-pointer"
-          >
-            <Sliders className="w-4 h-4" />
-            <span>Open Deal Rules Configurator</span>
-          </button>
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => setIsRulesModalOpen(true)}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#C85A32] hover:bg-[#B84E27] text-white text-xs font-bold transition shadow-md shadow-[#C85A32]/20 active:scale-[0.98] cursor-pointer"
+            >
+              <Sliders className="w-4 h-4" />
+              <span>Open Deal Rules Configurator</span>
+            </button>
+          )}
         </div>
 
         {/* Live Active Rules Grid */}
