@@ -26,6 +26,7 @@ import { runSeniorUxPhase1Tests } from './seniorUxPhase1.test';
 import { runPhase2aCashierSpeedTests } from './phase2aCashierSpeed.test';
 import { runPhase2bSecondHandIntakeTests } from './phase2bSecondHandIntake.test';
 import { runPhase2cFluidBuyPawnTests } from './phase2cFluidBuyPawn.test';
+import { runPhase2dBarcodeScannerTests } from './phase2dBarcodeScanner.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -58,6 +59,7 @@ export async function runAllTests() {
   runPhase2aCashierSpeedTests();
   await runPhase2bSecondHandIntakeTests();
   await runPhase2cFluidBuyPawnTests();
+  await runPhase2dBarcodeScannerTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');

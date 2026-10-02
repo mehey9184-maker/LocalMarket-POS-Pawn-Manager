@@ -7,6 +7,7 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { shopItemsApi } from '../../services/supabaseApi';
 import { parseAndValidateRsaId } from '../../utils/rsaIdValidator';
+import { normalizeScannerInput } from '../../utils/scannerNormalizer';
 import { RsaIdScanResult } from '../../types';
 
 export type ScannerStatusState = 
@@ -127,7 +128,7 @@ export const ScannerModal: React.FC = () => {
 
   // Handle decoded code payload cleanly
   const handleDecodedCode = useCallback(async (codeText: string) => {
-    const cleanCode = codeText.trim();
+    const cleanCode = normalizeScannerInput(codeText);
     if (!cleanCode || isScanningRef.current) return;
 
     isScanningRef.current = true;
@@ -263,8 +264,8 @@ export const ScannerModal: React.FC = () => {
   // Handle manual code entry submit or USB scanner input
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manualInput.trim()) return;
-    const valueToSubmit = manualInput.trim();
+    const valueToSubmit = normalizeScannerInput(manualInput);
+    if (!valueToSubmit) return;
     setManualInput('');
     handleDecodedCode(valueToSubmit);
   };

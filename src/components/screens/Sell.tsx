@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useSync } from '../../context/SyncContext';
 import { PaymentMethod, ReceiptDelivery, InventoryItem } from '../../types';
 import { validateAndNormalizeSaPhone } from '../../utils/phoneValidator';
+import { normalizeScannerInput } from '../../utils/scannerNormalizer';
 import { focusAndScrollErrorField } from '../../utils/errorNavigator';
 import { motion, AnimatePresence } from 'motion/react';
 import { humanizeErrorMessage } from '../../hooks/useOperationProgress';
@@ -169,6 +170,7 @@ export const Sell: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cashInputRef = useRef<HTMLInputElement>(null);
   const mobileInputRef = useRef<HTMLInputElement>(null);
+  const lastScanRef = useRef<{ query: string; time: number }>({ query: '', time: 0 });
 
   const handleProtectedPriceUpdate = (itemId: string, newPrice: number) => {
     if (!canEditPrice) {
@@ -192,7 +194,7 @@ export const Sell: React.FC = () => {
   }, [inventory]);
 
   const filteredItems = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
+    const q = normalizeScannerInput(searchQuery).toLowerCase();
     if (!q) return floorItems.slice(0, 16);
 
     const queryWords = q.split(/\s+/);
@@ -232,10 +234,20 @@ export const Sell: React.FC = () => {
     searchInputRef.current?.focus();
   };
 
-  const handleBarcodeSearchSubmit = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    const cleanQuery = searchQuery.trim();
+  const handleBarcodeSearchSubmit = (eOrQuery?: React.FormEvent | string) => {
+    if (typeof eOrQuery === 'object' && eOrQuery !== null && 'preventDefault' in eOrQuery) {
+      eOrQuery.preventDefault();
+    }
+
+    const rawQuery = typeof eOrQuery === 'string' ? eOrQuery : searchQuery;
+    const cleanQuery = normalizeScannerInput(rawQuery);
     if (!cleanQuery || isCheckingOutRef.current) return;
+
+    const now = Date.now();
+    if (lastScanRef.current.query.toLowerCase() === cleanQuery.toLowerCase() && now - lastScanRef.current.time < 300) {
+      return;
+    }
+    lastScanRef.current = { query: cleanQuery, time: now };
 
     // Check across all inventory for exact SKU, serial, or pawn ticket
     const anyExactMatch = inventory.find(
@@ -279,6 +291,19 @@ export const Sell: React.FC = () => {
     }
 
     searchInputRef.current?.focus();
+  };
+
+  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value;
+    if (rawVal.includes('\r') || rawVal.includes('\n')) {
+      const cleanVal = normalizeScannerInput(rawVal);
+      setSearchQuery(cleanVal);
+      if (cleanVal) {
+        handleBarcodeSearchSubmit(cleanVal);
+      }
+      return;
+    }
+    setSearchQuery(rawVal);
   };
 
   const handleCompleteSale = async () => {
@@ -402,7 +427,7 @@ export const Sell: React.FC = () => {
               ref={searchInputRef}
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={handleSearchInputChange}
               placeholder="Scan item or search by name, SKU, brand, model..."
               className="w-full bg-[#F8F9FA] border border-gray-200 focus:border-[#C85A32] focus:bg-white rounded-xl pl-11 pr-4 py-3 text-sm text-gray-900 font-mono placeholder:text-gray-400 transition-all outline-none"
             />

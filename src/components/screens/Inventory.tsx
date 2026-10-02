@@ -24,6 +24,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { InventoryItem, AcquisitionType } from '../../types';
+import { normalizeScannerInput } from '../../utils/scannerNormalizer';
 
 export const Inventory: React.FC = () => {
   const { inventory, setActiveTab, showToast } = useApp();
@@ -62,7 +63,7 @@ export const Inventory: React.FC = () => {
       if (acquisitionFilter !== 'All' && i.acquisitionType !== acquisitionFilter) {
         return false;
       }
-      const q = search.toLowerCase();
+      const q = normalizeScannerInput(search).toLowerCase();
       return (
         i.title.toLowerCase().includes(q) ||
         i.sku.toLowerCase().includes(q) ||

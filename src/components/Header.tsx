@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp, NavTab } from '../context/AppContext';
 import { useSellers } from '../context/SellerContext';
 import { useAuth } from '../context/AuthContext';
+import { normalizeScannerInput } from '../utils/scannerNormalizer';
 import { 
   Search, 
   User, 
@@ -43,7 +44,7 @@ export const Header: React.FC<HeaderProps> = () => {
 
   // Universal Search across domains
   const searchResults = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
+    const q = normalizeScannerInput(searchQuery).toLowerCase();
     if (q.length < 2) return null;
 
     const matchedInventory = inventory.filter(i => 
