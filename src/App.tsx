@@ -47,7 +47,8 @@ const MainLayout: React.FC = () => {
           setActiveTab('shop-setup');
         }
       } else if (activeTab === 'landing' || activeTab === 'auth' || activeTab === 'shop-setup') {
-        setActiveTab('home');
+        const isStandardCashier = profile?.role === 'cashier';
+        setActiveTab(isStandardCashier ? 'sell' : 'home');
       }
     } else if (!user && activeTab !== 'auth') {
       setActiveTab('auth');

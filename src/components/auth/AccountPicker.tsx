@@ -23,7 +23,7 @@ export const AccountPicker: React.FC = () => {
     cancelSwitchAccount
   } = useAuth();
 
-  const { showToast } = useApp();
+  const { showToast, setActiveTab } = useApp();
   
   const [selectedStaff, setSelectedStaff] = useState<ProfileRow | null>(null);
   const [pin, setPin] = useState('');
@@ -191,6 +191,9 @@ export const AccountPicker: React.FC = () => {
       }
 
       showToast('Welcome Back', `Logged in as ${selectedStaff.full_name}`, 'success');
+      if (selectedStaff.role === 'cashier') {
+        setActiveTab('sell');
+      }
       setIsAccountPickerOpen(false);
       setSelectedStaff(null);
       setPin('');

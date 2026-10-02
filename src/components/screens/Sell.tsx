@@ -631,27 +631,40 @@ export const Sell: React.FC = () => {
                   </div>
                 </div>
 
-                {total > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setCashTendered(Math.ceil(total).toString())}
-                      className="px-2.5 py-1 rounded bg-white border border-gray-200 text-xs font-mono font-bold text-gray-700 hover:bg-gray-50 transition cursor-pointer"
-                    >
-                      Exact R {Math.ceil(total).toLocaleString()}
-                    </button>
-                    {[50, 100, 200, 500, 1000].filter(n => n >= total && n !== Math.ceil(total)).slice(0, 3).map(val => (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => setCashTendered(val.toString())}
-                        className="px-2.5 py-1 rounded bg-white border border-gray-200 text-xs font-mono font-bold text-[#C85A32] hover:bg-[#FDF0EA] transition cursor-pointer"
-                      >
-                        R {val.toLocaleString()}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className="grid grid-cols-4 gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    disabled={cart.length === 0 || isProcessing}
+                    onClick={() => setCashTendered(total > 0 ? total.toString() : '')}
+                    className="py-2 rounded-lg bg-white border border-stone-200 hover:border-[#C85A32] hover:bg-[#FDF0EA] text-xs font-mono font-bold text-stone-800 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
+                  >
+                    Exact
+                  </button>
+                  <button
+                    type="button"
+                    disabled={cart.length === 0 || isProcessing}
+                    onClick={() => setCashTendered('50')}
+                    className="py-2 rounded-lg bg-white border border-stone-200 hover:border-[#C85A32] hover:bg-[#FDF0EA] text-xs font-mono font-bold text-[#C85A32] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
+                  >
+                    R50
+                  </button>
+                  <button
+                    type="button"
+                    disabled={cart.length === 0 || isProcessing}
+                    onClick={() => setCashTendered('100')}
+                    className="py-2 rounded-lg bg-white border border-stone-200 hover:border-[#C85A32] hover:bg-[#FDF0EA] text-xs font-mono font-bold text-[#C85A32] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
+                  >
+                    R100
+                  </button>
+                  <button
+                    type="button"
+                    disabled={cart.length === 0 || isProcessing}
+                    onClick={() => setCashTendered('200')}
+                    className="py-2 rounded-lg bg-white border border-stone-200 hover:border-[#C85A32] hover:bg-[#FDF0EA] text-xs font-mono font-bold text-[#C85A32] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
+                  >
+                    R200
+                  </button>
+                </div>
               </motion.div>
             )}
 
