@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { UserRole } from '../types/supabase';
 
 // =========================================================================
@@ -103,6 +105,68 @@ function getSeniorCashierDefaultPermissions(): Record<string, boolean> {
     reports: false,
     staff: false
   };
+}
+
+// Full Invariant Simulation for secure_update_staff_profile
+function evaluateSecureUpdateStaffProfile(
+  caller: { id: string; role: UserRole; shop_id: string },
+  target: { id: string; role: UserRole; shop_id: string },
+  updates: Record<string, any>,
+  otherActiveOwnersInShop: number = 0
+): { success: boolean; error?: string } {
+  if (!['owner', 'admin', 'manager'].includes(caller.role)) {
+    return { success: false, error: 'Insufficient permissions to manage staff' };
+  }
+
+  if (caller.shop_id !== target.shop_id && caller.role !== 'admin') {
+    return { success: false, error: 'Cannot manage staff from a different shop branch' };
+  }
+
+  if (caller.role === 'manager' && (target.role === 'owner' || target.role === 'admin')) {
+    return { success: false, error: 'Managers cannot modify Owner or Admin accounts' };
+  }
+
+  if (caller.role === 'manager' && target.role === 'manager' && caller.id !== target.id) {
+    return { success: false, error: 'Managers cannot modify other Manager accounts' };
+  }
+
+  for (const field of Object.keys(updates)) {
+    if (field === 'role') {
+      const requestedRole = updates[field];
+      if (caller.role === 'owner' && caller.id === target.id && requestedRole !== 'owner') {
+        return { success: false, error: 'Your Owner account cannot be changed to a staff role.' };
+      }
+      if (target.role === 'owner' && requestedRole !== 'owner') {
+        return { success: false, error: 'An existing Owner account cannot be changed to a staff role.' };
+      }
+      if (target.role === 'owner' && requestedRole !== 'owner' && otherActiveOwnersInShop < 1) {
+        return { success: false, error: 'Cannot modify or deactivate the last remaining active Owner for this shop.' };
+      }
+      if (['owner', 'admin'].includes(requestedRole) && !['owner', 'admin'].includes(caller.role)) {
+        return { success: false, error: 'Only Owners can promote staff to Owner or Admin roles' };
+      }
+      if (requestedRole === 'manager' && caller.role === 'manager' && target.role !== 'manager') {
+        return { success: false, error: 'Managers cannot promote staff to Manager role' };
+      }
+    }
+
+    if (field === 'is_active' && updates[field] === false) {
+      if (caller.role === 'owner' && caller.id === target.id) {
+        return { success: false, error: 'The Shop Owner account cannot be deactivated from Staff Management.' };
+      }
+      if (target.role === 'owner' && otherActiveOwnersInShop < 1) {
+        return { success: false, error: 'Cannot modify or deactivate the last remaining active Owner for this shop.' };
+      }
+    }
+
+    if (field === 'permissions' && !['owner', 'admin'].includes(caller.role)) {
+      if (updates.permissions?.staff === true) {
+        return { success: false, error: 'Managers cannot grant staff management permissions' };
+      }
+    }
+  }
+
+  return { success: true };
 }
 
 function assert(condition: boolean, message: string) {
@@ -313,6 +377,91 @@ export function runStaffSecurityFinalizationTests() {
   assert(pickerStaff.some(s => s.role === 'admin') === false, 'Technical admin is strictly hidden from Account Picker');
   assert(pickerStaff.some(s => s.is_active === false) === false, 'Deactivated staff are excluded from Account Picker');
   assert(pickerStaff.some(s => s.role === 'senior_cashier'), 'Senior Cashier is distinctly present in Account Picker');
+
+  // =========================================================================
+  // TEST 6: Critical Staff Role Safety & Owner Self-Protection Invariants
+  // =========================================================================
+  console.log('\n--- Group 6: Critical Staff Role Safety & Owner Self-Protection ---');
+  const callerOwner = { id: 'owner-uuid-1', role: 'owner' as UserRole, shop_id: shopA };
+  const targetOwner2 = { id: 'owner-uuid-2', role: 'owner' as UserRole, shop_id: shopA };
+  const targetCashier = { id: 'cashier-uuid-1', role: 'cashier' as UserRole, shop_id: shopA };
+  const targetSenior = { id: 'senior-uuid-1', role: 'senior_cashier' as UserRole, shop_id: shopA };
+  const targetManager = { id: 'manager-uuid-1', role: 'manager' as UserRole, shop_id: shopA };
+  const targetAdmin = { id: 'admin-uuid-1', role: 'admin' as UserRole, shop_id: shopA };
+  const callerManager = { id: 'manager-uuid-1', role: 'manager' as UserRole, shop_id: shopA };
+  const callerCrossShopOwner = { id: 'owner-uuid-cross', role: 'owner' as UserRole, shop_id: shopB };
+
+  // 1. Owner cannot change own role (Owner -> Cashier, Owner -> Senior Cashier, Owner -> Manager)
+  const demoteSelfToCashier = evaluateSecureUpdateStaffProfile(callerOwner, callerOwner, { role: 'cashier' }, 1);
+  assert(demoteSelfToCashier.success === false, 'Owner cannot change own role to Cashier');
+  assert(demoteSelfToCashier.error === 'Your Owner account cannot be changed to a staff role.', 'Owner self-role change returns exact invariant error message');
+
+  const demoteSelfToSenior = evaluateSecureUpdateStaffProfile(callerOwner, callerOwner, { role: 'senior_cashier' }, 1);
+  assert(demoteSelfToSenior.success === false, 'Owner cannot change own role to Senior Cashier');
+  assert(demoteSelfToSenior.error === 'Your Owner account cannot be changed to a staff role.', 'Owner self-demotion to Senior Cashier returns exact invariant error');
+
+  const demoteSelfToManager = evaluateSecureUpdateStaffProfile(callerOwner, callerOwner, { role: 'manager' }, 1);
+  assert(demoteSelfToManager.success === false, 'Owner cannot change own role to Manager');
+  assert(demoteSelfToManager.error === 'Your Owner account cannot be changed to a staff role.', 'Owner self-demotion to Manager returns exact invariant error');
+
+  // 2. Owner cannot deactivate own account
+  const deactivateSelf = evaluateSecureUpdateStaffProfile(callerOwner, callerOwner, { is_active: false }, 1);
+  assert(deactivateSelf.success === false, 'Owner cannot deactivate own account');
+  assert(deactivateSelf.error === 'The Shop Owner account cannot be deactivated from Staff Management.', 'Owner self-deactivation returns exact invariant error message');
+
+  // 3. Owner cannot demote another Owner
+  const demoteOtherOwner = evaluateSecureUpdateStaffProfile(callerOwner, targetOwner2, { role: 'senior_cashier' }, 1);
+  assert(demoteOtherOwner.success === false, 'Owner cannot demote another Owner account');
+  assert(demoteOtherOwner.error === 'An existing Owner account cannot be changed to a staff role.', 'Demoting existing owner returns exact invariant error');
+
+  // 4. Last-Owner safety (Cannot deactivate or demote last remaining active owner)
+  const deactivateLastOwner = evaluateSecureUpdateStaffProfile(callerOwner, targetOwner2, { is_active: false }, 0);
+  assert(deactivateLastOwner.success === false, 'Cannot deactivate last remaining active Owner in shop');
+  assert(deactivateLastOwner.error === 'Cannot modify or deactivate the last remaining active Owner for this shop.', 'Last-owner deactivation returns exact invariant error');
+
+  // 5. Owner can still manage Cashier
+  const ownerManageCashier = evaluateSecureUpdateStaffProfile(callerOwner, targetCashier, { role: 'senior_cashier', is_active: true }, 1);
+  assert(ownerManageCashier.success === true, 'Owner can still manage and promote Cashier to Senior Cashier');
+
+  // 6. Owner can still manage Senior Cashier
+  const ownerManageSenior = evaluateSecureUpdateStaffProfile(callerOwner, targetSenior, { role: 'manager', full_name: 'Senior Lead' }, 1);
+  assert(ownerManageSenior.success === true, 'Owner can still manage and promote Senior Cashier to Manager');
+
+  // 7. Owner can still manage Manager
+  const ownerManageManager = evaluateSecureUpdateStaffProfile(callerOwner, targetManager, { is_active: false, full_name: 'Branch Manager' }, 1);
+  assert(ownerManageManager.success === true, 'Owner can still manage and deactivate Manager');
+
+  // 8. Manager cannot modify Owner
+  const managerModOwner = evaluateSecureUpdateStaffProfile(callerManager, targetOwner2, { full_name: 'Hacked Owner' }, 1);
+  assert(managerModOwner.success === false, 'Manager cannot modify Owner account');
+  assert(managerModOwner.error === 'Managers cannot modify Owner or Admin accounts', 'Manager modifying Owner returns exact error');
+
+  // 9. Manager cannot promote to Manager
+  const managerPromoteManager = evaluateSecureUpdateStaffProfile(callerManager, targetCashier, { role: 'manager' }, 1);
+  assert(managerPromoteManager.success === false, 'Manager cannot promote staff to Manager');
+  assert(managerPromoteManager.error === 'Managers cannot promote staff to Manager role', 'Manager promoting to Manager returns exact error');
+
+  // 10. Admin remains protected
+  const managerModAdmin = evaluateSecureUpdateStaffProfile(callerManager, targetAdmin, { is_active: false }, 1);
+  assert(managerModAdmin.success === false, 'Manager cannot modify technical Admin account');
+  assert(managerModAdmin.error === 'Managers cannot modify Owner or Admin accounts', 'Manager modifying Admin returns exact error');
+
+  // 11. Shop isolation remains enforced
+  const crossShopUpdate = evaluateSecureUpdateStaffProfile(callerCrossShopOwner, targetCashier, { is_active: false }, 1);
+  assert(crossShopUpdate.success === false, 'Cross-shop staff update is strictly blocked');
+  assert(crossShopUpdate.error === 'Cannot manage staff from a different shop branch', 'Cross-shop update returns shop isolation error');
+
+  // 12. Verify Database Migration SQL File Integrity
+  const migrationPath = path.resolve('supabase/migrations/20261002010000_critical_staff_role_safety_and_owner_protection.sql');
+  assert(fs.existsSync(migrationPath), 'Migration file 20261002010000_critical_staff_role_safety_and_owner_protection.sql exists');
+  const migrationSql = fs.readFileSync(migrationPath, 'utf-8');
+
+  assert(migrationSql.includes('Your Owner account cannot be changed to a staff role.'), 'Migration enforces Owner self-role change protection message');
+  assert(migrationSql.includes('The Shop Owner account cannot be deactivated from Staff Management.'), 'Migration enforces Owner self-deactivation protection message');
+  assert(migrationSql.includes('An existing Owner account cannot be changed to a staff role.'), 'Migration enforces Owner demotion protection message');
+  assert(migrationSql.includes('Cannot modify or deactivate the last remaining active Owner for this shop.'), 'Migration enforces Last-Owner safety invariant');
+  assert(migrationSql.includes('REVOKE ALL ON FUNCTION public.secure_update_staff_profile'), 'Migration revokes public/anon execution privileges');
+  assert(migrationSql.includes('GRANT EXECUTE ON FUNCTION public.secure_update_staff_profile'), 'Migration grants execution privileges to authenticated and service_role');
 
   console.log('====================================================');
   console.log('   ALL STAFF SECURITY FINALIZATION TESTS PASSED!   ');

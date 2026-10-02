@@ -21,11 +21,13 @@ import {
   Eye,
   EyeOff,
   AlertTriangle,
-  X
+  X,
+  Crown,
+  ShieldCheck
 } from 'lucide-react';
 
 export const StaffAccessManager: React.FC = () => {
-  const { users, updateStaffProfile, resetStaffPin, isOwner, isManager } = useAuth();
+  const { users, profile, user, updateStaffProfile, resetStaffPin, isOwner, isManager } = useAuth();
   const { showToast, isOnline } = useApp();
   const staffProgress = useOperationProgress();
   const [selectedStaff, setSelectedStaff] = useState<ProfileRow | null>(null);
@@ -50,13 +52,18 @@ export const StaffAccessManager: React.FC = () => {
     onConfirm: () => Promise<void>;
   } | null>(null);
 
-  // Manageable staff filter
+  // Identify the shop owner / primary account
+  const ownerProfile = useMemo(() => {
+    return users.find(u => u.role === 'owner') || (profile?.role === 'owner' ? profile : null);
+  }, [users, profile]);
+
+  // Manageable ordinary staff filter (excludes owner and admin)
   const manageableStaff = useMemo(() => {
     if (isOwner) {
-      return users.filter(u => u.role !== 'admin');
+      return users.filter(u => u.role !== 'admin' && u.role !== 'owner' && u.id !== profile?.id);
     }
-    return users.filter(u => u.role === 'cashier' || u.role === 'senior_cashier');
-  }, [users, isOwner]);
+    return users.filter(u => (u.role === 'cashier' || u.role === 'senior_cashier') && u.id !== profile?.id);
+  }, [users, isOwner, profile?.id]);
 
   const availableRolesForTarget = useMemo(() => {
     if (isOwner) {
@@ -182,6 +189,11 @@ export const StaffAccessManager: React.FC = () => {
   const handleUpdateRole = (newRole: string) => {
     if (!selectedStaff || newRole === selectedStaff.role) return;
 
+    if (selectedStaff.role === 'owner' || (selectedStaff.id === profile?.id && isOwner)) {
+      showToast('Protected Account', 'Your Owner account cannot be changed to a staff role.', 'error');
+      return;
+    }
+
     const displayTarget = newRole === 'senior_cashier' ? 'Senior Cashier' : newRole.charAt(0).toUpperCase() + newRole.slice(1);
     
     setConfirmDialog({
@@ -291,6 +303,12 @@ export const StaffAccessManager: React.FC = () => {
 
   const handleToggleActive = () => {
     if (!selectedStaff) return;
+
+    if (selectedStaff.role === 'owner' || (selectedStaff.id === profile?.id && isOwner)) {
+      showToast('Protected Account', 'The Shop Owner account cannot be deactivated from Staff Management.', 'error');
+      return;
+    }
+
     const willDeactivate = selectedStaff.is_active;
 
     setConfirmDialog({
@@ -406,16 +424,23 @@ export const StaffAccessManager: React.FC = () => {
           <div className="flex-1">
             <div className="flex items-center gap-4">
               <h2 className="text-2xl font-bold text-stone-900">{selectedStaff.full_name}</h2>
-              <select
-                value={selectedStaff.role}
-                onChange={(e) => handleUpdateRole(e.target.value)}
-                disabled={isSaving}
-                className="bg-white border border-stone-200 rounded-lg px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#C85A32] focus:border-[#C85A32] outline-none transition-all cursor-pointer"
-              >
-                {availableRolesForTarget.map(r => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
+              {selectedStaff.role === 'owner' ? (
+                <span className="bg-amber-50 text-amber-800 border border-amber-300 px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-2xs">
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Owner (Protected Account)</span>
+                </span>
+              ) : (
+                <select
+                  value={selectedStaff.role}
+                  onChange={(e) => handleUpdateRole(e.target.value)}
+                  disabled={isSaving}
+                  className="bg-white border border-stone-200 rounded-lg px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#C85A32] focus:border-[#C85A32] outline-none transition-all cursor-pointer"
+                >
+                  {availableRolesForTarget.map(r => (
+                    <option key={r.value} value={r.value}>{r.label}</option>
+                  ))}
+                </select>
+              )}
             </div>
             <p className="text-stone-500 font-mono text-xs uppercase tracking-widest mt-1">Operator ID: {selectedStaff.cashier_code} · {selectedStaff.email}</p>
           </div>
@@ -549,10 +574,10 @@ export const StaffAccessManager: React.FC = () => {
             </div>
 
             {/* ACCOUNT SECURITY CARD */}
-            <div className="bg-red-50 border border-red-100 rounded-2xl p-6 space-y-4 shadow-2xs">
-              <div className="flex items-center gap-3 text-red-600">
-                <Lock className="w-5 h-5" />
-                <h3 className="text-sm font-bold uppercase tracking-widest">Account Security</h3>
+            <div className="bg-stone-50 border border-stone-200 rounded-2xl p-6 space-y-4 shadow-2xs">
+              <div className="flex items-center gap-3 text-stone-700">
+                <Lock className="w-5 h-5 text-[#C85A32]" />
+                <h3 className="text-sm font-bold uppercase tracking-widest text-stone-900">Account Security</h3>
               </div>
               <p className="text-[11px] text-stone-500 leading-relaxed">
                 Terminal credentials are authenticated via salted PBKDF2 hashes. Plaintext PINs are never stored or exposed.
@@ -567,24 +592,32 @@ export const StaffAccessManager: React.FC = () => {
                     setIsResetPinModalOpen(true);
                   }}
                   disabled={isSaving}
-                  className="w-full py-3 rounded-xl text-xs font-bold border border-red-200 bg-white text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-3 rounded-xl text-xs font-bold border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
                 >
-                  <Key className="w-3.5 h-3.5" />
+                  <Key className="w-3.5 h-3.5 text-stone-500" />
                   <span>Reset Terminal PIN</span>
                 </button>
 
-                <button 
-                  type="button"
-                  onClick={handleToggleActive}
-                  disabled={isSaving}
-                  className={`w-full py-3 rounded-xl text-xs font-bold border disabled:opacity-50 transition-colors cursor-pointer bg-white ${
-                    selectedStaff.is_active 
-                      ? 'border-red-200 text-red-600 hover:bg-red-50' 
-                      : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
-                  }`}
-                >
-                  {selectedStaff.is_active ? 'Deactivate Account' : 'Reactivate Account'}
-                </button>
+                {selectedStaff.role === 'owner' ? (
+                  <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                    <p className="text-[11px] font-medium text-amber-900">
+                      The Shop Owner account is protected and cannot be deactivated from Staff Management.
+                    </p>
+                  </div>
+                ) : (
+                  <button 
+                    type="button"
+                    onClick={handleToggleActive}
+                    disabled={isSaving}
+                    className={`w-full py-3 rounded-xl text-xs font-bold border disabled:opacity-50 transition-colors cursor-pointer bg-white ${
+                      selectedStaff.is_active 
+                        ? 'border-red-200 text-red-600 hover:bg-red-50' 
+                        : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
+                    }`}
+                  >
+                    {selectedStaff.is_active ? 'Deactivate Account' : 'Reactivate Account'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -806,48 +839,118 @@ export const StaffAccessManager: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {manageableStaff.map(staff => (
-          <button
-            key={staff.id}
-            onClick={() => handleSelectStaff(staff)}
-            className="group relative bg-white border border-stone-200 rounded-[2rem] p-6 flex items-center gap-5 transition-all hover:border-[#C85A32] hover:shadow-md text-left cursor-pointer"
-          >
-            <div className="w-14 h-14 rounded-2xl bg-stone-50 border border-stone-200 flex items-center justify-center shrink-0 group-hover:border-[#C85A32]/30 transition-colors">
-              {staff.avatar_url ? (
-                <img src={staff.avatar_url} alt="" className="w-full h-full object-cover rounded-xl" />
-              ) : (
-                <User className="w-7 h-7 text-stone-400 group-hover:text-[#C85A32]/60 transition-colors" />
-              )}
+      {/* SHOP OWNER / PRIMARY ACCOUNT CARD */}
+      {ownerProfile && (
+        <div className="bg-white border border-stone-200 rounded-3xl p-6 sm:p-7 shadow-xs">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2 text-stone-900 font-bold text-xs uppercase tracking-widest">
+              <ShieldCheck className="w-4 h-4 text-amber-600" />
+              <span>Shop Owner & Primary Account</span>
             </div>
-            
-            <div className="min-w-0 flex-1">
-              <p className="font-bold text-stone-900 truncate">{staff.full_name}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border ${
-                  staff.role === 'manager' 
-                    ? 'bg-purple-50 text-purple-700 border-purple-200' 
-                    : staff.role === 'senior_cashier'
-                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                    : staff.role === 'owner' || staff.role === 'admin'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : 'bg-stone-100 text-stone-600 border-stone-200'
-                }`}>
-                  {staff.role === 'senior_cashier' ? 'Senior Cashier' : staff.role.replace('_', ' ')}
-                </span>
-                <span className="text-[9px] font-mono text-stone-400 uppercase tracking-widest">{staff.cashier_code}</span>
+            <span className="px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-widest bg-amber-50 text-amber-800 border border-amber-200">
+              Protected Owner Account
+            </span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 bg-stone-50 rounded-2xl p-5 border border-stone-200/80">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center shrink-0">
+                {ownerProfile.avatar_url ? (
+                  <img src={ownerProfile.avatar_url} alt="" className="w-full h-full object-cover rounded-2xl" />
+                ) : (
+                  <Crown className="w-7 h-7 text-amber-700" />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <h3 className="font-bold text-base text-stone-900">{ownerProfile.full_name}</h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200/80 text-amber-900 uppercase tracking-wider">
+                    Owner
+                  </span>
+                </div>
+                <p className="text-stone-500 font-mono text-xs uppercase tracking-widest mt-0.5">
+                  Operator ID: {ownerProfile.cashier_code} · {ownerProfile.email}
+                </p>
+                <p className="text-[11px] text-stone-500 mt-1">
+                  Primary shop account with full administrative and financial authority.
+                </p>
               </div>
             </div>
 
-            <div className="absolute top-4 right-4">
-              <div className={`w-2 h-2 rounded-full ${staff.is_active ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500'}`} />
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+              <button
+                type="button"
+                onClick={() => handleSelectStaff(ownerProfile)}
+                className="px-4 py-2.5 bg-white hover:bg-stone-100 text-stone-800 rounded-xl text-xs font-bold border border-stone-200 transition-colors cursor-pointer shadow-2xs"
+              >
+                View Account Details
+              </button>
             </div>
+          </div>
+        </div>
+      )}
 
-            <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all">
-              <ChevronRight className="w-5 h-5 text-[#C85A32]" />
-            </div>
-          </button>
-        ))}
+      {/* ORDINARY STAFF SECTION */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-stone-400">
+            Shop Staff & Operators ({manageableStaff.length})
+          </h3>
+        </div>
+
+        {manageableStaff.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {manageableStaff.map(staff => (
+              <button
+                key={staff.id}
+                onClick={() => handleSelectStaff(staff)}
+                className="group relative bg-white border border-stone-200 rounded-[2rem] p-6 flex items-center gap-5 transition-all hover:border-[#C85A32] hover:shadow-md text-left cursor-pointer"
+              >
+                <div className="w-14 h-14 rounded-2xl bg-stone-50 border border-stone-200 flex items-center justify-center shrink-0 group-hover:border-[#C85A32]/30 transition-colors">
+                  {staff.avatar_url ? (
+                    <img src={staff.avatar_url} alt="" className="w-full h-full object-cover rounded-xl" />
+                  ) : (
+                    <User className="w-7 h-7 text-stone-400 group-hover:text-[#C85A32]/60 transition-colors" />
+                  )}
+                </div>
+                
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-stone-900 truncate">{staff.full_name}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border ${
+                      staff.role === 'manager' 
+                        ? 'bg-purple-50 text-purple-700 border-purple-200' 
+                        : staff.role === 'senior_cashier'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : staff.role === 'owner' || staff.role === 'admin'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-stone-100 text-stone-600 border-stone-200'
+                    }`}>
+                      {staff.role === 'senior_cashier' ? 'Senior Cashier' : staff.role.replace('_', ' ')}
+                    </span>
+                    <span className="text-[9px] font-mono text-stone-400 uppercase tracking-widest">{staff.cashier_code}</span>
+                  </div>
+                </div>
+
+                <div className="absolute top-4 right-4">
+                  <div className={`w-2 h-2 rounded-full ${staff.is_active ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500'}`} />
+                </div>
+
+                <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all">
+                  <ChevronRight className="w-5 h-5 text-[#C85A32]" />
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-stone-50 border border-dashed border-stone-200 rounded-3xl p-10 text-center">
+            <User className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+            <p className="text-sm font-bold text-stone-700">No additional staff provisioned</p>
+            <p className="text-xs text-stone-500 mt-1 max-w-sm mx-auto">
+              Use the "Provision Staff" button above to add cashiers, senior cashiers, or managers to this shop branch.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* OPERATION PROGRESS SCREEN FOR MAIN STAFF LIST */}
