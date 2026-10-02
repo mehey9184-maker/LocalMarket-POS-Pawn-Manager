@@ -25,7 +25,8 @@ import {
   MapPin,
   Building,
   Save,
-  ImageIcon
+  ImageIcon,
+  AlertTriangle
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
@@ -79,6 +80,19 @@ export const CashierProfile: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<ProfileTab>('account');
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
+
+  // Unsaved changes state for staff access and schedule
+  const [hasUnsavedStaffChanges, setHasUnsavedStaffChanges] = useState(false);
+  const [unsavedTabTarget, setUnsavedTabTarget] = useState<ProfileTab | null>(null);
+  const saveChangesRef = useRef<(() => Promise<boolean>) | null>(null);
+
+  const handleTabChange = (nextTab: ProfileTab) => {
+    if (activeTab === 'staff' && hasUnsavedStaffChanges) {
+      setUnsavedTabTarget(nextTab);
+      return;
+    }
+    setActiveTab(nextTab);
+  };
 
   // Shop Profile Editor Form State
   const [shopForm, setShopForm] = useState({
@@ -403,7 +417,7 @@ export const CashierProfile: React.FC = () => {
           {sidebarItems.filter(item => item.show).map(item => (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id as ProfileTab)}
+              onClick={() => handleTabChange(item.id as ProfileTab)}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all cursor-pointer ${
                 activeTab === item.id 
                   ? 'bg-[#C85A32] text-white shadow-lg shadow-[#C85A32]/10' 
@@ -730,7 +744,10 @@ export const CashierProfile: React.FC = () => {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
               >
-                <StaffAccessManager />
+                <StaffAccessManager 
+                  onUnsavedChangesChange={setHasUnsavedStaffChanges}
+                  onSaveChangesRef={saveChangesRef}
+                />
               </motion.div>
             )}
 
@@ -781,8 +798,61 @@ export const CashierProfile: React.FC = () => {
         hasApprovalAuthority={hasPermission('refunds')}
       />
 
-      {/* SHOP SETTINGS OPERATION PROGRESS SCREEN */}
+       {/* SHOP SETTINGS OPERATION PROGRESS SCREEN */}
       <OperationProgressScreen state={shopProgress.state} />
+
+      {/* LIGHTWEIGHT CONFIRMATION FOR UNSAVED CHANGES WHEN SWITCHING TABS */}
+      {unsavedTabTarget && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-stone-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white border border-stone-200 rounded-3xl p-8 shadow-2xl relative space-y-6 text-stone-900">
+            <div className="flex items-center gap-3 text-amber-600">
+              <AlertTriangle className="w-5 h-5" />
+              <h3 className="font-bold text-lg text-stone-900">Unsaved changes</h3>
+            </div>
+
+            <p className="text-xs text-stone-500 leading-relaxed">
+              You have changes that haven't been saved yet.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setUnsavedTabTarget(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-stone-500 hover:text-stone-700 transition-colors cursor-pointer"
+              >
+                Keep Editing
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setHasUnsavedStaffChanges(false);
+                  setActiveTab(unsavedTabTarget);
+                  setUnsavedTabTarget(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (saveChangesRef.current) {
+                    const ok = await saveChangesRef.current();
+                    if (ok) {
+                      setHasUnsavedStaffChanges(false);
+                      setActiveTab(unsavedTabTarget);
+                      setUnsavedTabTarget(null);
+                    }
+                  }
+                }}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[#C85A32] hover:bg-[#A94725] text-white transition-all cursor-pointer shadow-md shadow-[#C85A32]/10"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

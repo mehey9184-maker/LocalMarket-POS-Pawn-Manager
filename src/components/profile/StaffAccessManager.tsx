@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { ProfileRow } from '../../types/supabase';
@@ -26,7 +26,15 @@ import {
   ShieldCheck
 } from 'lucide-react';
 
-export const StaffAccessManager: React.FC = () => {
+interface StaffAccessManagerProps {
+  onUnsavedChangesChange?: (dirty: boolean) => void;
+  onSaveChangesRef?: React.MutableRefObject<(() => Promise<boolean>) | null>;
+}
+
+export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
+  onUnsavedChangesChange,
+  onSaveChangesRef
+}) => {
   const { users, profile, user, updateStaffProfile, resetStaffPin, isOwner, isManager } = useAuth();
   const { showToast, isOnline } = useApp();
   const staffProgress = useOperationProgress();
@@ -35,6 +43,16 @@ export const StaffAccessManager: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+
+  // Draft states
+  const [draftPermissions, setDraftPermissions] = useState<any>({});
+  const [draftSchedule, setDraftSchedule] = useState<any>({});
+
+  // Confirmation dialog for discarding edits
+  const [unsavedConfirm, setUnsavedConfirm] = useState<{
+    onConfirm: () => void;
+    onCancel: () => void;
+  } | null>(null);
 
   // In-modal dialog state for PIN Reset
   const [isResetPinModalOpen, setIsResetPinModalOpen] = useState(false);
@@ -92,98 +110,96 @@ export const StaffAccessManager: React.FC = () => {
     }
   };
 
-  const handleUpdatePermissions = async (field: string, value: boolean) => {
-    if (!selectedStaff) return;
-    const currentPerms = (selectedStaff.permissions as any) || {};
-    const newPerms = { ...currentPerms, [field]: value };
-    
+  // Determine unsaved changes state
+  const hasUnsavedChanges = useMemo(() => {
+    if (!selectedStaff) return false;
+    const originalPerms = selectedStaff.permissions || {};
+    const originalSchedule = selectedStaff.schedule || {};
+    return JSON.stringify(draftPermissions) !== JSON.stringify(originalPerms) ||
+           JSON.stringify(draftSchedule) !== JSON.stringify(originalSchedule);
+  }, [selectedStaff, draftPermissions, draftSchedule]);
+
+  // Sync dirty status with parent
+  useEffect(() => {
+    if (onUnsavedChangesChange) {
+      onUnsavedChangesChange(hasUnsavedChanges);
+    }
+  }, [hasUnsavedChanges, onUnsavedChangesChange]);
+
+  // Ensure unmounting sets unsaved changes back to false
+  useEffect(() => {
+    return () => {
+      if (onUnsavedChangesChange) {
+        onUnsavedChangesChange(false);
+      }
+    };
+  }, [onUnsavedChangesChange]);
+
+  // Direct fast save without OperationProgressScreen
+  const handleSaveChanges = async (): Promise<boolean> => {
+    if (!selectedStaff) return false;
     setIsSaving(true);
-    await staffProgress.runSequence({
-      title: 'Updating Permissions',
-      subtitle: `Modifying operational access for ${selectedStaff.full_name}`,
-      isOffline: !isOnline,
-      steps: [
-        { id: 'prep', label: 'Preparing access policy' },
-        { id: 'policy', label: `Setting ${field} to ${value ? 'granted' : 'revoked'}` },
-        { id: 'save', label: isOnline ? 'Applying permissions on server' : 'Saving permissions locally' },
-        { id: 'finish', label: 'Finalizing access control' }
-      ],
-      execute: async (runner) => {
-        runner.startStep('prep');
-        runner.completeStep('prep');
-
-        runner.startStep('policy');
-        runner.completeStep('policy');
-
-        runner.startStep('save');
-        const res = await updateStaffProfile(selectedStaff.id, { permissions: newPerms }, `Permissions updated: ${field}=${value}`);
-        if (!res.success) throw new Error(res.error || 'Could not update permissions.');
-        runner.completeStep('save');
-
-        runner.startStep('finish');
-        setSelectedStaff({ ...selectedStaff, permissions: newPerms });
-        try {
-          await loadAuditLogs(selectedStaff.id);
-        } catch (refreshErr) {
-          console.warn('Non-critical audit refresh failed:', refreshErr);
-          runner.updateStepDetail('finish', isOnline ? 'Permissions saved successfully · history refresh pending' : 'Saved on this computer');
-        }
-        runner.completeStep('finish');
+    try {
+      const res = await updateStaffProfile(
+        selectedStaff.id,
+        { permissions: draftPermissions, schedule: draftSchedule },
+        'Access and schedule saved'
+      );
+      if (res.success) {
+        setSelectedStaff({
+          ...selectedStaff,
+          permissions: draftPermissions,
+          schedule: draftSchedule
+        });
+        showToast('Changes saved', 'Access and schedule saved successfully.', 'success');
+        await loadAuditLogs(selectedStaff.id);
+        setIsSaving(false);
         return true;
-      },
-      successTitle: 'Permissions Updated',
-      successMessage: `Access rules for ${selectedStaff.full_name} are active.`,
-      onSuccess: () => setIsSaving(false),
-      onError: () => setIsSaving(false),
-      onClose: () => setIsSaving(false),
-    });
+      } else {
+        showToast('Save Failed', res.error || 'Could not save staff settings.', 'error');
+        setIsSaving(false);
+        return false;
+      }
+    } catch (err: any) {
+      showToast('Error', err.message || 'An error occurred while saving.', 'error');
+      setIsSaving(false);
+      return false;
+    }
   };
 
-  const handleUpdateSchedule = async (updates: any) => {
+  const handleDiscardChanges = () => {
     if (!selectedStaff) return;
-    const currentSchedule = (selectedStaff.schedule as any) || {};
-    const newSchedule = { ...currentSchedule, ...updates };
-    
-    setIsSaving(true);
-    await staffProgress.runSequence({
-      title: 'Updating Schedule',
-      subtitle: `Modifying work shifts for ${selectedStaff.full_name}`,
-      isOffline: !isOnline,
-      steps: [
-        { id: 'prep', label: 'Calculating shift timetable' },
-        { id: 'sched', label: 'Applying weekly working hours' },
-        { id: 'save', label: isOnline ? 'Saving schedule to server' : 'Saving schedule on this device' },
-        { id: 'finish', label: 'Finalizing schedule updates' }
-      ],
-      execute: async (runner) => {
-        runner.startStep('prep');
-        runner.completeStep('prep');
+    setDraftPermissions(selectedStaff.permissions || {});
+    setDraftSchedule(selectedStaff.schedule || {});
+    showToast('Changes Discarded', 'Your edits have been reverted.', 'info');
+  };
 
-        runner.startStep('sched');
-        runner.completeStep('sched');
+  // Wire handleSaveChanges to parent ref
+  useEffect(() => {
+    if (onSaveChangesRef) {
+      onSaveChangesRef.current = handleSaveChanges;
+    }
+    return () => {
+      if (onSaveChangesRef) {
+        onSaveChangesRef.current = null;
+      }
+    };
+  }, [onSaveChangesRef, draftPermissions, draftSchedule, selectedStaff]);
 
-        runner.startStep('save');
-        const res = await updateStaffProfile(selectedStaff.id, { schedule: newSchedule }, 'Work schedule modified');
-        if (!res.success) throw new Error(res.error || 'Could not update schedule.');
-        runner.completeStep('save');
+  const handleTogglePermission = (field: string, value: boolean) => {
+    setDraftPermissions((prev: any) => ({ ...prev, [field]: value }));
+  };
 
-        runner.startStep('finish');
-        setSelectedStaff({ ...selectedStaff, schedule: newSchedule });
-        try {
-          await loadAuditLogs(selectedStaff.id);
-        } catch (refreshErr) {
-          console.warn('Non-critical audit refresh failed:', refreshErr);
-          runner.updateStepDetail('finish', isOnline ? 'Schedule saved successfully · history refresh pending' : 'Saved on this computer');
-        }
-        runner.completeStep('finish');
-        return true;
-      },
-      successTitle: 'Schedule Updated',
-      successMessage: `Working hours for ${selectedStaff.full_name} have been updated.`,
-      onSuccess: () => setIsSaving(false),
-      onError: () => setIsSaving(false),
-      onClose: () => setIsSaving(false),
-    });
+  const handleUpdateScheduleDraft = (updates: any) => {
+    setDraftSchedule((prev: any) => ({ ...prev, ...updates }));
+  };
+
+  const toggleDay = (day: number) => {
+    const days = draftSchedule.workingDays || [];
+    const newDays = days.includes(day)
+      ? days.filter((d: number) => d !== day)
+      : [...days, day].sort();
+    setDraftSchedule((prev: any) => ({ ...prev, workingDays: newDays }));
   };
 
   const handleUpdateRole = (newRole: string) => {
@@ -227,7 +243,10 @@ export const StaffAccessManager: React.FC = () => {
             runner.completeStep('save');
 
             runner.startStep('finish');
-            setSelectedStaff({ ...selectedStaff, role: newRole as any });
+            const updated = { ...selectedStaff, role: newRole as any };
+            setSelectedStaff(updated);
+            setDraftPermissions(updated.permissions || {});
+            setDraftSchedule(updated.schedule || {});
             try {
               await loadAuditLogs(selectedStaff.id);
             } catch (refreshErr) {
@@ -350,7 +369,10 @@ export const StaffAccessManager: React.FC = () => {
             runner.completeStep('save');
 
             runner.startStep('finish');
-            setSelectedStaff({ ...selectedStaff, is_active: !willDeactivate });
+            const updated = { ...selectedStaff, is_active: !willDeactivate };
+            setSelectedStaff(updated);
+            setDraftPermissions(updated.permissions || {});
+            setDraftSchedule(updated.schedule || {});
             try {
               await loadAuditLogs(selectedStaff.id);
             } catch (refreshErr) {
@@ -372,19 +394,27 @@ export const StaffAccessManager: React.FC = () => {
     });
   };
 
-  const toggleDay = (day: number) => {
-    if (!selectedStaff) return;
-    const schedule = (selectedStaff.schedule as any) || {};
-    const days = schedule.workingDays || [];
-    const newDays = days.includes(day) 
-      ? days.filter((d: number) => d !== day)
-      : [...days, day].sort();
-    handleUpdateSchedule({ workingDays: newDays });
-  };
-
   const handleSelectStaff = async (staff: ProfileRow) => {
     setSelectedStaff(staff);
+    setDraftPermissions(staff.permissions || {});
+    setDraftSchedule(staff.schedule || {});
     await loadAuditLogs(staff.id);
+  };
+
+  const handleBackToList = () => {
+    if (hasUnsavedChanges) {
+      setUnsavedConfirm({
+        onConfirm: () => {
+          setUnsavedConfirm(null);
+          setSelectedStaff(null);
+        },
+        onCancel: () => {
+          setUnsavedConfirm(null);
+        }
+      });
+      return;
+    }
+    setSelectedStaff(null);
   };
 
   if (isAddingStaff) {
@@ -392,14 +422,32 @@ export const StaffAccessManager: React.FC = () => {
   }
 
   if (selectedStaff) {
-    const perms = (selectedStaff.permissions as any) || {};
-    const schedule = (selectedStaff.schedule as any) || {};
+    const perms = draftPermissions || {};
+    const schedule = draftSchedule || {};
+
+    const enabledPermsCount = Object.values(perms).filter(Boolean).length;
+
+    const daysMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const workingDays = schedule.workingDays || [];
+    let daysStr = 'No days scheduled';
+    if (workingDays.length === 7) {
+      daysStr = 'Every day';
+    } else if (workingDays.length === 5 && [1, 2, 3, 4, 5].every(d => workingDays.includes(d))) {
+      daysStr = 'Mon–Fri';
+    } else if (workingDays.length > 0) {
+      daysStr = workingDays.map((d: number) => daysMap[d]).join(', ');
+    }
+
+    const start = schedule.startTime || '08:00';
+    const end = schedule.endTime || '17:00';
+    const early = schedule.earlyLoginMinutes ?? 10;
+    const over = schedule.overnight ? 'Yes' : 'No';
     
     return (
-      <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300 text-stone-900">
+      <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300 text-stone-900 pb-24 relative">
         <div className="flex items-center justify-between">
           <button 
-            onClick={() => setSelectedStaff(null)}
+            onClick={handleBackToList}
             className="flex items-center gap-2 text-sm text-stone-400 hover:text-stone-700 transition-colors group cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
@@ -449,9 +497,14 @@ export const StaffAccessManager: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
           {/* PERMISSIONS SECTION */}
           <div className="space-y-6">
-            <div className="flex items-center gap-3 text-emerald-600">
-              <Shield className="w-5 h-5" />
-              <h3 className="text-sm font-bold uppercase tracking-widest">Access Control</h3>
+            <div className="flex items-center justify-between text-emerald-600">
+              <div className="flex items-center gap-3">
+                <Shield className="w-5 h-5" />
+                <h3 className="text-sm font-bold uppercase tracking-widest">Access Control</h3>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-100 uppercase tracking-wider">
+                {enabledPermsCount} enabled
+              </span>
             </div>
             
             <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden divide-y divide-stone-100 shadow-xs">
@@ -475,7 +528,7 @@ export const StaffAccessManager: React.FC = () => {
                       type="checkbox" 
                       className="sr-only peer"
                       checked={perms[item.id] ?? false}
-                      onChange={(e) => handleUpdatePermissions(item.id, e.target.checked)}
+                      onChange={(e) => handleTogglePermission(item.id, e.target.checked)}
                       disabled={isSaving}
                     />
                     <div className="w-11 h-6 bg-stone-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600 peer-checked:after:bg-white"></div>
@@ -494,6 +547,22 @@ export const StaffAccessManager: React.FC = () => {
               </div>
               
               <div className="bg-white border border-stone-200 rounded-2xl p-6 space-y-8 shadow-xs">
+                {/* Compact Schedule Summary */}
+                <div className="bg-amber-50/50 border border-amber-100 rounded-2xl p-4 flex flex-wrap gap-x-6 gap-y-2 text-xs text-stone-700">
+                  <div>
+                    <span className="text-stone-400 font-bold uppercase tracking-wider text-[9px] block">Current schedule</span>
+                    <span className="font-bold">{daysStr} · {start}–{end}</span>
+                  </div>
+                  <div>
+                    <span className="text-stone-400 font-bold uppercase tracking-wider text-[9px] block">Early login</span>
+                    <span className="font-semibold">{early} min</span>
+                  </div>
+                  <div>
+                    <span className="text-stone-400 font-bold uppercase tracking-wider text-[9px] block">Overnight</span>
+                    <span className="font-semibold">{over}</span>
+                  </div>
+                </div>
+
                 {/* Working Days */}
                 <div className="space-y-4">
                   <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Scheduled Days</p>
@@ -524,7 +593,7 @@ export const StaffAccessManager: React.FC = () => {
                       type="time" 
                       value={schedule.startTime || "08:00"}
                       disabled={isSaving}
-                      onChange={(e) => handleUpdateSchedule({ startTime: e.target.value })}
+                      onChange={(e) => handleUpdateScheduleDraft({ startTime: e.target.value })}
                       className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-900 focus:border-amber-500 outline-none disabled:opacity-50"
                     />
                   </div>
@@ -534,7 +603,7 @@ export const StaffAccessManager: React.FC = () => {
                       type="time" 
                       value={schedule.endTime || "17:00"}
                       disabled={isSaving}
-                      onChange={(e) => handleUpdateSchedule({ endTime: e.target.value })}
+                      onChange={(e) => handleUpdateScheduleDraft({ endTime: e.target.value })}
                       className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-900 focus:border-amber-500 outline-none disabled:opacity-50"
                     />
                   </div>
@@ -553,7 +622,7 @@ export const StaffAccessManager: React.FC = () => {
                         className="sr-only peer"
                         checked={schedule.overnight ?? false}
                         disabled={isSaving}
-                        onChange={(e) => handleUpdateSchedule({ overnight: e.target.checked })}
+                        onChange={(e) => handleUpdateScheduleDraft({ overnight: e.target.checked })}
                       />
                       <div className="w-11 h-6 bg-stone-200 peer-disabled:opacity-50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
                     </label>
@@ -565,7 +634,7 @@ export const StaffAccessManager: React.FC = () => {
                       type="number" 
                       value={schedule.earlyLoginMinutes ?? 10}
                       disabled={isSaving}
-                      onChange={(e) => handleUpdateSchedule({ earlyLoginMinutes: parseInt(e.target.value) || 0 })}
+                      onChange={(e) => handleUpdateScheduleDraft({ earlyLoginMinutes: parseInt(e.target.value) || 0 })}
                       className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm text-stone-900 focus:border-amber-500 outline-none disabled:opacity-50"
                     />
                   </div>
@@ -811,6 +880,72 @@ export const StaffAccessManager: React.FC = () => {
                 >
                   {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>{isSaving ? 'Saving…' : confirmDialog.actionLabel}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* FLOATING SAVE BAR */}
+        {hasUnsavedChanges && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-full max-w-lg px-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className="bg-stone-900 border border-stone-800 text-white rounded-2xl p-4 flex items-center justify-between shadow-2xl backdrop-blur-md">
+              <div className="flex flex-col">
+                <span className="text-[11px] text-stone-400 font-bold uppercase tracking-wider">Unsaved changes</span>
+                <span className="text-xs text-stone-300">Access or schedule edits are not saved yet.</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={handleDiscardChanges}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-400 hover:text-white disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={async () => {
+                    await handleSaveChanges();
+                  }}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[#C85A32] hover:bg-[#A94725] text-white disabled:opacity-50 transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-[#C85A32]/20"
+                >
+                  {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5 text-white" />}
+                  <span>{isSaving ? 'Saving…' : 'Save Changes'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* DISCARD CONFIRMATION DIALOG FOR BACK BUTTON */}
+        {unsavedConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-md bg-white border border-stone-200 rounded-3xl p-8 shadow-2xl relative space-y-6 text-stone-900 animate-in zoom-in-95 duration-150">
+              <div className="flex items-center gap-3 text-amber-600">
+                <AlertTriangle className="w-5 h-5" />
+                <h3 className="font-bold text-lg text-stone-900">Unsaved changes</h3>
+              </div>
+
+              <p className="text-xs text-stone-500 leading-relaxed">
+                You have unsaved changes to this staff member's access or schedule. Are you sure you want to discard them?
+              </p>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={unsavedConfirm.onCancel}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-stone-500 hover:text-stone-700 transition-colors cursor-pointer"
+                >
+                  Keep Editing
+                </button>
+                <button
+                  type="button"
+                  onClick={unsavedConfirm.onConfirm}
+                  className="px-6 py-2.5 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-500 text-white transition-all cursor-pointer shadow-md shadow-red-100"
+                >
+                  Discard Changes
                 </button>
               </div>
             </div>

@@ -1,10 +1,208 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { authApi } from '../../services/supabaseApi';
 import { ProfileRow } from '../../types/supabase';
-import { Loader2, ArrowLeft, Key, ShieldCheck, Lock, X } from 'lucide-react';
+import { Loader2, ArrowLeft, Key, ShieldCheck, Lock, X, Calendar } from 'lucide-react';
+
+// Timezone-aware date generator matching server rules
+function getShopNow(timezone: string): Date {
+  const now = new Date();
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(now);
+    const d: any = {};
+    parts.forEach(p => { if (p.type !== 'literal') d[p.type] = p.value; });
+    return new Date(`${d.year}-${d.month}-${d.day}T${d.hour}:${d.minute}:${d.second}`);
+  } catch (e) {
+    return now;
+  }
+}
+
+// Calculate the next shift starting from currentDay + 1
+function getNextShiftInfo(workingDays: number[], scheduleStartTime: string, currentDay: number): string {
+  if (!workingDays || workingDays.length === 0) return '';
+  const daysMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  for (let i = 1; i <= 7; i++) {
+    const nextDay = (currentDay + i) % 7;
+    if (workingDays.includes(nextDay)) {
+      const dayName = nextDay === (currentDay + 1) % 7 ? 'Tomorrow' : daysMap[nextDay];
+      return `Next shift: ${dayName} at ${scheduleStartTime || '08:00'}`;
+    }
+  }
+  return '';
+}
+
+export interface ShiftStatus {
+  status: 'allowed' | 'too_early' | 'too_late' | 'non_working';
+  title: string;
+  subtitle: string;
+}
+
+export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftStatus {
+  // Owners and Admins are always allowed
+  if (staff.role === 'owner' || staff.role === 'admin') {
+    return {
+      status: 'allowed',
+      title: "You're scheduled now",
+      subtitle: "Unrestricted Owner/Admin access"
+    };
+  }
+
+  const schedule = (staff.schedule as any);
+  if (!schedule) {
+    return {
+      status: 'allowed',
+      title: "You're scheduled now",
+      subtitle: "No schedule restriction"
+    };
+  }
+
+  const workingDays = schedule.workingDays || [1, 2, 3, 4, 5];
+  const startTime = schedule.startTime || "08:00";
+  const endTime = schedule.endTime || "17:00";
+  const earlyMins = schedule.earlyLoginMinutes || 10;
+  const overnight = !!schedule.overnight;
+
+  const shopNow = getShopNow(timezone);
+  const currentDay = shopNow.getDay();
+  const currentTotalMinutes = shopNow.getHours() * 60 + shopNow.getMinutes();
+
+  const [startH, startM] = startTime.split(':').map(Number);
+  const [endH, endM] = endTime.split(':').map(Number);
+
+  const startTotalMinutes = startH * 60 + startM;
+  const startWithEarlyTotalMinutes = startTotalMinutes - earlyMins;
+  const endTotalMinutes = endH * 60 + endM;
+
+  // Check overnight transition from yesterday
+  const yesterdayDay = (currentDay + 6) % 7;
+  let isActiveOvernightFromYesterday = false;
+  if (workingDays.includes(yesterdayDay) && overnight) {
+    if (currentTotalMinutes <= endTotalMinutes) {
+      isActiveOvernightFromYesterday = true;
+    }
+  }
+
+  // 1. Is today a working day?
+  const isWorkingToday = workingDays.includes(currentDay);
+
+  if (isWorkingToday) {
+    if (!overnight) {
+      if (currentTotalMinutes >= startWithEarlyTotalMinutes && currentTotalMinutes <= endTotalMinutes) {
+        return {
+          status: 'allowed',
+          title: "You're scheduled now",
+          subtitle: `${startTime}–${endTime}`
+        };
+      } else if (currentTotalMinutes < startWithEarlyTotalMinutes) {
+        const earlyH = Math.floor(startWithEarlyTotalMinutes / 60);
+        const earlyM = startWithEarlyTotalMinutes % 60;
+        const earlyTimeStr = `${String(earlyH).padStart(2, '0')}:${String(earlyM).padStart(2, '0')}`;
+        return {
+          status: 'too_early',
+          title: `Your shift starts at ${startTime}`,
+          subtitle: `You can sign in from ${earlyTimeStr}.`
+        };
+      } else {
+        const nextStr = getNextShiftInfo(workingDays, startTime, currentDay);
+        return {
+          status: 'too_late',
+          title: "Today's shift has ended",
+          subtitle: `Your scheduled hours were ${startTime}–${endTime}.` + (nextStr ? ` ${nextStr}` : '')
+        };
+      }
+    } else {
+      // Overnight shift starting today
+      if (currentTotalMinutes >= startWithEarlyTotalMinutes) {
+        return {
+          status: 'allowed',
+          title: "You're scheduled now",
+          subtitle: `${startTime}–${endTime} (Overnight)`
+        };
+      } else if (currentTotalMinutes < startWithEarlyTotalMinutes) {
+        if (isActiveOvernightFromYesterday) {
+          return {
+            status: 'allowed',
+            title: "You're scheduled now",
+            subtitle: `Active shift ends at ${endTime}`
+          };
+        }
+        
+        const earlyH = Math.floor(startWithEarlyTotalMinutes / 60);
+        const earlyM = startWithEarlyTotalMinutes % 60;
+        const earlyTimeStr = `${String(earlyH).padStart(2, '0')}:${String(earlyM).padStart(2, '0')}`;
+        return {
+          status: 'too_early',
+          title: `Your shift starts at ${startTime}`,
+          subtitle: `You can sign in from ${earlyTimeStr}.`
+        };
+      }
+    }
+  } else {
+    // Today is not a working day.
+    if (isActiveOvernightFromYesterday) {
+      return {
+        status: 'allowed',
+        title: "You're scheduled now",
+        subtitle: `Active shift ends at ${endTime}`
+      };
+    }
+
+    const nextStr = getNextShiftInfo(workingDays, startTime, currentDay);
+    return {
+      status: 'non_working',
+      title: "You're not scheduled today",
+      subtitle: nextStr || "Please check your work schedule."
+    };
+  }
+
+  return {
+    status: 'too_late',
+    title: "Today's shift has ended",
+    subtitle: `Your scheduled hours were finished.`
+  };
+}
+
+// Map server schedule rejection error messages to descriptive, user-friendly copy
+function translateServerError(serverError: string): React.ReactNode {
+  if (serverError.includes("This shift starts at")) {
+    const shiftTime = serverError.replace("This shift starts at ", "").replace(".", "");
+    return (
+      <div className="space-y-1">
+        <p className="font-bold text-red-700">You're a little early</p>
+        <p>Your shift starts at {shiftTime}.</p>
+      </div>
+    );
+  }
+  if (serverError.includes("You are not scheduled to work today")) {
+    return (
+      <div className="space-y-1">
+        <p className="font-bold text-red-700">You're not scheduled today</p>
+        <p>Please check your work schedule.</p>
+      </div>
+    );
+  }
+  if (serverError.includes("Your scheduled shift has ended")) {
+    return (
+      <div className="space-y-1">
+        <p className="font-bold text-red-700">Today's shift has ended</p>
+        <p>Your scheduled hours are finished.</p>
+      </div>
+    );
+  }
+  return serverError;
+}
 
 export const AccountPicker: React.FC = () => {
   const { 
@@ -23,14 +221,24 @@ export const AccountPicker: React.FC = () => {
     cancelSwitchAccount
   } = useAuth();
 
-  const { showToast, setActiveTab } = useApp();
+  const { showToast, setActiveTab, shopProfile } = useApp();
   
   const [selectedStaff, setSelectedStaff] = useState<ProfileRow | null>(null);
   const [pin, setPin] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<React.ReactNode | null>(null);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
+  const [timeTick, setTimeTick] = useState(0);
+
+  // Auto-refresh the selected staff shift awareness status as time passes
+  useEffect(() => {
+    if (!selectedStaff) return;
+    const interval = setInterval(() => {
+      setTimeTick(t => t + 1);
+    }, 10000); // Trigger a tick evaluation every 10 seconds
+    return () => clearInterval(interval);
+  }, [selectedStaff]);
 
   // Close modal on Escape key press
   useEffect(() => {
@@ -84,6 +292,12 @@ export const AccountPicker: React.FC = () => {
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
   }, [lockoutUntil, selectedStaff]);
+
+  const shiftInfo = useMemo(() => {
+    if (!selectedStaff) return null;
+    const timezone = (shopProfile as any)?.timezone || 'Africa/Johannesburg';
+    return evaluateShiftStatus(selectedStaff, timezone);
+  }, [selectedStaff, shopProfile, timeTick]);
 
   if (!isAccountPickerOpen) return null;
 
@@ -183,9 +397,9 @@ export const AccountPicker: React.FC = () => {
           try {
             sessionStorage.setItem(`pin_lockout_${selectedStaff.id}`, String(until));
           } catch {}
-          setError(res.error || 'Too many failed attempts.');
+          setError(translateServerError(res.error || 'Too many failed attempts.'));
         } else {
-          setError(res.error || 'Invalid PIN.');
+          setError(translateServerError(res.error || 'Invalid PIN.'));
         }
         return;
       }
@@ -201,7 +415,7 @@ export const AccountPicker: React.FC = () => {
       setRemainingSeconds(0);
       resetSwitchState();
     } catch (err: any) {
-      setError(err.message || 'Connection error during authentication');
+      setError(translateServerError(err.message || 'Connection error during authentication'));
     } finally {
       setIsAuthenticating(false);
     }
@@ -245,9 +459,9 @@ export const AccountPicker: React.FC = () => {
               </div>
               <div className="bg-red-50/50 border border-red-100 rounded-2xl p-4 mt-2 max-w-sm mx-auto text-left">
                 <p className="text-xs text-[#C85A32] font-semibold uppercase tracking-wider mb-1">What happened</p>
-                <p className="text-xs text-stone-600 font-medium leading-relaxed">
-                  {switchError || 'An unexpected error occurred while switching staff.'}
-                </p>
+                <div className="text-xs text-stone-600 font-medium leading-relaxed">
+                  {switchError ? translateServerError(switchError) : 'An unexpected error occurred while switching staff.'}
+                </div>
               </div>
             </div>
 
@@ -427,6 +641,33 @@ export const AccountPicker: React.FC = () => {
               <p className="text-xs text-stone-500 mt-1">Enter your 6-digit PIN</p>
             </div>
 
+            {/* EMPLOYEE SHIFT AWARENESS UX */}
+            {shiftInfo && (
+              <div className={`w-full max-w-sm mx-auto p-4 rounded-2xl border mb-6 flex items-start gap-3 text-left ${
+                shiftInfo.status === 'allowed'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                  : shiftInfo.status === 'too_early'
+                  ? 'bg-amber-50 border-amber-200 text-amber-950'
+                  : shiftInfo.status === 'non_working'
+                  ? 'bg-amber-50/70 border-amber-200/70 text-amber-900'
+                  : 'bg-stone-50 border-stone-200 text-stone-800'
+              }`}>
+                <div className={`p-2 rounded-xl shrink-0 ${
+                  shiftInfo.status === 'allowed'
+                    ? 'bg-emerald-100 text-emerald-600'
+                    : shiftInfo.status === 'too_early' || shiftInfo.status === 'non_working'
+                    ? 'bg-amber-100 text-amber-600'
+                    : 'bg-stone-100 text-stone-500'
+                }`}>
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-xs">{shiftInfo.title}</h4>
+                  <p className="text-[11px] opacity-80 mt-0.5 leading-relaxed">{shiftInfo.subtitle}</p>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-5">
               {/* LOCKOUT DISPLAY BANNER */}
               {isLocked && (
@@ -481,7 +722,7 @@ export const AccountPicker: React.FC = () => {
                   <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5 text-white font-bold text-[10px]">
                     !
                   </div>
-                  <p className="text-xs text-red-600 font-medium leading-relaxed">{error}</p>
+                  <div className="text-xs text-red-600 font-medium leading-relaxed">{error}</div>
                 </div>
               )}
 

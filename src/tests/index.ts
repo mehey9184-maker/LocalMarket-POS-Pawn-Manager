@@ -31,6 +31,7 @@ import { runPhase2eSearchContinuityTests } from './phase2eSearchContinuity.test'
 import { runPhase2gStaffSwitchingTests } from './phase2gStaffSwitching.test';
 import { runPhase2hHomeAttentionTests } from './phase2hHomeAttention.test';
 import { runPhase2iDeviceBackupUxTests } from './phase2iDeviceBackupUx.test';
+import { runPhase2jStaffSchedulingTests } from './phase2jStaffScheduling.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -68,6 +69,7 @@ export async function runAllTests() {
   runPhase2gStaffSwitchingTests();
   runPhase2hHomeAttentionTests();
   runPhase2iDeviceBackupUxTests();
+  runPhase2jStaffSchedulingTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');
