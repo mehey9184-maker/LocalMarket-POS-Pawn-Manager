@@ -176,46 +176,109 @@ export const Header: React.FC<HeaderProps> = () => {
                       <Package className="w-3 h-3 text-[#C85A32]" />
                       <span>Stock & Inventory</span>
                     </div>
-                    {searchResults.inventory.map(item => (
-                      <div key={item.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-gray-900 truncate">{item.title}</span>
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">{item.sku}</span>
+                    {searchResults.inventory.map(item => {
+                      const isRetail = item.status === 'Retail Floor';
+                      const isVault = item.status === 'Vault Hold' || item.status === 'Forfeited';
+                      const isReserved = item.status === 'Reserved' || item.status === 'Flagged';
+                      const isSold = item.status === 'Sold' || item.status === 'Redeemed';
+                      const linkedLoan = pawnLoans.find(l => l.ticketNumber === item.pawnTicketId || (item.serialOrImei && l.serialOrImei === item.serialOrImei));
+                      const isPawned = Boolean(linkedLoan || item.pawnTicketId);
+
+                      return (
+                        <div key={item.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-gray-900 truncate">{item.title}</span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">{item.sku}</span>
+                            </div>
+                            <div className="text-[11px] text-gray-500 flex items-center gap-2 mt-0.5">
+                              <span className="font-mono font-bold text-gray-800">R {item.retailPrice.toLocaleString()}</span>
+                              <span>•</span>
+                              {isRetail && <span className="text-[10px] font-medium text-emerald-600">Available in Store</span>}
+                              {isVault && <span className="text-[10px] font-medium text-amber-600">In Vault</span>}
+                              {isReserved && <span className="text-[10px] font-medium text-amber-700">Reserved</span>}
+                              {isPawned && !isVault && <span className="text-[10px] font-medium text-blue-600">Pawned</span>}
+                              {isSold && <span className="text-[10px] font-medium text-gray-500">Sold</span>}
+                            </div>
                           </div>
-                          <div className="text-[11px] text-gray-500 flex items-center gap-2 mt-0.5">
-                            <span className="font-mono font-bold text-gray-800">R {item.retailPrice.toLocaleString()}</span>
-                            <span>•</span>
-                            <span className={`text-[10px] font-medium ${item.status === 'Retail Floor' ? 'text-emerald-600' : 'text-amber-600'}`}>{item.status}</span>
+                          <div className="flex items-center gap-1.5">
+                            {isRetail && hasPermission('sales') && (
+                              <button
+                                onClick={() => {
+                                  addToCart(item);
+                                  setActiveTab('sell');
+                                  setIsSearchFocused(false);
+                                  setSearchQuery('');
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-[#FDF0EA] text-[#C85A32] hover:bg-[#C85A32] hover:text-white text-xs font-semibold transition cursor-pointer"
+                              >
+                                Sell
+                              </button>
+                            )}
+                            {isVault && (
+                              <button
+                                onClick={() => {
+                                  setActiveTab('vault');
+                                  setIsSearchFocused(false);
+                                  setSearchQuery('');
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-semibold transition cursor-pointer"
+                              >
+                                Open in Vault
+                              </button>
+                            )}
+                            {isReserved && (
+                              <button
+                                onClick={() => {
+                                  setActiveTab('inventory');
+                                  setIsSearchFocused(false);
+                                  setSearchQuery('');
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 hover:bg-amber-100 text-xs font-semibold transition cursor-pointer"
+                              >
+                                Open Item
+                              </button>
+                            )}
+                            {isPawned && !isVault && (
+                              <button
+                                onClick={() => {
+                                  setActiveTab('vault');
+                                  setIsSearchFocused(false);
+                                  setSearchQuery('');
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition cursor-pointer"
+                              >
+                                Open Loan
+                              </button>
+                            )}
+                            {isSold && (
+                              <button
+                                onClick={() => {
+                                  setActiveTab('profile');
+                                  setIsSearchFocused(false);
+                                  setSearchQuery('');
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold transition cursor-pointer"
+                              >
+                                Open Receipt
+                              </button>
+                            )}
+                            {!isRetail && !isVault && !isReserved && !isPawned && !isSold && (
+                              <button
+                                onClick={() => {
+                                  setActiveTab('inventory');
+                                  setIsSearchFocused(false);
+                                  setSearchQuery('');
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold transition cursor-pointer"
+                              >
+                                View
+                              </button>
+                            )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          {item.status === 'Retail Floor' && (
-                            <button
-                              onClick={() => {
-                                addToCart(item);
-                                setActiveTab('sell');
-                                setIsSearchFocused(false);
-                                setSearchQuery('');
-                              }}
-                              className="px-2.5 py-1 rounded-lg bg-[#FDF0EA] text-[#C85A32] hover:bg-[#C85A32] hover:text-white text-xs font-semibold transition"
-                            >
-                              Sell
-                            </button>
-                          )}
-                          <button
-                            onClick={() => {
-                              setActiveTab('inventory');
-                              setIsSearchFocused(false);
-                              setSearchQuery('');
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold transition"
-                          >
-                            View
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
