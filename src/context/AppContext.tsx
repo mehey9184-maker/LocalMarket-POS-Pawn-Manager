@@ -479,7 +479,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
     }
-  }, [currentUserProfile, syncStatus.lastSyncTime]);
+  }, [currentUserProfile?.shop_id]);
 
   const logSystemEvent = useCallback(async (
     eventType: string,

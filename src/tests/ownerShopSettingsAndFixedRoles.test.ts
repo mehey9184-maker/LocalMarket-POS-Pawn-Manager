@@ -143,12 +143,12 @@ export function runOwnerShopSettingsAndFixedRolesTests() {
 
   const hubCode = fs.readFileSync(path.resolve('src/components/profile/ShopProfileAndOfflineHub.tsx'), 'utf-8');
   assert(
-    hubCode.includes('{isOwner && (\n            <div className="flex items-center gap-2 w-full sm:w-auto">\n              <button\n                onClick={() => {\n                  setProfileForm(shopProfile);'),
-    'ShopProfileAndOfflineHub.tsx restricts Edit Store Info button to isOwner'
+    !hubCode.includes('Edit Store Info'),
+    'ShopProfileAndOfflineHub.tsx contains no duplicate Edit Store Info button (single home in CashierProfile)'
   );
   assert(
-    hubCode.includes('{isOwner && (\n            <button\n              type="button"\n              onClick={() => setIsRulesModalOpen(true)}'),
-    'ShopProfileAndOfflineHub.tsx restricts Deal Rules Configurator button to isOwner'
+    !hubCode.includes('Open Deal Rules Configurator'),
+    'ShopProfileAndOfflineHub.tsx contains no duplicate Deal Rules Configurator button (single home in BusinessRulesManager)'
   );
 
   // =========================================================================

@@ -22,6 +22,7 @@ import { runStartupHydrationTests } from './startupHydration.test';
 import { runMarketCheckAndPawnReviewTests } from './marketCheckAndPawnReview.test';
 import { runInventoryPriceAndVaultPatchTests } from './inventoryPriceAndVaultPatch.test';
 import { runOwnerShopSettingsAndFixedRolesTests } from './ownerShopSettingsAndFixedRoles.test';
+import { runSeniorUxPhase1Tests } from './seniorUxPhase1.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -50,6 +51,7 @@ export async function runAllTests() {
   await runMarketCheckAndPawnReviewTests();
   await runInventoryPriceAndVaultPatchTests();
   runOwnerShopSettingsAndFixedRolesTests();
+  runSeniorUxPhase1Tests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');

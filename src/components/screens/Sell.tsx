@@ -6,8 +6,7 @@ import { PaymentMethod, ReceiptDelivery, InventoryItem } from '../../types';
 import { validateAndNormalizeSaPhone } from '../../utils/phoneValidator';
 import { focusAndScrollErrorField } from '../../utils/errorNavigator';
 import { motion, AnimatePresence } from 'motion/react';
-import { useOperationProgress } from '../../hooks/useOperationProgress';
-import { OperationProgressScreen } from '../common/OperationProgressScreen';
+import { humanizeErrorMessage } from '../../hooks/useOperationProgress';
 import {
   Barcode,
   Search,
@@ -157,7 +156,6 @@ export const Sell: React.FC = () => {
   const { isOnline, syncStatus } = useSync();
   const canEditPrice = hasPermission('pricing') || isOwner || isManager;
   const canSellReserved = isOwner || isManager || hasPermission('inventory');
-  const saleProgress = useOperationProgress();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTender, setSelectedTender] = useState<PaymentMethod>('cash');
@@ -320,61 +318,36 @@ export const Sell: React.FC = () => {
     isCheckingOutRef.current = true;
     setIsProcessing(true);
 
-    const tenderLabel = selectedTender === 'cash' ? 'Cash' : selectedTender === 'card' ? 'Card' : 'EFT';
     const finalAmount = selectedTender === 'cash' ? numTendered : total;
 
-    await saleProgress.runSequence({
-      title: 'Finalizing Sale',
-      subtitle: `${cart.length} item${cart.length > 1 ? 's' : ''} • R ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      isOffline: !isOnline,
-      holdDurationMs: 0, // No artificial ceremony delay
-      steps: [
-        { id: 'prep', label: 'Preparing sale', detail: `${cart.length} item${cart.length > 1 ? 's' : ''} in basket` },
-        { id: 'checkout', label: isOnline ? 'Completing sale transaction' : 'Saving sale transaction locally', detail: `Tender: ${tenderLabel} R ${finalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
-        { id: 'receipt', label: receiptType === 'whatsapp' ? `Preparing WhatsApp slip for ${customerMobile || normalizedPhone}` : 'Preparing receipt' },
-        { id: 'confirm', label: 'Sale confirmed' }
-      ],
-      execute: async (runner) => {
-        runner.startStep('prep');
-        runner.completeStep('prep');
+    try {
+      const sale = await completeCheckout(
+        selectedTender, 
+        finalAmount, 
+        receiptType,
+        normalizedPhone
+      );
 
-        runner.startStep('checkout');
-        const sale = await completeCheckout(
-          selectedTender, 
-          finalAmount, 
-          receiptType,
-          normalizedPhone
-        );
-        runner.completeStep('checkout');
+      const changeStr = sale.change > 0 ? ` Change: R ${sale.change.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.` : '';
+      const receiptStr = receiptType === 'whatsapp' ? ' WhatsApp receipt queued.' : receiptType === 'thermal' ? ' Receipt ready to print.' : ' Sale complete.';
+      
+      showToast(
+        'Sale Complete', 
+        `R ${sale.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} received.${changeStr}${receiptStr}`, 
+        'success'
+      );
 
-        runner.startStep('receipt');
-        runner.completeStep('receipt');
-
-        runner.startStep('confirm');
-        runner.completeStep('confirm');
-
-        return sale;
-      },
-      successTitle: 'Sale Complete',
-      successMessage: (sale) => `R ${sale.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} received. ${sale.change > 0 ? `Change: R ${sale.change.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. ` : ''}${receiptType === 'whatsapp' ? 'WhatsApp message ready.' : receiptType === 'thermal' ? 'Receipt ready to print.' : 'Sale complete.'}`,
-      onSuccess: () => {
-        setCashTendered('');
-        setCustomerMobile('');
-        setMobileError(null);
-        setSearchQuery('');
-        isCheckingOutRef.current = false;
-        setIsProcessing(false);
-        searchInputRef.current?.focus();
-      },
-      onError: () => {
-        isCheckingOutRef.current = false;
-        setIsProcessing(false);
-      },
-      onClose: () => {
-        isCheckingOutRef.current = false;
-        setIsProcessing(false);
-      }
-    });
+      setCashTendered('');
+      setCustomerMobile('');
+      setMobileError(null);
+      setSearchQuery('');
+      searchInputRef.current?.focus();
+    } catch (err: any) {
+      showToast('Checkout Failed', humanizeErrorMessage(err), 'error');
+    } finally {
+      isCheckingOutRef.current = false;
+      setIsProcessing(false);
+    }
   };
 
   useEffect(() => {
@@ -765,9 +738,6 @@ export const Sell: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* OPERATION PROGRESS SCREEN */}
-      <OperationProgressScreen state={saleProgress.state} />
     </div>
   );
 };

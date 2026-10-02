@@ -150,7 +150,7 @@ export const Home: React.FC = () => {
           <section className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
               {/* PRIMARY CARD: Add First Item */}
-              {hasPermission('sellerAcquisitions') && (
+              {(hasPermission('inventory') || hasPermission('sellerAcquisitions') || hasPermission('pawn')) && (
                 <div className="lg:col-span-2 group relative p-7 rounded-2xl bg-gradient-to-br from-white via-white to-[#FDF9F6] border-2 border-[#C85A32]/30 hover:border-[#C85A32] shadow-sm hover:shadow-md transition-all duration-200">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                     <div className="space-y-3 max-w-md">
@@ -260,7 +260,7 @@ export const Home: React.FC = () => {
             )}
 
             {/* ACTION 2: ADD STOCK */}
-            {hasPermission('sellerAcquisitions') && (
+            {(hasPermission('inventory') || hasPermission('sellerAcquisitions') || hasPermission('pawn')) && (
               <button 
                 type="button"
                 onClick={() => setActiveTab('buy-pawn')}
