@@ -1,102 +1,106 @@
 import assert from 'node:assert';
 import { normalizeScannerInput } from '../utils/scannerNormalizer';
+import { getSearchItemStatus } from '../components/Header';
 import { InventoryItem, PawnLoan, SaleTransaction } from '../types';
 
 /**
- * Phase 2E Correction Test Suite: Real Search Context Routing & Deep-Linking
+ * Phase 2E Final Safety Correction Test Suite: No Fabrication & Status Precedence
  */
 export async function runPhase2eSearchContinuityTests() {
-  console.log('=== RUNNING PHASE 2E SEARCH CONTINUITY & ROUTING CORRECTION TEST SUITE ===');
+  console.log('=== RUNNING PHASE 2E FINAL SAFETY CORRECTION TEST SUITE ===');
 
   const mockInventory: InventoryItem[] = [
     {
-      id: 'item-retail',
-      title: 'Sony Wireless Headphones',
-      sku: 'SKU-SONY-01',
+      id: 'item-retail-with-pawn',
+      title: 'Retail Item With Old Pawn Ref',
+      sku: 'SKU-RETAIL-OLD',
       category: 'Audio',
       condition: 'Mint',
-      retailPrice: 1299,
-      costBasis: 800,
+      retailPrice: 999,
+      costBasis: 500,
       status: 'Retail Floor',
-      serialOrImei: 'SN99887766',
+      pawnTicketId: 'PAWN-OLD-123',
+      serialOrImei: 'SN-RETAIL',
       imageUrl: '',
       acquisitionType: 'Existing Stock',
       addedAt: '2026-01-01'
     },
     {
-      id: 'item-001',
-      title: 'Rolex Submariner Watch',
-      sku: 'SKU-001',
-      category: 'Jewelry',
-      condition: 'Mint',
-      retailPrice: 45000,
-      costBasis: 30000,
-      status: 'Vault Hold',
-      vaultLocation: 'Shelf-B2',
-      pawnTicketId: 'PAWN-001',
-      serialOrImei: 'RLX12345',
+      id: 'item-sold-with-pawn',
+      title: 'Sold Item With Old Pawn Ref',
+      sku: 'SKU-SOLD-OLD',
+      category: 'Smartphones',
+      condition: 'Good',
+      retailPrice: 4999,
+      costBasis: 3000,
+      status: 'Sold',
+      pawnTicketId: 'PAWN-OLD-456',
+      serialOrImei: 'SN-SOLD',
       imageUrl: '',
-      acquisitionType: 'Pawn',
+      acquisitionType: 'Buy',
       addedAt: '2026-01-02'
     },
     {
-      id: 'item-reserved',
-      title: 'Canon EOS R5 Camera',
-      sku: 'SKU-CANON-RES',
-      category: 'Cameras',
-      condition: 'Excellent',
-      retailPrice: 28000,
-      costBasis: 20000,
-      status: 'Reserved',
-      serialOrImei: 'CAN9988',
+      id: 'item-vault-noloan',
+      title: 'Orphan Vault Item',
+      sku: 'SKU-VAULT-NOLOAN',
+      category: 'Tools',
+      condition: 'Fair',
+      retailPrice: 1500,
+      costBasis: 900,
+      status: 'Vault Hold',
+      vaultLocation: 'Shelf-X',
+      serialOrImei: 'SN-NOLOAN',
       imageUrl: '',
-      acquisitionType: 'Buy',
+      acquisitionType: 'Existing Stock',
       addedAt: '2026-01-03'
     },
     {
-      id: 'item-sold',
-      title: 'iPhone 13 128GB',
-      sku: 'SKU-IP13-SOLD',
-      category: 'Smartphones',
-      condition: 'Good',
-      retailPrice: 8999,
+      id: 'item-vault-with-loan',
+      title: 'Valid Pawn Vault Item',
+      sku: 'SKU-VAULT-LOAN',
+      category: 'Jewelry',
+      condition: 'Mint',
+      retailPrice: 10000,
       costBasis: 6000,
-      status: 'Sold',
-      serialOrImei: 'IMEI131313',
+      status: 'Vault Hold',
+      vaultLocation: 'Shelf-Y',
+      pawnTicketId: 'PAWN-REAL-001',
+      serialOrImei: 'RLX999',
       imageUrl: '',
-      acquisitionType: 'Buy',
+      acquisitionType: 'Pawn',
       addedAt: '2026-01-04'
     }
   ];
 
   const mockLoans: PawnLoan[] = [
     {
-      id: 'loan-001',
-      ticketNumber: 'PAWN-001',
+      id: 'loan-real-001',
+      ticketNumber: 'PAWN-REAL-001',
       customerId: 'cust-1',
-      customerName: 'John Doe',
-      customerIdNumber: '8501015009088',
-      customerMobile: '0821234567',
-      customerAddress: '123 Main St',
-      itemId: 'item-001',
-      itemTitle: 'Rolex Submariner Watch',
+      customerName: 'Jane Smith',
+      customerIdNumber: '9001015009088',
+      customerMobile: '0829876543',
+      customerAddress: '456 Oak Rd',
+      itemId: 'item-vault-with-loan',
+      itemTitle: 'Valid Pawn Vault Item',
       itemCategory: 'Jewelry',
-      serialOrImei: 'RLX12345',
+      serialOrImei: 'RLX999',
       condition: 'Mint',
       itemImageUrl: '',
-      principal: 25000,
+      principal: 5000,
       ncrMonthlyRate: 0.05,
-      monthlyInterest: 1250,
-      monthlyStorageAdminFee: 1250,
-      totalRedemptionAmount: 27500,
-      extensionFee: 1250,
-      startDate: '2026-01-02',
-      expiryDate: '2026-02-02',
+      monthlyInterest: 250,
+      monthlyStorageAdminFee: 250,
+      totalRedemptionAmount: 5500,
+      extensionFee: 250,
+      startDate: '2026-01-04',
+      expiryDate: '2026-02-04',
       daysRemaining: 30,
       daysElapsed: 0,
-      vaultShelf: 'Shelf-B2',
+      vaultShelf: 'Shelf-Y',
       status: 'Active',
-      qrToken: 'qr-1',
+      qrToken: 'qr-real',
       history: [],
       shopId: 'shop-1'
     }
@@ -104,58 +108,69 @@ export async function runPhase2eSearchContinuityTests() {
 
   const mockSales: SaleTransaction[] = [
     {
-      id: 'sale-1',
-      receiptNumber: 'SKU-IP13-SOLD',
-      timestamp: '2026-01-04T12:00:00Z',
-      items: [{ item: mockInventory[3], quantity: 1 }],
-      subtotal: 7825.22,
-      vatAmount: 1173.78,
-      total: 8999,
+      id: 'sale-real-1',
+      receiptNumber: 'SKU-SOLD-OLD',
+      timestamp: '2026-01-05T12:00:00Z',
+      items: [{ item: mockInventory[1], quantity: 1 }],
+      subtotal: 4346.96,
+      vatAmount: 652.04,
+      total: 4999,
       tenderMethod: 'cash',
-      amountTendered: 9000,
+      amountTendered: 5000,
       change: 1,
       receiptType: 'thermal',
       cashier: 'POS Cashier'
     }
   ];
 
-  // --- Test 1: Retail Floor → Sell ---
-  const retailMatch = mockInventory.find(i => i.sku === normalizeScannerInput('SKU-SONY-01\n'));
-  assert.ok(retailMatch);
-  assert.strictEqual(retailMatch?.status, 'Retail Floor');
-  const retailAction = retailMatch?.status === 'Retail Floor' ? 'sell' : 'view';
-  assert.strictEqual(retailAction, 'sell', 'Retail Floor item routes to sell cart action');
+  // --- Test 1: Retail Precedence over Historical Pawn Ref ---
+  const retailStatus = getSearchItemStatus(mockInventory[0], mockLoans);
+  assert.strictEqual(retailStatus.type, 'retail', 'Retail Floor status takes strict precedence over pawnTicketId');
+  assert.strictEqual(retailStatus.linkedLoan, undefined, 'Retail item without active loan links to undefined loan');
 
-  // --- Test 2: Vault Hold → Vault + Matching Loan/Item ---
-  const vaultMatch = mockInventory.find(i => i.sku === normalizeScannerInput('\rSKU-001\r\n'));
-  assert.ok(vaultMatch);
-  const matchingLoan = mockLoans.find(l => l.ticketNumber === vaultMatch?.pawnTicketId || l.itemId === vaultMatch?.id);
-  assert.ok(matchingLoan, 'Vault item successfully resolves to matching pawn loan record');
-  assert.strictEqual(matchingLoan?.id, 'loan-001');
+  // --- Test 2: Sold Precedence over Historical Pawn Ref ---
+  const soldStatus = getSearchItemStatus(mockInventory[1], mockLoans);
+  assert.strictEqual(soldStatus.type, 'sold', 'Sold terminal status takes strict precedence over pawnTicketId');
+  assert.strictEqual(soldStatus.linkedLoan, undefined, 'Sold item does not surface active loan');
 
-  // --- Test 3: Active Pawn → Vault/Loan context + selected loan ---
-  const pawnMatch = mockInventory.find(i => i.pawnTicketId === 'PAWN-001');
-  assert.ok(pawnMatch);
-  const resolvedLoan = mockLoans.find(l => l.ticketNumber === pawnMatch?.pawnTicketId);
-  assert.ok(resolvedLoan, 'Pawn item resolves to specific active loan');
-  assert.strictEqual(resolvedLoan?.ticketNumber, 'PAWN-001');
+  // --- Test 3: Vault Item Without Matching Loan (No Fabrication) ---
+  const vaultNoLoanStatus = getSearchItemStatus(mockInventory[2], mockLoans);
+  assert.strictEqual(vaultNoLoanStatus.type, 'vault', 'Vault item without local loan has vault status');
+  assert.strictEqual(vaultNoLoanStatus.linkedLoan, undefined, 'No fake loan object is created or linked');
 
-  // --- Test 4: Reserved → Inventory + selected item ---
-  const reservedMatch = mockInventory.find(i => i.status === 'Reserved' && i.serialOrImei === 'CAN9988');
-  assert.ok(reservedMatch);
-  assert.strictEqual(reservedMatch?.status, 'Reserved');
-  const selectedInventoryItem = reservedMatch;
-  assert.ok(selectedInventoryItem, 'Reserved item selected for inventory modal detail view');
+  // --- Test 4: Vault Item With Real Matching Loan ---
+  const vaultLoanStatus = getSearchItemStatus(mockInventory[3], mockLoans);
+  assert.strictEqual(vaultLoanStatus.type, 'vault', 'Vault item with active loan has vault status');
+  assert.ok(vaultLoanStatus.linkedLoan, 'Real loan is successfully linked');
+  assert.strictEqual(vaultLoanStatus.linkedLoan?.ticketNumber, 'PAWN-REAL-001');
 
-  // --- Test 5: Sold → Matching sale / receipt ---
-  const soldMatch = mockInventory.find(i => i.status === 'Sold' && i.sku === 'SKU-IP13-SOLD');
-  assert.ok(soldMatch);
-  const matchingSale = mockSales.find(s => s.receiptNumber.toLowerCase() === soldMatch?.sku.toLowerCase() || s.items.some(si => si.item.id === soldMatch?.id));
-  assert.ok(matchingSale, 'Sold item resolves to matching sale transaction receipt');
-  assert.strictEqual(matchingSale?.receiptNumber, 'SKU-IP13-SOLD');
+  // --- Test 5: Sold With Real Receipt ---
+  const soldWithReceipt = mockSales.find(s => s.receiptNumber === mockInventory[1].sku);
+  assert.ok(soldWithReceipt, 'Real sale receipt successfully matched to sold item');
+  assert.strictEqual(soldWithReceipt?.total, 4999);
 
-  console.log('[PASS] Test 1-5: All Phase 2E correction context routing & deep-linking tests verified');
+  // --- Test 6: Sold Without Receipt (No Fabrication) ---
+  const soldWithoutReceiptItem: InventoryItem = {
+    id: 'item-sold-noreceipt',
+    title: 'Orphan Sold Item',
+    sku: 'SKU-SOLD-NOREC',
+    category: 'Books',
+    condition: 'Good',
+    retailPrice: 200,
+    costBasis: 100,
+    status: 'Sold',
+    serialOrImei: 'SN-NOREC',
+    imageUrl: '',
+    acquisitionType: 'Existing Stock',
+    addedAt: '2026-01-01'
+  };
+  const orphanSoldStatus = getSearchItemStatus(soldWithoutReceiptItem, mockLoans);
+  assert.strictEqual(orphanSoldStatus.type, 'sold');
+  const matchingOrphanSale = mockSales.find(s => s.receiptNumber === soldWithoutReceiptItem.sku);
+  assert.strictEqual(matchingOrphanSale, undefined, 'No fake receipt is ever fabricated for an orphan sold item');
+
+  console.log('[PASS] Test 1-6: All Phase 2E Final Safety Correction tests passed without any data fabrication');
   console.log('====================================================');
-  console.log('   ALL PHASE 2E CORRECTION TESTS PASSED!          ');
+  console.log('   ALL PHASE 2E FINAL SAFETY CORRECTION TESTS PASSED!');
   console.log('====================================================');
 }

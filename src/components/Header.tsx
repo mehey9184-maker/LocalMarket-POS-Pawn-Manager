@@ -3,6 +3,7 @@ import { useApp, NavTab } from '../context/AppContext';
 import { useSellers } from '../context/SellerContext';
 import { useAuth } from '../context/AuthContext';
 import { normalizeScannerInput } from '../utils/scannerNormalizer';
+import { InventoryItem, PawnLoan } from '../types';
 import { 
   Search, 
   User, 
@@ -15,6 +16,40 @@ import {
   Plus,
   ArrowLeftRight
 } from 'lucide-react';
+
+export function getSearchItemStatus(item: InventoryItem, pawnLoans: PawnLoan[]): {
+  type: 'retail' | 'vault' | 'reserved' | 'pawned' | 'sold' | 'other';
+  label: string;
+  colorClass: string;
+  linkedLoan: PawnLoan | undefined;
+} {
+  const isSold = item.status === 'Sold' || item.status === 'Redeemed';
+  const isRetail = item.status === 'Retail Floor';
+  const isVault = item.status === 'Vault Hold' || item.status === 'Forfeited';
+  const isReserved = item.status === 'Reserved' || item.status === 'Flagged';
+
+  const linkedLoan = pawnLoans.find(
+    l => l.ticketNumber === item.pawnTicketId || (l.serialOrImei && item.serialOrImei && l.serialOrImei.toLowerCase() === item.serialOrImei.toLowerCase()) || l.itemId === item.id
+  );
+  const isPawned = Boolean(linkedLoan && linkedLoan.status === 'Active');
+
+  if (isSold) {
+    return { type: 'sold', label: 'Sold', colorClass: 'text-gray-500', linkedLoan: undefined };
+  }
+  if (isRetail) {
+    return { type: 'retail', label: 'Available in Store', colorClass: 'text-emerald-600', linkedLoan: undefined };
+  }
+  if (isVault) {
+    return { type: 'vault', label: 'In Vault', colorClass: 'text-amber-600', linkedLoan };
+  }
+  if (isReserved) {
+    return { type: 'reserved', label: 'Reserved', colorClass: 'text-amber-700', linkedLoan: undefined };
+  }
+  if (isPawned) {
+    return { type: 'pawned', label: 'Pawned', colorClass: 'text-blue-600', linkedLoan };
+  }
+  return { type: 'other', label: item.status, colorClass: 'text-gray-600', linkedLoan };
+}
 
 interface HeaderProps {
   onOpenShortcuts?: () => void;
@@ -179,12 +214,7 @@ export const Header: React.FC<HeaderProps> = () => {
                       <span>Stock & Inventory</span>
                     </div>
                     {searchResults.inventory.map(item => {
-                      const isRetail = item.status === 'Retail Floor';
-                      const isVault = item.status === 'Vault Hold' || item.status === 'Forfeited';
-                      const isReserved = item.status === 'Reserved' || item.status === 'Flagged';
-                      const isSold = item.status === 'Sold' || item.status === 'Redeemed';
-                      const linkedLoan = pawnLoans.find(l => l.ticketNumber === item.pawnTicketId || (item.serialOrImei && l.serialOrImei === item.serialOrImei));
-                      const isPawned = Boolean(linkedLoan || item.pawnTicketId);
+                      const statusInfo = getSearchItemStatus(item, pawnLoans);
 
                       return (
                         <div key={item.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
@@ -196,15 +226,11 @@ export const Header: React.FC<HeaderProps> = () => {
                             <div className="text-[11px] text-gray-500 flex items-center gap-2 mt-0.5">
                               <span className="font-mono font-bold text-gray-800">R {item.retailPrice.toLocaleString()}</span>
                               <span>•</span>
-                              {isRetail && <span className="text-[10px] font-medium text-emerald-600">Available in Store</span>}
-                              {isVault && <span className="text-[10px] font-medium text-amber-600">In Vault</span>}
-                              {isReserved && <span className="text-[10px] font-medium text-amber-700">Reserved</span>}
-                              {isPawned && !isVault && <span className="text-[10px] font-medium text-blue-600">Pawned</span>}
-                              {isSold && <span className="text-[10px] font-medium text-gray-500">Sold</span>}
+                              <span className={`text-[10px] font-medium ${statusInfo.colorClass}`}>{statusInfo.label}</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5">
-                            {isRetail && hasPermission('sales') && (
+                            {statusInfo.type === 'retail' && hasPermission('sales') && (
                               <button
                                 onClick={() => {
                                   addToCart(item);
@@ -217,54 +243,34 @@ export const Header: React.FC<HeaderProps> = () => {
                                 Sell
                               </button>
                             )}
-                            {isVault && (
-                              <button
-                                onClick={() => {
-                                  const linkedLoan = pawnLoans.find(l => l.ticketNumber === item.pawnTicketId || (l.serialOrImei && item.serialOrImei && l.serialOrImei.toLowerCase() === item.serialOrImei.toLowerCase())) || pawnLoans.find(l => l.itemId === item.id);
-                                  if (linkedLoan) {
-                                    setSelectedVaultLoan(linkedLoan);
-                                  } else {
-                                    setSelectedVaultLoan({
-                                      id: item.id,
-                                      ticketNumber: item.pawnTicketId || `#${item.sku}`,
-                                      customerId: 'cust-1',
-                                      customerName: 'Pawn Customer',
-                                      customerIdNumber: '0000000000000',
-                                      customerMobile: 'N/A',
-                                      customerAddress: 'N/A',
-                                      itemId: item.id,
-                                      itemTitle: item.title,
-                                      itemCategory: String(item.category),
-                                      serialOrImei: item.serialOrImei || 'N/A',
-                                      condition: item.condition,
-                                      itemImageUrl: item.imageUrl,
-                                      principal: item.costBasis || item.retailPrice * 0.5,
-                                      ncrMonthlyRate: 0.05,
-                                      monthlyInterest: 0,
-                                      monthlyStorageAdminFee: 0,
-                                      totalRedemptionAmount: item.retailPrice,
-                                      extensionFee: 0,
-                                      startDate: item.addedAt,
-                                      expiryDate: new Date(Date.now() + 30*86400000).toISOString().split('T')[0],
-                                      daysRemaining: 30,
-                                      daysElapsed: 0,
-                                      vaultShelf: item.vaultLocation || 'Shelf-A1',
-                                      status: 'Active',
-                                      qrToken: 'qr-fallback',
-                                      history: [],
-                                      shopId: item.shopId
-                                    } as any);
-                                  }
-                                  setActiveTab('vault');
-                                  setIsSearchFocused(false);
-                                  setSearchQuery('');
-                                }}
-                                className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-semibold transition cursor-pointer"
-                              >
-                                Open in Vault
-                              </button>
+                            {statusInfo.type === 'vault' && (
+                              statusInfo.linkedLoan ? (
+                                <button
+                                  onClick={() => {
+                                    setSelectedVaultLoan(statusInfo.linkedLoan!);
+                                    setActiveTab('vault');
+                                    setIsSearchFocused(false);
+                                    setSearchQuery('');
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-semibold transition cursor-pointer"
+                                >
+                                  Open Loan
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setSelectedInventoryItem(item);
+                                    setActiveTab('vault');
+                                    setIsSearchFocused(false);
+                                    setSearchQuery('');
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-semibold transition cursor-pointer"
+                                >
+                                  Open in Vault
+                                </button>
+                              )
                             )}
-                            {isReserved && (
+                            {statusInfo.type === 'reserved' && (
                               <button
                                 onClick={() => {
                                   setSelectedInventoryItem(item);
@@ -277,44 +283,10 @@ export const Header: React.FC<HeaderProps> = () => {
                                 Open Item
                               </button>
                             )}
-                            {isPawned && !isVault && (
+                            {statusInfo.type === 'pawned' && statusInfo.linkedLoan && (
                               <button
                                 onClick={() => {
-                                  const linkedLoan = pawnLoans.find(l => l.ticketNumber === item.pawnTicketId || (l.serialOrImei && item.serialOrImei && l.serialOrImei.toLowerCase() === item.serialOrImei.toLowerCase())) || pawnLoans.find(l => l.itemId === item.id);
-                                  if (linkedLoan) {
-                                    setSelectedVaultLoan(linkedLoan);
-                                  } else {
-                                    setSelectedVaultLoan({
-                                      id: item.id,
-                                      ticketNumber: item.pawnTicketId || `#${item.sku}`,
-                                      customerId: 'cust-1',
-                                      customerName: 'Pawn Customer',
-                                      customerIdNumber: '0000000000000',
-                                      customerMobile: 'N/A',
-                                      customerAddress: 'N/A',
-                                      itemId: item.id,
-                                      itemTitle: item.title,
-                                      itemCategory: String(item.category),
-                                      serialOrImei: item.serialOrImei || 'N/A',
-                                      condition: item.condition,
-                                      itemImageUrl: item.imageUrl,
-                                      principal: item.costBasis || item.retailPrice * 0.5,
-                                      ncrMonthlyRate: 0.05,
-                                      monthlyInterest: 0,
-                                      monthlyStorageAdminFee: 0,
-                                      totalRedemptionAmount: item.retailPrice,
-                                      extensionFee: 0,
-                                      startDate: item.addedAt,
-                                      expiryDate: new Date(Date.now() + 30*86400000).toISOString().split('T')[0],
-                                      daysRemaining: 30,
-                                      daysElapsed: 0,
-                                      vaultShelf: item.vaultLocation || 'Shelf-A1',
-                                      status: 'Active',
-                                      qrToken: 'qr-fallback',
-                                      history: [],
-                                      shopId: item.shopId
-                                    } as any);
-                                  }
+                                  setSelectedVaultLoan(statusInfo.linkedLoan!);
                                   setActiveTab('vault');
                                   setIsSearchFocused(false);
                                   setSearchQuery('');
@@ -324,42 +296,44 @@ export const Header: React.FC<HeaderProps> = () => {
                                 Open Loan
                               </button>
                             )}
-                            {isSold && (
+                            {statusInfo.type === 'sold' && (() => {
+                              const matchingSale = salesHistory.find(s => 
+                                s.receiptNumber.toLowerCase() === item.sku.toLowerCase() ||
+                                s.items.some(si => si.item.id === item.id || si.item.sku.toLowerCase() === item.sku.toLowerCase())
+                              );
+                              if (matchingSale) {
+                                return (
+                                  <button
+                                    onClick={() => {
+                                      setActiveReceiptModal(matchingSale);
+                                      setIsSearchFocused(false);
+                                      setSearchQuery('');
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold transition cursor-pointer"
+                                  >
+                                    Open Receipt
+                                  </button>
+                                );
+                              } else {
+                                return (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedInventoryItem(item);
+                                      setActiveTab('inventory');
+                                      setIsSearchFocused(false);
+                                      setSearchQuery('');
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold transition cursor-pointer"
+                                  >
+                                    View Item
+                                  </button>
+                                );
+                              }
+                            })()}
+                            {statusInfo.type === 'other' && (
                               <button
                                 onClick={() => {
-                                  const matchingSale = salesHistory.find(s => 
-                                    s.receiptNumber.toLowerCase() === item.sku.toLowerCase() ||
-                                    s.items.some(si => si.item.id === item.id || si.item.sku.toLowerCase() === item.sku.toLowerCase())
-                                  );
-                                  if (matchingSale) {
-                                    setActiveReceiptModal(matchingSale);
-                                  } else {
-                                    setActiveReceiptModal({
-                                      id: `sale-${item.id}`,
-                                      receiptNumber: item.sku,
-                                      timestamp: item.addedAt || new Date().toISOString(),
-                                      items: [{ item, quantity: 1 }],
-                                      subtotal: item.retailPrice,
-                                      vatAmount: 0,
-                                      total: item.retailPrice,
-                                      tenderMethod: 'cash',
-                                      amountTendered: item.retailPrice,
-                                      change: 0,
-                                      receiptType: 'thermal',
-                                      cashier: 'POS Cashier'
-                                    });
-                                  }
-                                  setIsSearchFocused(false);
-                                  setSearchQuery('');
-                                }}
-                                className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold transition cursor-pointer"
-                              >
-                                Open Receipt
-                              </button>
-                            )}
-                            {!isRetail && !isVault && !isReserved && !isPawned && !isSold && (
-                              <button
-                                onClick={() => {
+                                  setSelectedInventoryItem(item);
                                   setActiveTab('inventory');
                                   setIsSearchFocused(false);
                                   setSearchQuery('');
