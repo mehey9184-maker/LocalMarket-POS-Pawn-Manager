@@ -1,13 +1,13 @@
 import assert from 'node:assert';
-import { normalizeScannerInput } from '../utils/scannerNormalizer';
 import { getSearchItemStatus } from '../components/Header';
 import { InventoryItem, PawnLoan, SaleTransaction } from '../types';
 
 /**
- * Phase 2E Final Safety Correction Test Suite: No Fabrication & Status Precedence
+ * Phase 2E Final Verification Correction Test Suite:
+ * Covers Tests A, B, C, D, E, F (Sold item real sale, no sale, SKU collision safety, vault with/without loan, sold/retail precedence).
  */
 export async function runPhase2eSearchContinuityTests() {
-  console.log('=== RUNNING PHASE 2E FINAL SAFETY CORRECTION TEST SUITE ===');
+  console.log('=== RUNNING PHASE 2E FINAL VERIFICATION CORRECTION TEST SUITE ===');
 
   const mockInventory: InventoryItem[] = [
     {
@@ -70,6 +70,62 @@ export async function runPhase2eSearchContinuityTests() {
       imageUrl: '',
       acquisitionType: 'Pawn',
       addedAt: '2026-01-04'
+    },
+    {
+      id: 'item-sold-A',
+      title: 'Sold Item A with Real Sale',
+      sku: 'SKU-SOLD-A',
+      category: 'Audio',
+      condition: 'Mint',
+      retailPrice: 2000,
+      costBasis: 1000,
+      status: 'Sold',
+      serialOrImei: 'SN-SOLD-A',
+      imageUrl: '',
+      acquisitionType: 'Buy',
+      addedAt: '2026-01-05'
+    },
+    {
+      id: 'item-sold-B',
+      title: 'Sold Item B with No Sale',
+      sku: 'SKU-SOLD-B',
+      category: 'Audio',
+      condition: 'Mint',
+      retailPrice: 2000,
+      costBasis: 1000,
+      status: 'Sold',
+      serialOrImei: 'SN-SOLD-B',
+      imageUrl: '',
+      acquisitionType: 'Buy',
+      addedAt: '2026-01-05'
+    },
+    {
+      id: 'item-sold-C',
+      title: 'Sold Item C SKU Collision Test',
+      sku: 'SKU-123',
+      category: 'Audio',
+      condition: 'Mint',
+      retailPrice: 2000,
+      costBasis: 1000,
+      status: 'Sold',
+      serialOrImei: 'SN-SOLD-C',
+      imageUrl: '',
+      acquisitionType: 'Buy',
+      addedAt: '2026-01-05'
+    },
+    {
+      id: 'item-D',
+      title: 'Unrelated Item D',
+      sku: 'SKU-OTHER',
+      category: 'Audio',
+      condition: 'Mint',
+      retailPrice: 1000,
+      costBasis: 500,
+      status: 'Retail Floor',
+      serialOrImei: 'SN-D',
+      imageUrl: '',
+      acquisitionType: 'Existing Stock',
+      addedAt: '2026-01-05'
     }
   ];
 
@@ -106,71 +162,89 @@ export async function runPhase2eSearchContinuityTests() {
     }
   ];
 
-  const mockSales: SaleTransaction[] = [
-    {
-      id: 'sale-real-1',
-      receiptNumber: 'SKU-SOLD-OLD',
-      timestamp: '2026-01-05T12:00:00Z',
-      items: [{ item: mockInventory[1], quantity: 1 }],
-      subtotal: 4346.96,
-      vatAmount: 652.04,
-      total: 4999,
-      tenderMethod: 'cash',
-      amountTendered: 5000,
-      change: 1,
-      receiptType: 'thermal',
-      cashier: 'POS Cashier'
-    }
-  ];
-
-  // --- Test 1: Retail Precedence over Historical Pawn Ref ---
-  const retailStatus = getSearchItemStatus(mockInventory[0], mockLoans);
-  assert.strictEqual(retailStatus.type, 'retail', 'Retail Floor status takes strict precedence over pawnTicketId');
-  assert.strictEqual(retailStatus.linkedLoan, undefined, 'Retail item without active loan links to undefined loan');
-
-  // --- Test 2: Sold Precedence over Historical Pawn Ref ---
-  const soldStatus = getSearchItemStatus(mockInventory[1], mockLoans);
-  assert.strictEqual(soldStatus.type, 'sold', 'Sold terminal status takes strict precedence over pawnTicketId');
-  assert.strictEqual(soldStatus.linkedLoan, undefined, 'Sold item does not surface active loan');
-
-  // --- Test 3: Vault Item Without Matching Loan (No Fabrication) ---
-  const vaultNoLoanStatus = getSearchItemStatus(mockInventory[2], mockLoans);
-  assert.strictEqual(vaultNoLoanStatus.type, 'vault', 'Vault item without local loan has vault status');
-  assert.strictEqual(vaultNoLoanStatus.linkedLoan, undefined, 'No fake loan object is created or linked');
-
-  // --- Test 4: Vault Item With Real Matching Loan ---
-  const vaultLoanStatus = getSearchItemStatus(mockInventory[3], mockLoans);
-  assert.strictEqual(vaultLoanStatus.type, 'vault', 'Vault item with active loan has vault status');
-  assert.ok(vaultLoanStatus.linkedLoan, 'Real loan is successfully linked');
-  assert.strictEqual(vaultLoanStatus.linkedLoan?.ticketNumber, 'PAWN-REAL-001');
-
-  // --- Test 5: Sold With Real Receipt ---
-  const soldWithReceipt = mockSales.find(s => s.receiptNumber === mockInventory[1].sku);
-  assert.ok(soldWithReceipt, 'Real sale receipt successfully matched to sold item');
-  assert.strictEqual(soldWithReceipt?.total, 4999);
-
-  // --- Test 6: Sold Without Receipt (No Fabrication) ---
-  const soldWithoutReceiptItem: InventoryItem = {
-    id: 'item-sold-noreceipt',
-    title: 'Orphan Sold Item',
-    sku: 'SKU-SOLD-NOREC',
-    category: 'Books',
-    condition: 'Good',
-    retailPrice: 200,
-    costBasis: 100,
-    status: 'Sold',
-    serialOrImei: 'SN-NOREC',
-    imageUrl: '',
-    acquisitionType: 'Existing Stock',
-    addedAt: '2026-01-01'
+  const realSaleA: SaleTransaction = {
+    id: 'sale-real-A',
+    receiptNumber: 'REC-001',
+    timestamp: '2026-01-05T12:00:00Z',
+    items: [{ item: mockInventory.find(i => i.id === 'item-sold-A')!, quantity: 1 }],
+    subtotal: 1739.13,
+    vatAmount: 260.87,
+    total: 2000,
+    tenderMethod: 'cash',
+    amountTendered: 2000,
+    change: 0,
+    receiptType: 'thermal',
+    cashier: 'POS Cashier'
   };
-  const orphanSoldStatus = getSearchItemStatus(soldWithoutReceiptItem, mockLoans);
-  assert.strictEqual(orphanSoldStatus.type, 'sold');
-  const matchingOrphanSale = mockSales.find(s => s.receiptNumber === soldWithoutReceiptItem.sku);
-  assert.strictEqual(matchingOrphanSale, undefined, 'No fake receipt is ever fabricated for an orphan sold item');
 
-  console.log('[PASS] Test 1-6: All Phase 2E Final Safety Correction tests passed without any data fabrication');
+  // Unrelated sale whose receipt number happens to equal item C's SKU ('SKU-123')
+  const collisionSale: SaleTransaction = {
+    id: 'sale-collision',
+    receiptNumber: 'SKU-123',
+    timestamp: '2026-01-05T12:00:00Z',
+    items: [{ item: mockInventory.find(i => i.id === 'item-D')!, quantity: 1 }],
+    subtotal: 869.57,
+    vatAmount: 130.43,
+    total: 1000,
+    tenderMethod: 'cash',
+    amountTendered: 1000,
+    change: 0,
+    receiptType: 'thermal',
+    cashier: 'POS Cashier'
+  };
+
+  const mockSales: SaleTransaction[] = [realSaleA, collisionSale];
+
+  // Helper matching function mirroring Header.tsx sold receipt resolution
+  const resolveMatchingSale = (item: InventoryItem, sales: SaleTransaction[]) => {
+    return sales.find(s => 
+      s.items.some(si => si.item.id === item.id)
+    ) || sales.find(s => 
+      Boolean(item.serialOrImei) && s.items.some(si => 
+        Boolean(si.item.serialOrImei) && 
+        si.item.serialOrImei!.toLowerCase() === item.serialOrImei!.toLowerCase()
+      )
+    );
+  };
+
+  // --- Test A — Sold item with real sale ---
+  const soldItemA = mockInventory.find(i => i.id === 'item-sold-A')!;
+  const matchedSaleA = resolveMatchingSale(soldItemA, mockSales);
+  assert.ok(matchedSaleA, 'Test A: Sold item A resolves to a real sale');
+  assert.strictEqual(matchedSaleA?.id, 'sale-real-A', 'Test A: Selected SaleTransaction is the real sale object');
+
+  // --- Test B — Sold item with no sale ---
+  const soldItemB = mockInventory.find(i => i.id === 'item-sold-B')!;
+  const matchedSaleB = resolveMatchingSale(soldItemB, mockSales);
+  assert.strictEqual(matchedSaleB, undefined, 'Test B: Sold item B with no matching sale resolves to undefined (action View Item, no SaleTransaction created)');
+
+  // --- Test C — SKU collision safety ---
+  const soldItemC = mockInventory.find(i => i.id === 'item-sold-C')!;
+  const matchedSaleC = resolveMatchingSale(soldItemC, mockSales);
+  assert.strictEqual(matchedSaleC, undefined, 'Test C: Sold item C with SKU matching unrelated receipt number does NOT resolve to collision sale; action remains View Item');
+
+  // --- Test D — Vault with real loan ---
+  const vaultLoanStatus = getSearchItemStatus(mockInventory[3], mockLoans);
+  assert.strictEqual(vaultLoanStatus.type, 'vault', 'Test D: Vault item with active loan has vault status');
+  assert.ok(vaultLoanStatus.linkedLoan, 'Test D: Real loan object is successfully linked');
+  assert.strictEqual(vaultLoanStatus.linkedLoan?.ticketNumber, 'PAWN-REAL-001', 'Test D: Destination is Vault with actual loan object');
+
+  // --- Test E — Vault without loan ---
+  const vaultNoLoanStatus = getSearchItemStatus(mockInventory[2], mockLoans);
+  assert.strictEqual(vaultNoLoanStatus.type, 'vault', 'Test E: Vault item without local loan has vault status');
+  assert.strictEqual(vaultNoLoanStatus.linkedLoan, undefined, 'Test E: InventoryItem selected and no fake PawnLoan created');
+
+  // --- Test F — Sold/Retail precedence over historical pawn ref ---
+  const retailStatus = getSearchItemStatus(mockInventory[0], mockLoans);
+  assert.strictEqual(retailStatus.type, 'retail', 'Test F: Retail Floor status takes strict precedence over pawnTicketId');
+  assert.strictEqual(retailStatus.linkedLoan, undefined);
+
+  const soldStatus = getSearchItemStatus(mockInventory[1], mockLoans);
+  assert.strictEqual(soldStatus.type, 'sold', 'Test F: Sold terminal status takes strict precedence over pawnTicketId');
+  assert.strictEqual(soldStatus.linkedLoan, undefined);
+
+  console.log('[PASS] Tests A, B, C, D, E, F: All Phase 2E Final Verification Correction tests passed successfully!');
   console.log('====================================================');
-  console.log('   ALL PHASE 2E FINAL SAFETY CORRECTION TESTS PASSED!');
+  console.log('   ALL PHASE 2E FINAL VERIFICATION CORRECTION TESTS PASSED!');
   console.log('====================================================');
 }

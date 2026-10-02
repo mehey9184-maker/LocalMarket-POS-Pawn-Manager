@@ -298,8 +298,12 @@ export const Header: React.FC<HeaderProps> = () => {
                             )}
                             {statusInfo.type === 'sold' && (() => {
                               const matchingSale = salesHistory.find(s => 
-                                s.receiptNumber.toLowerCase() === item.sku.toLowerCase() ||
-                                s.items.some(si => si.item.id === item.id || si.item.sku.toLowerCase() === item.sku.toLowerCase())
+                                s.items.some(si => si.item.id === item.id)
+                              ) || salesHistory.find(s => 
+                                Boolean(item.serialOrImei) && s.items.some(si => 
+                                  Boolean(si.item.serialOrImei) && 
+                                  si.item.serialOrImei!.toLowerCase() === item.serialOrImei!.toLowerCase()
+                                )
                               );
                               if (matchingSale) {
                                 return (
