@@ -29,6 +29,7 @@ import { runPhase2cFluidBuyPawnTests } from './phase2cFluidBuyPawn.test';
 import { runPhase2dBarcodeScannerTests } from './phase2dBarcodeScanner.test';
 import { runPhase2eSearchContinuityTests } from './phase2eSearchContinuity.test';
 import { runPhase2gStaffSwitchingTests } from './phase2gStaffSwitching.test';
+import { runPhase2hHomeAttentionTests } from './phase2hHomeAttention.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -64,6 +65,7 @@ export async function runAllTests() {
   await runPhase2dBarcodeScannerTests();
   await runPhase2eSearchContinuityTests();
   runPhase2gStaffSwitchingTests();
+  runPhase2hHomeAttentionTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');

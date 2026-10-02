@@ -340,208 +340,155 @@ export const Home: React.FC = () => {
           </section>
         ) : (
           /* Active Shop Operational Center & Management Overview */
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 sm:gap-8">
-            
-            {/* OPERATIONAL ATTENTION CENTER (LEFT 2 COLS) */}
-            <div className="xl:col-span-2 space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center gap-2">
-                  <span>Store Activity &amp; Due Items</span>
-                </h2>
-              </div>
+          <div className="max-w-3xl mx-auto space-y-6">
+            <div className="bg-white/95 border border-stone-200/90 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
+              <h2 className="text-lg font-bold text-stone-900 font-headline">Needs attention</h2>
+              
+              {/* Attention List */}
+              {(() => {
+                const items: React.ReactNode[] = [];
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                {/* Critical: Overdue & Due Soon */}
-                <div className="p-6 rounded-2xl bg-white border border-stone-200 shadow-xs space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-xl bg-orange-50 text-[#C85A32] flex items-center justify-center">
-                      <Clock className="w-5 h-5" />
+                if (overdueLoans.length > 0) {
+                  items.push(
+                    <button
+                      key="overdue"
+                      onClick={() => setActiveTab('vault')}
+                      className="w-full flex items-center justify-between p-4 bg-rose-50/50 hover:bg-rose-50 border border-rose-100/80 rounded-xl transition text-left cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                          <Clock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-stone-900 group-hover:text-rose-700 transition-colors text-sm">
+                            {overdueLoans.length} pawn {overdueLoans.length === 1 ? 'loan' : 'loans'} overdue
+                          </span>
+                          <p className="text-xs text-stone-500 mt-0.5">Pledge periods have expired and require immediate action</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  );
+                }
+
+                if (expiringSoon.length > 0) {
+                  items.push(
+                    <button
+                      key="expiring"
+                      onClick={() => setActiveTab('vault')}
+                      className="w-full flex items-center justify-between p-4 bg-amber-50/50 hover:bg-amber-50 border border-amber-100/80 rounded-xl transition text-left cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                          <Clock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-stone-900 group-hover:text-amber-700 transition-colors text-sm">
+                            {expiringSoon.length} pawn {expiringSoon.length === 1 ? 'loan' : 'loans'} due soon
+                          </span>
+                          <p className="text-xs text-stone-500 mt-0.5">Pledge periods are expiring within 3 days</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  );
+                }
+
+                if (isAtLeastSeniorCashier && pendingApproval.length > 0) {
+                  items.push(
+                    <button
+                      key="pending"
+                      onClick={() => setActiveTab('vault')}
+                      className="w-full flex items-center justify-between p-4 bg-blue-50/50 hover:bg-blue-50 border border-blue-100/80 rounded-xl transition text-left cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                          <User className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-stone-900 group-hover:text-blue-700 transition-colors text-sm">
+                            {pendingApproval.length} forfeiture awaiting review
+                          </span>
+                          <p className="text-xs text-stone-500 mt-0.5">Expired pledges ready to be approved for store inventory</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  );
+                }
+
+                if (isAtLeastSeniorCashier && readyForRetail.length > 0) {
+                  items.push(
+                    <button
+                      key="retail"
+                      onClick={() => setActiveTab('inventory')}
+                      className="w-full flex items-center justify-between p-4 bg-emerald-50/50 hover:bg-emerald-50 border border-emerald-100/80 rounded-xl transition text-left cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                          <Package className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-stone-900 group-hover:text-emerald-700 transition-colors text-sm">
+                            {readyForRetail.length} {readyForRetail.length === 1 ? 'item' : 'items'} ready for retail
+                          </span>
+                          <p className="text-xs text-stone-500 mt-0.5">Forfeited items to be priced and moved to the retail floor</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  );
+                }
+
+                if (items.length === 0) {
+                  return (
+                    <div className="p-6 text-center bg-stone-50 border border-stone-200/60 rounded-xl space-y-1.5">
+                      <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <p className="text-sm font-semibold text-stone-700">Nothing needs your attention right now.</p>
+                      <p className="text-xs text-stone-400">All systems operational and all pledges up to date.</p>
                     </div>
-                    <span className="text-[11px] font-semibold text-[#C85A32] bg-[#FDF0EA] px-2.5 py-0.5 rounded-full">
-                      Pawn Status
+                  );
+                }
+
+                return <div className="space-y-3">{items}</div>;
+              })()}
+
+              {/* Vault Overview Concise Actionable Row */}
+              {isAtLeastSeniorCashier && (expiringSoon.length > 0 || overdueLoans.length > 0) && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-stone-50 border border-stone-200/60 rounded-xl text-xs">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-stone-500 shrink-0" />
+                    <span className="font-medium text-stone-700">
+                      Vault: {expiringSoon.length} due soon · {overdueLoans.length} overdue
                     </span>
                   </div>
-                  <div>
-                    <h3 className="text-base font-bold text-stone-900">Pawn Loans</h3>
-                    <p className="text-xs text-stone-500">Agreements requiring counter attention</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-rose-50/70 p-3.5 rounded-xl border border-rose-100">
-                      <p className="text-2xl font-bold text-rose-700 font-mono">{overdueLoans.length}</p>
-                      <p className="text-xs text-rose-600 font-medium mt-0.5">Overdue</p>
-                    </div>
-                    <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-100">
-                      <p className="text-2xl font-bold text-amber-700 font-mono">{expiringSoon.length}</p>
-                      <p className="text-xs text-amber-600 font-medium mt-0.5">Due Soon</p>
-                    </div>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('vault')}
+                    className="self-start sm:self-center font-bold text-[#C85A32] hover:text-[#B84E27] inline-flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <span>Open Vault</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
+              )}
 
-                {/* Approval & Pipeline */}
-                {isAtLeastSeniorCashier && (
-                  <div className="p-6 rounded-2xl bg-white border border-stone-200 shadow-xs space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                        <User className="w-5 h-5" />
-                      </div>
-                      <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full">
-                        Management
-                      </span>
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-stone-900">Approval Pipeline</h3>
-                      <p className="text-xs text-stone-500">Items ready for review or retail</p>
-                    </div>
-                    <div className="space-y-2 text-xs">
-                      <div className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-200/60">
-                        <span className="font-medium text-stone-700">Pending Forfeitures</span>
-                        <span className="font-bold text-stone-900 font-mono text-sm">{pendingApproval.length}</span>
-                      </div>
-                      <div className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-200/60">
-                        <span className="font-medium text-stone-700">Ready for Retail</span>
-                        <span className="font-bold text-stone-900 font-mono text-sm">{readyForRetail.length}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Vault At-a-Glance */}
+              {/* Today's Summary smaller secondary link */}
               {isAtLeastSeniorCashier && (
-                <div className="p-6 rounded-2xl bg-white border border-stone-200 shadow-xs space-y-5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-stone-100 text-stone-600 flex items-center justify-center">
-                        <Lock className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="text-base font-bold text-stone-900">Vault &amp; Pledged Goods</h3>
-                        <p className="text-xs text-stone-500">Secure storage tracking</p>
-                      </div>
-                    </div>
-                    <button 
-                      type="button"
-                      onClick={() => setActiveTab('vault')}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold transition cursor-pointer"
-                    >
-                      <span>Open Vault</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-                    <div className="p-4 rounded-xl bg-stone-50 border border-stone-100">
-                      <span className="text-[10px] font-semibold text-stone-500 uppercase block mb-1">Standard</span>
-                      <p className="text-xl font-bold text-stone-900 font-mono">
-                        {Math.max(0, activeLoans.length - expiringSoon.length - overdueLoans.length)}
-                      </p>
-                    </div>
-                    <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-100">
-                      <span className="text-[10px] font-semibold text-amber-700 uppercase block mb-1">Due Soon</span>
-                      <p className="text-xl font-bold text-amber-800 font-mono">
-                        {expiringSoon.filter(l => l.expiryDate > today).length}
-                      </p>
-                    </div>
-                    <div className="p-4 rounded-xl bg-orange-50/60 border border-orange-100">
-                      <span className="text-[10px] font-semibold text-orange-700 uppercase block mb-1">Due Today</span>
-                      <p className="text-xl font-bold text-orange-800 font-mono">
-                        {expiringSoon.filter(l => l.expiryDate === today).length}
-                      </p>
-                    </div>
-                    <div className="p-4 rounded-xl bg-rose-50/60 border border-rose-100">
-                      <span className="text-[10px] font-semibold text-rose-700 uppercase block mb-1">Overdue</span>
-                      <p className="text-xl font-bold text-rose-800 font-mono">
-                        {overdueLoans.length}
-                      </p>
-                    </div>
-                  </div>
+                <div className="pt-4 border-t border-stone-200/60">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('profile')}
+                    className="text-xs text-[#C85A32] hover:text-[#B84E27] font-semibold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <span>View today’s activity</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
             </div>
-
-            {/* PERFORMANCE COLUMN (RIGHT) */}
-            {isAtLeastSeniorCashier ? (
-              <aside className="space-y-4">
-                <h2 className="text-xs font-bold text-stone-500 uppercase tracking-wider">
-                  Today’s Summary
-                </h2>
-                
-                <div className="rounded-2xl bg-white border border-stone-200 shadow-xs overflow-hidden">
-                  <div className="p-6 space-y-5">
-                    <div>
-                      <p className="text-xs font-medium text-stone-500">Net Retail Revenue</p>
-                      <p className="text-3xl font-bold text-stone-900 font-mono mt-1">
-                        R {todayTotals.salesValue.toLocaleString()}
-                      </p>
-                    </div>
-
-                    <div className="h-px bg-stone-100" />
-
-                    <div className="space-y-3.5 text-xs">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                            <TrendingUp className="w-4 h-4" />
-                          </div>
-                          <span className="font-medium text-stone-700">Retail Sales</span>
-                        </div>
-                        <span className="font-bold text-stone-900 font-mono text-sm">{todayTotals.sales}</span>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-orange-50 text-[#C85A32] flex items-center justify-center">
-                            <ArrowRightLeft className="w-4 h-4" />
-                          </div>
-                          <span className="font-medium text-stone-700">Stock Inflow</span>
-                        </div>
-                        <span className="font-bold text-stone-900 font-mono text-sm">{todayTotals.buys}</span>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                            <Lock className="w-4 h-4" />
-                          </div>
-                          <span className="font-medium text-stone-700">Pawn Pledges</span>
-                        </div>
-                        <span className="font-bold text-stone-900 font-mono text-sm">{todayTotals.pawns}</span>
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 rounded-xl bg-stone-50 border border-stone-200/60 space-y-1">
-                      <span className="text-[11px] font-medium text-stone-500">Cash Payouts</span>
-                      <p className="text-lg font-bold text-stone-900 font-mono">
-                        R {todayTotals.payouts.toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </aside>
-            ) : (
-              <aside className="space-y-4">
-                <h2 className="text-xs font-bold text-stone-500 uppercase tracking-wider">
-                  Counter Status
-                </h2>
-                <div className="rounded-2xl bg-white border border-stone-200 shadow-xs p-6 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                      <CheckCircle2 className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-stone-900">Counter Ready</h3>
-                      <p className="text-xs text-stone-500">Fast transactions active</p>
-                    </div>
-                  </div>
-                  <div className="p-3.5 rounded-xl bg-stone-50 border border-stone-100 text-xs text-stone-600 space-y-2">
-                    <p className="font-semibold text-stone-800">Counter Tips</p>
-                    <p className="text-stone-500 leading-relaxed">• Use <span className="font-semibold text-stone-700">Point of Sale</span> for direct retail sales.</p>
-                    <p className="text-stone-500 leading-relaxed">• Press <span className="font-mono font-semibold text-stone-700">F1 / F2 / F3</span> at checkout for Cash / Card / EFT.</p>
-                    <p className="text-stone-500 leading-relaxed">• Search items by SKU, serial number, or title.</p>
-                  </div>
-                </div>
-              </aside>
-            )}
           </div>
         )}
       </div>
