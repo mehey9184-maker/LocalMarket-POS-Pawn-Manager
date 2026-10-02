@@ -118,15 +118,15 @@ export function runSeniorUxPhase1Tests() {
   // Verify CashierProfile.tsx retains dedicated tabs
   assert(cashierProfileSrc.includes("id: 'shop', label: 'Shop Profile'"), 'CashierProfile must contain dedicated Shop Profile tab');
   assert(cashierProfileSrc.includes("id: 'rules', label: 'Business Rules & Legal'"), 'CashierProfile must contain dedicated Business Rules tab');
-  assert(cashierProfileSrc.includes("id: 'system', label: 'System & Audit'"), 'CashierProfile must contain dedicated System & Audit tab');
+  assert(cashierProfileSrc.includes("id: 'system', label: 'Device & Backup'"), 'CashierProfile must contain dedicated Device & Backup tab');
   console.log('[PASS] CashierProfile sidebar has clear single-responsibility tabs');
 
   // Verify ShopProfileAndOfflineHub has NO duplicate editing entry points
-  assert(!shopProfileOfflineHubSrc.includes('Edit Store Info'), 'System & Audit must NOT provide duplicate Edit Store Info button');
-  assert(!shopProfileOfflineHubSrc.includes('Open Deal Rules Configurator'), 'System & Audit must NOT provide duplicate Deal Rules button');
-  assert(!shopProfileOfflineHubSrc.includes('handleSaveRules'), 'System & Audit must NOT contain duplicate rules saving logic');
-  assert(!shopProfileOfflineHubSrc.includes('handleSaveProfile'), 'System & Audit must NOT contain duplicate profile saving logic');
-  console.log('[PASS] System & Audit contains zero duplicate Shop Profile or Deal Rules editing forms');
+  assert(!shopProfileOfflineHubSrc.includes('Edit Store Info'), 'Device & Backup must NOT provide duplicate Edit Store Info button');
+  assert(!shopProfileOfflineHubSrc.includes('Open Deal Rules Configurator'), 'Device & Backup must NOT provide duplicate Deal Rules button');
+  assert(!shopProfileOfflineHubSrc.includes('handleSaveRules'), 'Device & Backup must NOT contain duplicate rules saving logic');
+  assert(!shopProfileOfflineHubSrc.includes('handleSaveProfile'), 'Device & Backup must NOT contain duplicate profile saving logic');
+  console.log('[PASS] Device & Backup contains zero duplicate Shop Profile or Deal Rules editing forms');
 
   // =========================================================================
   // 3. REMOVE UNNECESSARY SHOP PROFILE REFETCH AFTER SYNC
@@ -170,8 +170,8 @@ export function runSeniorUxPhase1Tests() {
   assert(!shopProfileOfflineHubSrc.includes('Trickle Sync Now'), 'Technical term "Trickle Sync Now" should be replaced with plain language');
   assert(!shopProfileOfflineHubSrc.includes('WhatsApp-Style'), 'Branding comparison "WhatsApp-Style" should be replaced with clean product language');
   assert(!shopProfileOfflineHubSrc.includes('1 item/sec'), 'Technical rate limit description removed from staff-facing UI');
-  assert(shopProfileOfflineHubSrc.includes('Sync Now'), 'UI uses clear "Sync Now" button');
-  assert(shopProfileOfflineHubSrc.includes('Local Device Storage'), 'UI uses clear descriptive section header');
+  assert(shopProfileOfflineHubSrc.includes('Sync Now') || shopProfileOfflineHubSrc.includes('Save Changes'), 'UI uses clear "Sync Now" or "Save Changes" button');
+  assert(shopProfileOfflineHubSrc.includes('Local Device Storage') || shopProfileOfflineHubSrc.includes('Saved on this computer'), 'UI uses clear descriptive section header');
   console.log('[PASS] System & Audit uses clean, professional, user-centric terminology');
 
   // =========================================================================

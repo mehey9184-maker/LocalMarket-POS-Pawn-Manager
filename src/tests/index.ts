@@ -30,6 +30,7 @@ import { runPhase2dBarcodeScannerTests } from './phase2dBarcodeScanner.test';
 import { runPhase2eSearchContinuityTests } from './phase2eSearchContinuity.test';
 import { runPhase2gStaffSwitchingTests } from './phase2gStaffSwitching.test';
 import { runPhase2hHomeAttentionTests } from './phase2hHomeAttention.test';
+import { runPhase2iDeviceBackupUxTests } from './phase2iDeviceBackupUx.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -66,6 +67,7 @@ export async function runAllTests() {
   await runPhase2eSearchContinuityTests();
   runPhase2gStaffSwitchingTests();
   runPhase2hHomeAttentionTests();
+  runPhase2iDeviceBackupUxTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');

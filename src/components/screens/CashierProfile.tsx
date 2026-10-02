@@ -135,7 +135,7 @@ export const CashierProfile: React.FC = () => {
     { id: 'shop', label: 'Shop Profile', icon: Building2, show: isOwner },
     { id: 'staff', label: 'Staff & Security', icon: UserPlus, show: isOwner },
     { id: 'rules', label: 'Business Rules & Legal', icon: Sliders, show: isOwner },
-    { id: 'system', label: 'System & Audit', icon: HardDrive, show: true },
+    { id: 'system', label: 'Device & Backup', icon: HardDrive, show: true },
   ];
 
   const handleLogout = async () => {
@@ -753,7 +753,7 @@ export const CashierProfile: React.FC = () => {
               </motion.div>
             )}
 
-            {/* 5. SYSTEM & AUDIT */}
+            {/* 5. DEVICE & BACKUP */}
             {activeTab === 'system' && (
               <motion.div
                 key="system"
@@ -763,8 +763,8 @@ export const CashierProfile: React.FC = () => {
                 className="space-y-8"
               >
                 <div>
-                  <h1 className="text-3xl sm:text-4xl font-headline font-black text-stone-900 tracking-tight">System &amp; Audit</h1>
-                  <p className="text-stone-500 text-sm mt-1">Local device storage status, offline sync outbox, and backup/restore</p>
+                  <h1 className="text-3xl sm:text-4xl font-headline font-black text-stone-900 tracking-tight">Device &amp; Backup</h1>
+                  <p className="text-stone-500 text-sm mt-1">Keep this computer ready for work, manage saved data, and create or restore a backup.</p>
                 </div>
                 <ShopProfileAndOfflineHub />
               </motion.div>

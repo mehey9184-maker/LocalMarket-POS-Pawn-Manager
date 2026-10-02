@@ -8,8 +8,7 @@ import {
   WifiOff, 
   Loader2,
   CheckCircle2,
-  AlertTriangle,
-  Database
+  AlertTriangle
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
@@ -52,7 +51,7 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
 
   return (
     <div className="space-y-8 text-stone-900">
-      {/* 1. LOCAL DEVICE STORAGE & SYNC CARD */}
+      {/* 1. SAVED ON THIS COMPUTER / LOCAL DEVICE STORAGE CARD */}
       <div className="bg-white border border-stone-200 rounded-[2.5rem] p-8 lg:p-10 space-y-6 shadow-xs relative overflow-hidden">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-stone-100">
           <div className="flex items-center gap-4">
@@ -62,7 +61,7 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
             <div>
               <div className="flex items-center gap-3">
                 <h2 className="text-lg font-black text-stone-900 font-headline tracking-tight">
-                  Local Device Storage &amp; Sync
+                  Saved on this computer
                 </h2>
                 {isOnline ? (
                   <span className="flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -74,13 +73,13 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
                   </span>
                 )}
               </div>
-              <p className="text-xs text-stone-500 mt-0.5">
+              <p className="text-xs text-stone-500 mt-1">
                 All receipts, inventory, and records are stored securely on this computer so you can keep serving customers without interruptions.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col items-end gap-1 shrink-0">
             <button
               onClick={triggerManualSlowSync}
               disabled={isSlowSyncing}
@@ -89,11 +88,14 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
                   ? 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse' 
                   : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
               }`}
-              title="Sync pending offline records with the cloud"
+              title="Save pending changes to the server"
             >
               <RefreshCw className={`w-4 h-4 text-cyan-600 ${isSlowSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSlowSyncing ? 'Syncing...' : 'Sync Now'}</span>
+              <span>{isSlowSyncing ? 'Saving…' : 'Save Changes'}</span>
             </button>
+            <span className="text-[10px] text-stone-400 font-medium">
+              Changes normally sync automatically.
+            </span>
           </div>
         </div>
 
@@ -101,8 +103,7 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
         {isSlowSyncing && slowSyncProgress && (
           <div className="p-4 rounded-2xl bg-blue-50 border border-blue-100 text-blue-800 space-y-2">
             <div className="flex items-center justify-between text-xs font-bold">
-              <span>Syncing ({slowSyncProgress.current} of {slowSyncProgress.total})</span>
-              <span className="font-mono">{slowSyncProgress.entityName}</span>
+              <span>Saving changes ({slowSyncProgress.current} of {slowSyncProgress.total})…</span>
             </div>
             <div className="w-full h-1.5 bg-blue-100 rounded-full overflow-hidden">
               <div 
@@ -111,7 +112,7 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
               />
             </div>
             <p className="text-[10px] text-blue-500/80">
-              Saving changes safely to the server in the background.
+              Your changes are being saved in the background.
             </p>
           </div>
         )}
@@ -119,59 +120,63 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
         {/* DEVICE STORAGE METRICS */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200">
-            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400">Local Inventory</p>
+            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400">Items stored</p>
             <p className="text-2xl font-black text-stone-900 font-headline mt-1">{deviceStorageStats.totalItems}</p>
-            <p className="text-[9px] text-emerald-600 mt-1 font-semibold">Saved on this device</p>
+            <p className="text-[9px] text-emerald-600 mt-1 font-semibold">Saved on this computer</p>
           </div>
 
           <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200">
-            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400">Local Receipts</p>
+            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400">Receipts stored</p>
             <p className="text-2xl font-black text-stone-900 font-headline mt-1">{deviceStorageStats.totalSales}</p>
-            <p className="text-[9px] text-emerald-600 mt-1 font-semibold">Stored locally</p>
+            <p className="text-[9px] text-emerald-600 mt-1 font-semibold">Saved on this computer</p>
           </div>
 
           <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200">
-            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400">Storage Used</p>
+            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400">Storage used</p>
             <p className="text-2xl font-black text-stone-900 font-headline mt-1">~{deviceStorageStats.estimatedLocalSizeKb} KB</p>
-            <p className="text-[9px] text-stone-400 mt-1">Local database cache</p>
+            <p className="text-[9px] text-stone-400 mt-1">Space used on this computer</p>
           </div>
 
           <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200">
-            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400">Sync Status</p>
+            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400">Sync status</p>
             <div className="flex flex-col gap-1 mt-1.5">
               <div className="flex items-baseline gap-2">
                 <p className="text-xl font-black text-stone-900 font-headline">
-                  {pendingSyncCount > 0 ? `${pendingSyncCount} Pending` : failedSyncCount > 0 ? `${failedSyncCount} Waiting` : 'Up to Date'}
+                  {isSlowSyncing 
+                    ? 'Saving your changes…' 
+                    : (pendingSyncCount > 0 || failedSyncCount > 0)
+                    ? `${pendingSyncCount + failedSyncCount} changes waiting` 
+                    : 'Synced'}
                 </p>
                 {isSlowSyncing ? (
-                  <span className="text-[9px] text-cyan-700 font-bold px-1.5 py-0.5 rounded bg-cyan-50 border border-cyan-200">Syncing</span>
-                ) : pendingSyncCount > 0 ? (
-                  <span className="text-[9px] text-amber-700 font-bold px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200">Pending</span>
-                ) : failedSyncCount === 0 ? (
-                  <span className="text-[9px] text-emerald-700 font-bold px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200">Synced</span>
-                ) : null}
+                  <span className="text-[9px] text-cyan-700 font-bold px-1.5 py-0.5 rounded bg-cyan-50 border border-cyan-200">Saving…</span>
+                ) : (pendingSyncCount > 0 || failedSyncCount > 0) ? (
+                  <span className="text-[9px] text-amber-700 font-bold px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200">Waiting</span>
+                ) : (
+                  <span className="text-[9px] text-emerald-700 font-bold px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 font-sans">Synced</span>
+                )}
               </div>
               
               {hasDeterministicError && (
-                <p className="text-[10px] text-rose-600 font-medium leading-tight mt-0.5">⚠️ Needs attention (Invalid data format)</p>
+                <p className="text-[10px] text-rose-600 font-medium leading-tight mt-0.5">⚠️ Some changes need attention.</p>
               )}
               {hasTransientError && (
-                <p className="text-[10px] text-amber-600 font-medium leading-tight mt-0.5">🔄 Will retry when connection improves</p>
+                <p className="text-[10px] text-amber-600 font-medium leading-tight mt-0.5">🔄 Connection is unavailable. We'll retry automatically.</p>
               )}
               {!hasDeterministicError && !hasTransientError && pendingSyncCount === 0 && failedSyncCount === 0 && (
-                <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">All transactions synced</p>
+                <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">Everything is saved and synced.</p>
               )}
             </div>
           </div>
         </div>
 
-        {/* BACKUP & DISASTER RECOVERY */}
+        {/* BACKUP & RECOVERY GATED BY ISOWNER */}
         {isOwner && (
           <div className="pt-4 border-t border-stone-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
             <div className="space-y-1">
-              <p className="text-xs font-bold text-stone-700">Device Backup &amp; Disaster Recovery</p>
+              <p className="text-xs font-bold text-stone-700">Backup this computer</p>
               <p className="text-[11px] text-stone-500">
-                Download a standalone backup file directly to this computer, or restore data if switching machines.
+                Create a backup file so you can recover your store data or move to another computer.
               </p>
             </div>
 
@@ -195,22 +200,22 @@ export const ShopProfileAndOfflineHub: React.FC = () => {
                   ) : (
                     <Upload className="w-4 h-4 text-blue-600" />
                   )}
-                  <span>{isRestoring ? 'Restoring backup…' : 'Restore from File'}</span>
+                  <span>{isRestoring ? 'Restoring your backup…' : 'Restore Backup'}</span>
                 </button>
 
                 <button
                   onClick={exportDeviceBackup}
                   disabled={isRestoring}
                   className="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-600/10 cursor-pointer"
-                  title="Download full database snapshot to local storage"
+                  title="Create a backup file so you can recover your store data"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Download Device Backup</span>
+                  <span>Create Backup</span>
                 </button>
               </div>
               {isRestoring && (
                 <p className="text-[11px] text-blue-600 font-semibold animate-pulse">
-                  Restoring your store data… Please keep this window open.
+                  Your store data is being restored. Keep this window open until it finishes.
                 </p>
               )}
             </div>
