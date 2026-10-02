@@ -381,16 +381,19 @@ export const Header: React.FC<HeaderProps> = () => {
                           </div>
                           <p className="text-[11px] text-gray-500 truncate">{loan.itemTitle} · Principal: R {loan.principal}</p>
                         </div>
-                        <button
-                          onClick={() => {
-                            setActiveTab('customers');
-                            setIsSearchFocused(false);
-                            setSearchQuery('');
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white text-xs font-semibold transition"
-                        >
-                          Ledger
-                        </button>
+                        {hasPermission('pawn') && (
+                          <button
+                            onClick={() => {
+                              setSelectedVaultLoan(loan);
+                              setActiveTab('vault');
+                              setIsSearchFocused(false);
+                              setSearchQuery('');
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white text-xs font-semibold transition cursor-pointer"
+                          >
+                            Open Loan
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
