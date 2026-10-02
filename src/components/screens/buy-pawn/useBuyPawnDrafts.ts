@@ -11,7 +11,11 @@ interface UseBuyPawnDraftsProps {
   itemData: ItemDraft;
   newIdentity: NewIdentityDraft;
   selectedIdentity: Customer | Seller | null;
+  buySelectedIdentity?: Seller | null;
+  pawnSelectedIdentity?: Customer | null;
   agreedOffer: number;
+  buyAgreedOffer?: number;
+  pawnAgreedOffer?: number;
   isAgreedOfferFromMarketCheck?: boolean;
   suggestedRetail: number;
   retailPriceInput: string;
@@ -22,7 +26,11 @@ interface UseBuyPawnDraftsProps {
   setItemData: (data: ItemDraft) => void;
   setNewIdentity: (data: NewIdentityDraft) => void;
   setSelectedIdentity: (identity: Customer | Seller | null) => void;
+  setBuySelectedIdentity?: (seller: Seller | null) => void;
+  setPawnSelectedIdentity?: (customer: Customer | null) => void;
   setAgreedOffer: (val: number) => void;
+  setBuyAgreedOffer?: (val: number) => void;
+  setPawnAgreedOffer?: (val: number) => void;
   setIsAgreedOfferFromMarketCheck?: (val: boolean) => void;
   setSuggestedRetail: (val: number) => void;
   setRetailPriceInput: (val: string) => void;
@@ -44,7 +52,11 @@ export function useBuyPawnDrafts({
   itemData,
   newIdentity,
   selectedIdentity,
+  buySelectedIdentity,
+  pawnSelectedIdentity,
   agreedOffer,
+  buyAgreedOffer,
+  pawnAgreedOffer,
   isAgreedOfferFromMarketCheck = false,
   suggestedRetail,
   retailPriceInput,
@@ -55,7 +67,11 @@ export function useBuyPawnDrafts({
   setItemData,
   setNewIdentity,
   setSelectedIdentity,
+  setBuySelectedIdentity,
+  setPawnSelectedIdentity,
   setAgreedOffer,
+  setBuyAgreedOffer,
+  setPawnAgreedOffer,
   setIsAgreedOfferFromMarketCheck,
   setSuggestedRetail,
   setRetailPriceInput,
@@ -96,8 +112,12 @@ export function useBuyPawnDrafts({
             itemData,
             newIdentity,
             selectedIdentity,
+            buySelectedIdentity,
+            pawnSelectedIdentity,
             txType,
             agreedOffer,
+            buyAgreedOffer,
+            pawnAgreedOffer,
             isAgreedOfferFromMarketCheck: Boolean(isAgreedOfferFromMarketCheck),
             suggestedRetail,
             retailPriceInput,
@@ -153,7 +173,11 @@ export function useBuyPawnDrafts({
       if (draft.payload?.itemData) setItemData(draft.payload.itemData);
       if (draft.payload?.newIdentity) setNewIdentity(draft.payload.newIdentity);
       if (draft.payload?.selectedIdentity !== undefined) setSelectedIdentity(draft.payload.selectedIdentity);
+      if (draft.payload?.buySelectedIdentity !== undefined) setBuySelectedIdentity?.(draft.payload.buySelectedIdentity);
+      if (draft.payload?.pawnSelectedIdentity !== undefined) setPawnSelectedIdentity?.(draft.payload.pawnSelectedIdentity);
       if (draft.payload?.agreedOffer !== undefined) setAgreedOffer(draft.payload.agreedOffer);
+      if (draft.payload?.buyAgreedOffer !== undefined) setBuyAgreedOffer?.(draft.payload.buyAgreedOffer);
+      if (draft.payload?.pawnAgreedOffer !== undefined) setPawnAgreedOffer?.(draft.payload.pawnAgreedOffer);
       setIsAgreedOfferFromMarketCheck?.(Boolean(draft.payload?.isAgreedOfferFromMarketCheck));
       if (draft.payload?.suggestedRetail !== undefined) setSuggestedRetail(draft.payload.suggestedRetail);
       if (draft.payload?.retailPriceInput !== undefined) setRetailPriceInput(draft.payload.retailPriceInput);

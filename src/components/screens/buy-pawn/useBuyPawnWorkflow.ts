@@ -88,6 +88,14 @@ export function useBuyPawnWorkflow() {
   const [isCreatingIdentity, setIsCreatingIdentity] = useState(false);
   const [newIdentity, setNewIdentity] = useState<NewIdentityDraft>(INITIAL_NEW_IDENTITY);
 
+  // Mode-Isolated Identity & Pricing State (Fluid Buy ↔ Pawn preservation)
+  const [buySelectedIdentity, setBuySelectedIdentity] = useState<Seller | null>(null);
+  const [pawnSelectedIdentity, setPawnSelectedIdentity] = useState<Customer | null>(null);
+  const [buyAgreedOffer, setBuyAgreedOffer] = useState<number>(0);
+  const [buyIsAgreedOfferFromMarketCheck, setBuyIsAgreedOfferFromMarketCheck] = useState<boolean>(false);
+  const [pawnAgreedOffer, setPawnAgreedOffer] = useState<number>(0);
+  const [pawnIsAgreedOfferFromMarketCheck, setPawnIsAgreedOfferFromMarketCheck] = useState<boolean>(false);
+
   // Item Details State (Common to all flows)
   const [itemData, setItemData] = useState<ItemDraft>(INITIAL_ITEM_DATA);
 
@@ -119,7 +127,11 @@ export function useBuyPawnWorkflow() {
     itemData,
     newIdentity,
     selectedIdentity,
+    buySelectedIdentity,
+    pawnSelectedIdentity,
     agreedOffer,
+    buyAgreedOffer,
+    pawnAgreedOffer,
     isAgreedOfferFromMarketCheck,
     suggestedRetail,
     retailPriceInput,
@@ -130,7 +142,11 @@ export function useBuyPawnWorkflow() {
     setItemData,
     setNewIdentity,
     setSelectedIdentity,
+    setBuySelectedIdentity,
+    setPawnSelectedIdentity,
     setAgreedOffer,
+    setBuyAgreedOffer,
+    setPawnAgreedOffer,
     setIsAgreedOfferFromMarketCheck,
     setSuggestedRetail,
     setRetailPriceInput,
@@ -295,10 +311,12 @@ export function useBuyPawnWorkflow() {
       .slice(0, 5);
   }, [txType, customers, sellers, identitySearch]);
 
-  // Handlers
-  const handleSelectTxType = useCallback(
-    (type: 'existing' | 'buy' | 'pawn') => {
-      if (type === 'buy' && !hasPermission('sellerAcquisitions')) {
+  // Fluid Buy ↔ Pawn Mode Switcher Handler (Preserves Common Item & Photos, Isolates Identity & Pricing)
+  const handleSwitchTxType = useCallback(
+    (newType: 'existing' | 'buy' | 'pawn') => {
+      if (newType === txType) return;
+
+      if (newType === 'buy' && !hasPermission('sellerAcquisitions')) {
         showToast(
           'Permission Denied',
           'Senior Cashier or higher authority required for Buy From Person acquisitions.',
@@ -306,7 +324,7 @@ export function useBuyPawnWorkflow() {
         );
         return;
       }
-      if (type === 'pawn' && !hasPermission('pawn')) {
+      if (newType === 'pawn' && !hasPermission('pawn')) {
         showToast(
           'Permission Denied',
           'Senior Cashier or higher authority required for Pawn loans.',
@@ -314,27 +332,115 @@ export function useBuyPawnWorkflow() {
         );
         return;
       }
-      setTxType(type);
-      setSelectedIdentity(null);
+
+      // Snapshot current mode state into isolated mode memory before switching
+      let currentBuyIdentity = buySelectedIdentity;
+      let currentPawnIdentity = pawnSelectedIdentity;
+      let currentBuyOffer = buyAgreedOffer;
+      let currentBuyMC = buyIsAgreedOfferFromMarketCheck;
+      let currentPawnOffer = pawnAgreedOffer;
+      let currentPawnMC = pawnIsAgreedOfferFromMarketCheck;
+
+      if (txType === 'buy') {
+        currentBuyIdentity = selectedIdentity as Seller | null;
+        currentBuyOffer = agreedOffer;
+        currentBuyMC = isAgreedOfferFromMarketCheck;
+        setBuySelectedIdentity(currentBuyIdentity);
+        setBuyAgreedOffer(currentBuyOffer);
+        setBuyIsAgreedOfferFromMarketCheck(currentBuyMC);
+      } else if (txType === 'pawn') {
+        currentPawnIdentity = selectedIdentity as Customer | null;
+        currentPawnOffer = agreedOffer;
+        currentPawnMC = isAgreedOfferFromMarketCheck;
+        setPawnSelectedIdentity(currentPawnIdentity);
+        setPawnAgreedOffer(currentPawnOffer);
+        setPawnIsAgreedOfferFromMarketCheck(currentPawnMC);
+      }
+
+      // Switch active txType
+      setTxType(newType);
+
+      // Restore target mode identity & financial state
+      let targetIdentity: Customer | Seller | null = null;
+      let targetOffer = 0;
+      let targetMC = false;
+
+      if (newType === 'buy') {
+        targetIdentity = currentBuyIdentity;
+        targetOffer = currentBuyOffer;
+        targetMC = currentBuyMC;
+      } else if (newType === 'pawn') {
+        targetIdentity = currentPawnIdentity;
+        targetOffer = currentPawnOffer;
+        targetMC = currentPawnMC;
+      }
+
+      setSelectedIdentity(targetIdentity);
+      setAgreedOffer(targetOffer);
+      setIsAgreedOfferFromMarketCheck(targetMC);
       setIsCreatingIdentity(false);
 
-      if (type === 'existing') {
-        // Existing stock skips identity verification completely
-        setStep('item');
-      } else if (type === 'buy') {
-        // Buy From Person evaluates item & valuation BEFORE seller identity
-        setStep('item');
-      } else {
-        // Pawn requires borrower identity upfront for persistent loan contract
-        setStep('customer');
+      // Smooth step positioning
+      if (step === 'mode') {
+        setStep(newType === 'pawn' ? 'customer' : 'item');
+      } else if (step === 'customer') {
+        if (newType === 'existing') {
+          setStep('item');
+        }
+      } else if (step === 'deal') {
+        if ((newType === 'buy' || newType === 'pawn') && !targetIdentity) {
+          setStep('customer');
+        }
       }
+
+      const modeLabel =
+        newType === 'buy' ? 'Buy From Person' : newType === 'pawn' ? 'Pawn Loan' : 'Existing Stock';
+
+      showToast(
+        `Switched to ${modeLabel}`,
+        `Item details & photos preserved.${
+          targetIdentity
+            ? ` Restored ${newType === 'buy' ? 'seller' : 'borrower'}: ${targetIdentity.fullName}`
+            : newType === 'existing'
+            ? ' No identity required.'
+            : ` Please select ${newType === 'buy' ? 'seller' : 'borrower'} details.`
+        }`,
+        'info'
+      );
     },
-    [hasPermission, showToast]
+    [
+      txType,
+      step,
+      selectedIdentity,
+      agreedOffer,
+      isAgreedOfferFromMarketCheck,
+      buySelectedIdentity,
+      pawnSelectedIdentity,
+      buyAgreedOffer,
+      buyIsAgreedOfferFromMarketCheck,
+      pawnAgreedOffer,
+      pawnIsAgreedOfferFromMarketCheck,
+      hasPermission,
+      showToast,
+    ]
+  );
+
+  // Handlers
+  const handleSelectTxType = useCallback(
+    (type: 'existing' | 'buy' | 'pawn') => {
+      handleSwitchTxType(type);
+    },
+    [handleSwitchTxType]
   );
 
   const selectIdentity = useCallback(
     (identity: Customer | Seller) => {
       setSelectedIdentity(identity);
+      if (txType === 'buy') {
+        setBuySelectedIdentity(identity as Seller);
+      } else if (txType === 'pawn') {
+        setPawnSelectedIdentity(identity as Customer);
+      }
       setIsCreatingIdentity(false);
       showToast(
         `Previous ${txType === 'buy' ? 'Seller' : 'Customer'} Found`,
@@ -1439,9 +1545,15 @@ export function useBuyPawnWorkflow() {
     setStep('mode');
     setTxType(null);
     setSelectedIdentity(null);
+    setBuySelectedIdentity(null);
+    setPawnSelectedIdentity(null);
     setIsCreatingIdentity(false);
     setAgreedOffer(0);
+    setBuyAgreedOffer(0);
+    setPawnAgreedOffer(0);
     setIsAgreedOfferFromMarketCheck(false);
+    setBuyIsAgreedOfferFromMarketCheck(false);
+    setPawnIsAgreedOfferFromMarketCheck(false);
     setCostBasisInput('');
     setRetailPriceInput('0');
     setIsRetailPriceFromMarketCheck(false);
@@ -1464,6 +1576,10 @@ export function useBuyPawnWorkflow() {
     setIdentitySearch,
     selectedIdentity,
     setSelectedIdentity,
+    buySelectedIdentity,
+    pawnSelectedIdentity,
+    buyAgreedOffer,
+    pawnAgreedOffer,
     isCreatingIdentity,
     setIsCreatingIdentity,
     newIdentity,
@@ -1506,12 +1622,17 @@ export function useBuyPawnWorkflow() {
     // Workflow actions
     actions: {
       selectTxType: handleSelectTxType,
+      switchTxType: handleSwitchTxType,
       next: handleNext,
       back: handleBack,
       selectIdentity,
       createIdentity: handleCreateIdentity,
       explicitVerifyIdentity: handleExplicitVerifyIdentity,
-      clearSelectedIdentity: () => setSelectedIdentity(null),
+      clearSelectedIdentity: () => {
+        setSelectedIdentity(null);
+        if (txType === 'buy') setBuySelectedIdentity(null);
+        if (txType === 'pawn') setPawnSelectedIdentity(null);
+      },
       addToBatch: handleAddToBatch,
       finalizeExistingStock: handleFinalizeExistingStock,
       finalize: handleFinalize,

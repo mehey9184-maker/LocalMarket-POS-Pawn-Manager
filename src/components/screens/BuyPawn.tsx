@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { ShieldCheck, X, Clock, ArrowRight } from 'lucide-react';
+import { ShieldCheck, X, Clock, ArrowRight, Repeat } from 'lucide-react';
 import { DraftRecoveryModal } from '../modals/DraftRecoveryModal';
+import { ChangeIntakeTypeModal } from '../modals/ChangeIntakeTypeModal';
 import { CameraCaptureModal } from '../common/CameraCaptureModal';
 import { useBuyPawnWorkflow } from './buy-pawn/useBuyPawnWorkflow';
 import { BuyPawnStepper } from './buy-pawn/BuyPawnStepper';
@@ -17,6 +18,7 @@ import { OperationProgressScreen } from '../common/OperationProgressScreen';
 export type { WorkflowStep, TxType } from './buy-pawn/buyPawnTypes';
 
 export const BuyPawn: React.FC = () => {
+  const [isChangeTypeOpen, setIsChangeTypeOpen] = useState(false);
   const workflow = useBuyPawnWorkflow();
   const {
     step,
@@ -111,13 +113,25 @@ export const BuyPawn: React.FC = () => {
             </div>
           </div>
           {step !== 'mode' && step !== 'completion' && (
-            <button
-              onClick={actions.reset}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 text-xs font-medium text-stone-600 hover:text-stone-900 hover:bg-stone-50 transition cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-              <span>Cancel Intake</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsChangeTypeOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-xs font-semibold text-amber-800 hover:bg-amber-100 transition cursor-pointer shadow-2xs"
+                title="Switch between Buy From Person, Pawn Loan, or Existing Stock without losing item details or photos"
+              >
+                <Repeat className="w-3.5 h-3.5 text-amber-700" />
+                <span>Change Intake Type</span>
+              </button>
+              <button
+                type="button"
+                onClick={actions.reset}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 text-xs font-medium text-stone-600 hover:text-stone-900 hover:bg-stone-50 transition cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Cancel Intake</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -290,6 +304,15 @@ export const BuyPawn: React.FC = () => {
             onDiscard={drafts.handleDiscardDraft}
           />
         )}
+
+        <ChangeIntakeTypeModal
+          isOpen={isChangeTypeOpen}
+          onClose={() => setIsChangeTypeOpen(false)}
+          currentTxType={txType}
+          onSwitchTxType={actions.switchTxType}
+          hasPermission={hasPermission}
+          selectedIdentityName={selectedIdentity?.fullName}
+        />
 
         <CameraCaptureModal
           isOpen={images.isCameraOpen}

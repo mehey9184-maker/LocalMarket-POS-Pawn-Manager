@@ -25,6 +25,7 @@ import { runOwnerShopSettingsAndFixedRolesTests } from './ownerShopSettingsAndFi
 import { runSeniorUxPhase1Tests } from './seniorUxPhase1.test';
 import { runPhase2aCashierSpeedTests } from './phase2aCashierSpeed.test';
 import { runPhase2bSecondHandIntakeTests } from './phase2bSecondHandIntake.test';
+import { runPhase2cFluidBuyPawnTests } from './phase2cFluidBuyPawn.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -56,6 +57,7 @@ export async function runAllTests() {
   runSeniorUxPhase1Tests();
   runPhase2aCashierSpeedTests();
   await runPhase2bSecondHandIntakeTests();
+  await runPhase2cFluidBuyPawnTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');

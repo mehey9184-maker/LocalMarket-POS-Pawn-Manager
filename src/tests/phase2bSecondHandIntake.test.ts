@@ -16,8 +16,8 @@ export async function runPhase2bSecondHandIntakeTests() {
 
   // 1a. Selecting 'buy' must set step to 'item' (Item First)
   assert(
-    workflowContent.includes("else if (type === 'buy') {") &&
-      workflowContent.includes("// Buy From Person evaluates item & valuation BEFORE seller identity\n        setStep('item');"),
+    workflowContent.includes('handleSwitchTxType') &&
+      workflowContent.includes("setStep(newType === 'pawn' ? 'customer' : 'item')"),
     'Test 1a: Selecting Buy From Person must navigate directly to item step'
   );
 
