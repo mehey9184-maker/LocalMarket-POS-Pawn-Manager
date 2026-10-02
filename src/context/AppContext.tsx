@@ -100,6 +100,10 @@ interface AppContextType {
   setActiveReceiptModal: (sale: SaleTransaction | null) => void;
   activeContractModal: PawnLoan | null;
   setActiveContractModal: (loan: PawnLoan | null) => void;
+  selectedInventoryItem: InventoryItem | null;
+  setSelectedInventoryItem: (item: InventoryItem | null) => void;
+  selectedVaultLoan: PawnLoan | null;
+  setSelectedVaultLoan: (loan: PawnLoan | null) => void;
   toastMessage: ToastInfo | null;
   showToast: (title: string, desc: string, type?: 'success' | 'amber' | 'info' | 'error') => void;
   isPoliceInspectionMode: boolean;
@@ -195,6 +199,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isScannerModalOpen, setIsScannerModalOpen] = useState<boolean>(false);
   const [activeReceiptModal, setActiveReceiptModal] = useState<SaleTransaction | null>(null);
   const [activeContractModal, setActiveContractModal] = useState<PawnLoan | null>(null);
+  const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
+  const [selectedVaultLoan, setSelectedVaultLoan] = useState<PawnLoan | null>(null);
   const [toastMessage, setToastMessage] = useState<ToastInfo | null>(null);
   const [isPoliceInspectionMode, setIsPoliceInspectionMode] = useState<boolean>(false);
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
@@ -601,6 +607,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveReceiptModal,
         activeContractModal,
         setActiveContractModal,
+        selectedInventoryItem,
+        setSelectedInventoryItem,
+        selectedVaultLoan,
+        setSelectedVaultLoan,
         toastMessage,
         showToast,
         isPoliceInspectionMode,

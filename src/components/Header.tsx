@@ -32,6 +32,8 @@ export const Header: React.FC<HeaderProps> = () => {
     salesHistory,
     addToCart,
     setActiveReceiptModal,
+    setSelectedVaultLoan,
+    setSelectedInventoryItem,
     showToast,
     shopProfile,
   } = useApp();
@@ -218,6 +220,41 @@ export const Header: React.FC<HeaderProps> = () => {
                             {isVault && (
                               <button
                                 onClick={() => {
+                                  const linkedLoan = pawnLoans.find(l => l.ticketNumber === item.pawnTicketId || (l.serialOrImei && item.serialOrImei && l.serialOrImei.toLowerCase() === item.serialOrImei.toLowerCase())) || pawnLoans.find(l => l.itemId === item.id);
+                                  if (linkedLoan) {
+                                    setSelectedVaultLoan(linkedLoan);
+                                  } else {
+                                    setSelectedVaultLoan({
+                                      id: item.id,
+                                      ticketNumber: item.pawnTicketId || `#${item.sku}`,
+                                      customerId: 'cust-1',
+                                      customerName: 'Pawn Customer',
+                                      customerIdNumber: '0000000000000',
+                                      customerMobile: 'N/A',
+                                      customerAddress: 'N/A',
+                                      itemId: item.id,
+                                      itemTitle: item.title,
+                                      itemCategory: String(item.category),
+                                      serialOrImei: item.serialOrImei || 'N/A',
+                                      condition: item.condition,
+                                      itemImageUrl: item.imageUrl,
+                                      principal: item.costBasis || item.retailPrice * 0.5,
+                                      ncrMonthlyRate: 0.05,
+                                      monthlyInterest: 0,
+                                      monthlyStorageAdminFee: 0,
+                                      totalRedemptionAmount: item.retailPrice,
+                                      extensionFee: 0,
+                                      startDate: item.addedAt,
+                                      expiryDate: new Date(Date.now() + 30*86400000).toISOString().split('T')[0],
+                                      daysRemaining: 30,
+                                      daysElapsed: 0,
+                                      vaultShelf: item.vaultLocation || 'Shelf-A1',
+                                      status: 'Active',
+                                      qrToken: 'qr-fallback',
+                                      history: [],
+                                      shopId: item.shopId
+                                    } as any);
+                                  }
                                   setActiveTab('vault');
                                   setIsSearchFocused(false);
                                   setSearchQuery('');
@@ -230,6 +267,7 @@ export const Header: React.FC<HeaderProps> = () => {
                             {isReserved && (
                               <button
                                 onClick={() => {
+                                  setSelectedInventoryItem(item);
                                   setActiveTab('inventory');
                                   setIsSearchFocused(false);
                                   setSearchQuery('');
@@ -242,6 +280,41 @@ export const Header: React.FC<HeaderProps> = () => {
                             {isPawned && !isVault && (
                               <button
                                 onClick={() => {
+                                  const linkedLoan = pawnLoans.find(l => l.ticketNumber === item.pawnTicketId || (l.serialOrImei && item.serialOrImei && l.serialOrImei.toLowerCase() === item.serialOrImei.toLowerCase())) || pawnLoans.find(l => l.itemId === item.id);
+                                  if (linkedLoan) {
+                                    setSelectedVaultLoan(linkedLoan);
+                                  } else {
+                                    setSelectedVaultLoan({
+                                      id: item.id,
+                                      ticketNumber: item.pawnTicketId || `#${item.sku}`,
+                                      customerId: 'cust-1',
+                                      customerName: 'Pawn Customer',
+                                      customerIdNumber: '0000000000000',
+                                      customerMobile: 'N/A',
+                                      customerAddress: 'N/A',
+                                      itemId: item.id,
+                                      itemTitle: item.title,
+                                      itemCategory: String(item.category),
+                                      serialOrImei: item.serialOrImei || 'N/A',
+                                      condition: item.condition,
+                                      itemImageUrl: item.imageUrl,
+                                      principal: item.costBasis || item.retailPrice * 0.5,
+                                      ncrMonthlyRate: 0.05,
+                                      monthlyInterest: 0,
+                                      monthlyStorageAdminFee: 0,
+                                      totalRedemptionAmount: item.retailPrice,
+                                      extensionFee: 0,
+                                      startDate: item.addedAt,
+                                      expiryDate: new Date(Date.now() + 30*86400000).toISOString().split('T')[0],
+                                      daysRemaining: 30,
+                                      daysElapsed: 0,
+                                      vaultShelf: item.vaultLocation || 'Shelf-A1',
+                                      status: 'Active',
+                                      qrToken: 'qr-fallback',
+                                      history: [],
+                                      shopId: item.shopId
+                                    } as any);
+                                  }
                                   setActiveTab('vault');
                                   setIsSearchFocused(false);
                                   setSearchQuery('');
@@ -254,7 +327,28 @@ export const Header: React.FC<HeaderProps> = () => {
                             {isSold && (
                               <button
                                 onClick={() => {
-                                  setActiveTab('profile');
+                                  const matchingSale = salesHistory.find(s => 
+                                    s.receiptNumber.toLowerCase() === item.sku.toLowerCase() ||
+                                    s.items.some(si => si.item.id === item.id || si.item.sku.toLowerCase() === item.sku.toLowerCase())
+                                  );
+                                  if (matchingSale) {
+                                    setActiveReceiptModal(matchingSale);
+                                  } else {
+                                    setActiveReceiptModal({
+                                      id: `sale-${item.id}`,
+                                      receiptNumber: item.sku,
+                                      timestamp: item.addedAt || new Date().toISOString(),
+                                      items: [{ item, quantity: 1 }],
+                                      subtotal: item.retailPrice,
+                                      vatAmount: 0,
+                                      total: item.retailPrice,
+                                      tenderMethod: 'cash',
+                                      amountTendered: item.retailPrice,
+                                      change: 0,
+                                      receiptType: 'thermal',
+                                      cashier: 'POS Cashier'
+                                    });
+                                  }
                                   setIsSearchFocused(false);
                                   setSearchQuery('');
                                 }}

@@ -35,7 +35,7 @@ import {
 import { OnboardingOverlay } from '../common/OnboardingOverlay';
 
 export const VaultManager: React.FC = () => {
-  const { showToast, businessRules } = useApp();
+  const { showToast, businessRules, selectedVaultLoan, setSelectedVaultLoan } = useApp();
   const { verifyManagerPin, isManager, isAtLeastSeniorCashier } = useAuth();
   const { inventory } = useInventory();
   const { 
@@ -56,6 +56,13 @@ export const VaultManager: React.FC = () => {
 
   // Active Pawn detail drawer state
   const [selectedLoanForDetail, setSelectedLoanForDetail] = useState<PawnLoan | null>(null);
+
+  React.useEffect(() => {
+    if (selectedVaultLoan) {
+      setSelectedLoanForDetail(selectedVaultLoan);
+      setSelectedVaultLoan(null);
+    }
+  }, [selectedVaultLoan, setSelectedVaultLoan]);
   const [settlementOption, setSettlementOption] = useState<'redeem' | 'extend'>('redeem');
   const [tenderMethod, setTenderMethod] = useState<'cash' | 'card'>('cash');
   const [isProcessingSettlement, setIsProcessingSettlement] = useState(false);

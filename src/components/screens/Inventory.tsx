@@ -27,7 +27,7 @@ import { InventoryItem, AcquisitionType } from '../../types';
 import { normalizeScannerInput } from '../../utils/scannerNormalizer';
 
 export const Inventory: React.FC = () => {
-  const { inventory, setActiveTab, showToast } = useApp();
+  const { inventory, setActiveTab, showToast, selectedInventoryItem, setSelectedInventoryItem } = useApp();
   const { isManager, isOwner, hasPermission, isAtLeastSeniorCashier } = useAuth();
   const { changePermanentRetailPrice, getPriceChangeHistory } = useInventory();
   const canViewCostBasis = isOwner || isManager || isAtLeastSeniorCashier || hasPermission('reports');
@@ -36,6 +36,13 @@ export const Inventory: React.FC = () => {
   const [acquisitionFilter, setAcquisitionFilter] = useState<'All' | AcquisitionType>('All');
   const [search, setSearch] = useState('');
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+
+  React.useEffect(() => {
+    if (selectedInventoryItem) {
+      setSelectedItem(selectedInventoryItem);
+      setSelectedInventoryItem(null);
+    }
+  }, [selectedInventoryItem, setSelectedInventoryItem]);
   const [showFullPriceHistory, setShowFullPriceHistory] = useState(false);
 
   // Controlled rendering display window state (prevents DOM bloat for large catalogs)
