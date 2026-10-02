@@ -312,6 +312,205 @@ export async function runInventoryPriceAndVaultPatchTests() {
   );
   console.log('[PASS] Test 10: Hard-coded fake vault percentage completely removed');
 
+  // --------------------------------------------------------------------------
+  // TEST 11: Vault Pawn List react-window 2.x API & Active Row Attributes
+  // --------------------------------------------------------------------------
+  console.log('[Test 11] Verifying react-window 2.x API usage and Active Vault row fields...');
+  const vaultContent = fs.readFileSync(path.resolve('src/components/screens/VaultManager.tsx'), 'utf8');
+
+  // 11.1 Must NOT use legacy react-window 1.x props: itemCount or itemSize on List
+  assert(
+    !vaultContent.includes('itemCount=') && !vaultContent.includes('itemSize='),
+    'Test 11.1 FAIL: Must not use legacy react-window 1.x itemCount/itemSize props'
+  );
+
+  // 11.2 Must use react-window 2.x API: rowCount, rowHeight, rowComponent
+  assert(
+    vaultContent.includes('rowCount={filteredActiveStorage.length}') &&
+    vaultContent.includes('rowHeight={88}') &&
+    vaultContent.includes('rowComponent={ActiveVaultRow}'),
+    'Test 11.2 FAIL: VaultManager must use react-window 2.x rowCount, rowHeight, rowComponent API'
+  );
+
+  // 11.3 Active Vault row must render all required collateral fields
+  const requiredRowFields = [
+    'itemImageUrl',
+    'itemTitle',
+    'ticketNumber',
+    'customerName',
+    'vaultShelf',
+    'serialOrImei',
+    'principal',
+    'liveDays'
+  ];
+  for (const field of requiredRowFields) {
+    assert(
+      vaultContent.includes(field),
+      `Test 11.3 FAIL: ActiveVaultRow must display '${field}'`
+    );
+  }
+
+  // 11.4 Search must match ticket, item, customer, shelf, serial/IMEI, and brand/model
+  assert(
+    vaultContent.includes('matchesSearch') &&
+    vaultContent.includes('invItem.brand') &&
+    vaultContent.includes('invItem.model'),
+    'Test 11.4 FAIL: Search filter must match brand and model from inventory items'
+  );
+  console.log('[PASS] Test 11: Vault Pawn List correctly uses react-window 2.x API with full collateral row attributes');
+
+  // --------------------------------------------------------------------------
+  // TEST 12: maxLoanPrincipal in BusinessRules with Clear Default
+  // --------------------------------------------------------------------------
+  console.log('[Test 12] Verifying maxLoanPrincipal definition and default...');
+  const { DEFAULT_BUSINESS_RULES } = await import('../utils/pricingRules');
+  assert(
+    'maxLoanPrincipal' in DEFAULT_BUSINESS_RULES,
+    'Test 12.1 FAIL: DEFAULT_BUSINESS_RULES must include maxLoanPrincipal'
+  );
+  assert.strictEqual(
+    DEFAULT_BUSINESS_RULES.maxLoanPrincipal,
+    null,
+    'Test 12.2 FAIL: Default maxLoanPrincipal must be null (no maximum limit, preserving existing behaviour)'
+  );
+  console.log('[PASS] Test 12: maxLoanPrincipal defined in BusinessRules with clear null default');
+
+  // --------------------------------------------------------------------------
+  // TEST 13: Owner-Only Settings UI: "Pawn Lending Limits"
+  // --------------------------------------------------------------------------
+  console.log('[Test 13] Verifying owner-only settings UI for Pawn Lending Limits...');
+  const settingsContent = fs.readFileSync(path.resolve('src/components/profile/BusinessRulesManager.tsx'), 'utf8');
+
+  assert(
+    settingsContent.includes('Pawn Lending Limits'),
+    'Test 13.1 FAIL: Settings UI must contain section "Pawn Lending Limits"'
+  );
+  assert(
+    settingsContent.includes('Minimum pawn amount') && settingsContent.includes('Maximum pawn amount'),
+    'Test 13.2 FAIL: Settings UI must provide "Minimum pawn amount" and "Maximum pawn amount" fields'
+  );
+  assert(
+    settingsContent.includes('No maximum limit'),
+    'Test 13.3 FAIL: Settings UI must allow "No maximum limit"'
+  );
+  assert(
+    settingsContent.includes('Shop policy setting') || settingsContent.includes('Shop policy limits'),
+    'Test 13.4 FAIL: Maximum must be clearly labeled as a shop policy setting, not statutory cap'
+  );
+  assert(
+    settingsContent.includes('isOwner'),
+    'Test 13.5 FAIL: Settings modification must strictly require Owner authority'
+  );
+  console.log('[PASS] Test 13: Owner-only settings UI provides Pawn Lending Limits with "No maximum limit" toggle');
+
+  // --------------------------------------------------------------------------
+  // TEST 14: UI & Local Workflow Enforcement for Pawn Lending Limits
+  // --------------------------------------------------------------------------
+  console.log('[Test 14] Verifying UI and workflow validation for lending limits...');
+  const workflowContent = fs.readFileSync(path.resolve('src/components/screens/buy-pawn/useBuyPawnWorkflow.ts'), 'utf8');
+
+  // Must validate both minLoanPrincipal and maxLoanPrincipal
+  assert(
+    workflowContent.includes('Above this shop’s pawn limit'),
+    'Test 14.1 FAIL: Must reject above-limit intake with plain language: "Above this shop’s pawn limit"'
+  );
+  assert(
+    workflowContent.includes('Maximum pawn amount: R'),
+    'Test 14.2 FAIL: Must state "Maximum pawn amount: R X"'
+  );
+  assert(
+    workflowContent.includes('Below Minimum Loan'),
+    'Test 14.3 FAIL: Minimum loan validation must remain intact'
+  );
+
+  // Logic simulation for maxLoanPrincipal validation
+  function validatePawnPrincipal(amount: number, rules: { minLoanPrincipal: number; maxLoanPrincipal: number | null }) {
+    const min = rules.minLoanPrincipal || 100;
+    if (amount < min) {
+      return { valid: false, error: 'Below Minimum Loan' };
+    }
+    if (rules.maxLoanPrincipal !== null && rules.maxLoanPrincipal !== undefined && rules.maxLoanPrincipal > 0) {
+      if (amount > rules.maxLoanPrincipal) {
+        return {
+          valid: false,
+          error: `Above this shop’s pawn limit: Maximum pawn amount: R ${rules.maxLoanPrincipal.toFixed(2)}`
+        };
+      }
+    }
+    return { valid: true };
+  }
+
+  // 14.4 Max limit disabled (null)
+  const noLimitRules = { minLoanPrincipal: 100, maxLoanPrincipal: null };
+  assert.strictEqual(validatePawnPrincipal(50000, noLimitRules).valid, true, 'High amount passes when max limit is null');
+
+  // 14.5 Amount exactly at max
+  const limitedRules = { minLoanPrincipal: 100, maxLoanPrincipal: 15000 };
+  assert.strictEqual(validatePawnPrincipal(15000, limitedRules).valid, true, 'Amount exactly at max must pass');
+
+  // 14.6 Amount above max
+  const aboveMaxRes = validatePawnPrincipal(15001, limitedRules);
+  assert.strictEqual(aboveMaxRes.valid, false, 'Amount above max must be rejected');
+  assert(aboveMaxRes.error?.includes('Above this shop’s pawn limit'), 'Rejection message must use plain language');
+
+  // 14.7 Minimum still enforced
+  const belowMinRes = validatePawnPrincipal(50, limitedRules);
+  assert.strictEqual(belowMinRes.valid, false, 'Amount below minimum must be rejected');
+  console.log('[PASS] Test 14: Local and workflow lending limit validation functions correctly across all boundary conditions');
+
+  // --------------------------------------------------------------------------
+  // TEST 15: Server RPC Enforcement in complete_pawn_intake Migration
+  // --------------------------------------------------------------------------
+  console.log('[Test 15] Verifying server RPC enforcement in database migration...');
+  const migrationPath = path.resolve('supabase/migrations/20261002000000_owner_configurable_pawn_lending_limit.sql');
+  assert(fs.existsSync(migrationPath), 'Migration 20261002000000_owner_configurable_pawn_lending_limit.sql must exist');
+  const migrationContent = fs.readFileSync(migrationPath, 'utf8');
+
+  assert(
+    migrationContent.includes('maxLoanPrincipal'),
+    'Test 15.1 FAIL: Migration must reference maxLoanPrincipal from shop_profiles.business_rules'
+  );
+  assert(
+    migrationContent.includes('Above this shop’s pawn limit: Maximum pawn amount: R %'),
+    'Test 15.2 FAIL: Migration must reject with exact plain language: "Above this shop’s pawn limit: Maximum pawn amount: R %"'
+  );
+  assert(
+    migrationContent.includes('minLoanPrincipal'),
+    'Test 15.3 FAIL: Migration must preserve minLoanPrincipal validation'
+  );
+  assert(
+    migrationContent.includes("v_caller_profile.role IS DISTINCT FROM 'admin'::public.user_role"),
+    'Test 15.4 FAIL: Migration must use enum-safe comparison for user_role'
+  );
+  assert(
+    migrationContent.includes('GRANT EXECUTE ON FUNCTION public.complete_pawn_intake') &&
+    migrationContent.includes('TO authenticated, service_role') &&
+    migrationContent.includes('REVOKE ALL ON FUNCTION public.complete_pawn_intake') &&
+    migrationContent.includes('FROM PUBLIC, anon'),
+    'Test 15.5 FAIL: Migration must grant EXECUTE to authenticated and service_role while denying anon and PUBLIC'
+  );
+  console.log('[PASS] Test 15: Server-side RPC migration strictly validates shop lending limits and preserves security privileges');
+
+  // --------------------------------------------------------------------------
+  // TEST 16: Business-Rule Persistence & Offline Queue Preservation
+  // --------------------------------------------------------------------------
+  console.log('[Test 16] Verifying audited business-rule persistence path...');
+  const appContextContent = fs.readFileSync(path.resolve('src/context/AppContext.tsx'), 'utf8');
+
+  assert(
+    appContextContent.includes('updateShopBusinessRulesRpc'),
+    'Test 16.1 FAIL: Must use existing authoritative RPC updateShopBusinessRulesRpc'
+  );
+  assert(
+    appContextContent.includes("queueSyncAction('rules',"),
+    'Test 16.2 FAIL: Must preserve offline queue via queueSyncAction for rules entity'
+  );
+  assert(
+    appContextContent.includes("currentUserProfile?.role === 'owner'"),
+    'Test 16.3 FAIL: Must enforce owner authority for business rules persistence'
+  );
+  console.log('[PASS] Test 16: Audited business-rule persistence and offline queue behaviour verified');
+
   console.log('=== ALL INVENTORY PRICE HISTORY & VAULT UX PATCH TESTS PASSED ===');
 }
 

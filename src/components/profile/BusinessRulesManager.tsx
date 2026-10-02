@@ -251,25 +251,6 @@ export const BusinessRulesManager: React.FC<BusinessRulesManagerProps> = ({ onSu
                 </div>
               </div>
 
-              {/* Min Principal */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest flex items-center gap-1.5">
-                  <Wallet className="w-3 h-3" />
-                  Minimum Loan Principal
-                </label>
-                <div className="relative">
-                  <span className="absolute left-4 top-3 text-[#C85A32] font-bold font-mono">R</span>
-                  <input
-                    type="number"
-                    min="1"
-                    disabled={isSaving || !isOwner}
-                    value={localRules.minLoanPrincipal}
-                    onChange={e => handleChange('minLoanPrincipal', parseFloat(e.target.value) || 0)}
-                    className="w-full bg-white border border-stone-200 rounded-xl pl-8 pr-4 py-3 text-stone-900 font-bold font-mono focus:border-[#C85A32] focus:outline-none disabled:opacity-50"
-                  />
-                </div>
-              </div>
-
               {/* Retail Multiplier */}
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest flex items-center gap-1.5">
@@ -287,6 +268,88 @@ export const BusinessRulesManager: React.FC<BusinessRulesManagerProps> = ({ onSu
                     className="w-full bg-white border border-stone-200 rounded-xl px-4 py-3 text-stone-900 font-bold font-mono focus:border-[#C85A32] focus:outline-none disabled:opacity-50"
                   />
                   <span className="absolute right-4 top-3 text-stone-400 text-xs font-bold">x</span>
+                </div>
+              </div>
+            </div>
+
+            {/* PAWN LENDING LIMITS SECTION (Owner-only policy settings) */}
+            <div className="bg-stone-50/80 rounded-2xl p-5 border border-stone-200/80 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-stone-900 flex items-center gap-2">
+                    <Wallet className="w-4 h-4 text-[#C85A32]" />
+                    Pawn Lending Limits
+                  </h4>
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    Shop policy limits for minimum and maximum pawn loan principal per transaction. (Shop policy setting, not statutory cap).
+                  </p>
+                </div>
+                {!isOwner && (
+                  <span className="px-2 py-0.5 rounded bg-stone-200/70 text-stone-600 text-[10px] font-bold">
+                    Owner Only
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Minimum pawn amount */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-stone-500 uppercase tracking-widest flex items-center justify-between">
+                    <span>Minimum pawn amount</span>
+                    <span className="text-stone-400 font-normal">Per transaction</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-3 text-[#C85A32] font-bold font-mono">R</span>
+                    <input
+                      type="number"
+                      min="1"
+                      disabled={isSaving || !isOwner}
+                      value={localRules.minLoanPrincipal}
+                      onChange={e => handleChange('minLoanPrincipal', Math.max(1, parseFloat(e.target.value) || 0))}
+                      className="w-full bg-white border border-stone-200 rounded-xl pl-8 pr-4 py-3 text-stone-900 font-bold font-mono focus:border-[#C85A32] focus:outline-none disabled:opacity-50"
+                      placeholder="100"
+                    />
+                  </div>
+                </div>
+
+                {/* Maximum pawn amount */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">
+                      Maximum pawn amount
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer text-xs text-stone-600">
+                      <input
+                        type="checkbox"
+                        checked={localRules.maxLoanPrincipal === null || localRules.maxLoanPrincipal === undefined || localRules.maxLoanPrincipal === 0}
+                        disabled={isSaving || !isOwner}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            handleChange('maxLoanPrincipal', null);
+                          } else {
+                            handleChange('maxLoanPrincipal', 15000);
+                          }
+                        }}
+                        className="rounded border-stone-300 text-[#C85A32] focus:ring-[#C85A32]"
+                      />
+                      <span className="text-[11px] font-medium text-stone-600">No maximum limit</span>
+                    </label>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-4 top-3 text-[#C85A32] font-bold font-mono">R</span>
+                    <input
+                      type="number"
+                      min={localRules.minLoanPrincipal || 1}
+                      disabled={isSaving || !isOwner || localRules.maxLoanPrincipal === null || localRules.maxLoanPrincipal === undefined || localRules.maxLoanPrincipal === 0}
+                      value={localRules.maxLoanPrincipal ?? ''}
+                      onChange={e => {
+                        const val = e.target.value === '' ? null : parseFloat(e.target.value);
+                        handleChange('maxLoanPrincipal', val !== null && !isNaN(val) ? val : null);
+                      }}
+                      placeholder="No maximum limit"
+                      className="w-full bg-white border border-stone-200 rounded-xl pl-8 pr-4 py-3 text-stone-900 font-bold font-mono focus:border-[#C85A32] focus:outline-none disabled:opacity-50 disabled:bg-stone-100 placeholder:text-stone-400 placeholder:font-sans placeholder:text-xs"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

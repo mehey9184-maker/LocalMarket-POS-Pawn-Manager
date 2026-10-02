@@ -976,6 +976,26 @@ export function useBuyPawnWorkflow() {
           const verificationStatus = pCustomer.verified ? 'VERIFIED' : 'PENDING';
           const nowIso = new Date().toISOString();
 
+          // Enforce shop pawn lending limits (minimum and optional maximum)
+          const minPrincipal = businessRules.minLoanPrincipal || 100;
+          if (agreedOffer < minPrincipal) {
+            showToast(
+              'Below Minimum Loan',
+              `Minimum pawn amount is R ${minPrincipal.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`,
+              'amber'
+            );
+            return;
+          }
+
+          if (businessRules.maxLoanPrincipal && businessRules.maxLoanPrincipal > 0 && agreedOffer > businessRules.maxLoanPrincipal) {
+            showToast(
+              'Above this shop’s pawn limit',
+              `Maximum pawn amount: R ${businessRules.maxLoanPrincipal.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`,
+              'amber'
+            );
+            return;
+          }
+
           runner.completeStep('prep');
 
           runner.startStep('ncr');
@@ -1326,6 +1346,32 @@ export function useBuyPawnWorkflow() {
           if (oEl) focusAndScrollErrorField(oEl);
           return;
         }
+
+        if (txType === 'pawn') {
+          const minPrincipal = businessRules.minLoanPrincipal || 100;
+          if (agreedOffer < minPrincipal) {
+            showToast(
+              'Below Minimum Loan',
+              `Minimum pawn amount is R ${minPrincipal.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`,
+              'amber'
+            );
+            const oEl = document.getElementById('valuation-agreed-offer-input');
+            if (oEl) focusAndScrollErrorField(oEl);
+            return;
+          }
+
+          if (businessRules.maxLoanPrincipal && businessRules.maxLoanPrincipal > 0 && agreedOffer > businessRules.maxLoanPrincipal) {
+            showToast(
+              'Above this shop’s pawn limit',
+              `Maximum pawn amount: R ${businessRules.maxLoanPrincipal.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`,
+              'amber'
+            );
+            const oEl = document.getElementById('valuation-agreed-offer-input');
+            if (oEl) focusAndScrollErrorField(oEl);
+            return;
+          }
+        }
+
         setStep('deal');
       }
       return;

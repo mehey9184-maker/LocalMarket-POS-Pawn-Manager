@@ -229,6 +229,7 @@ export interface BusinessRules {
   defaultLoanTermDays: number; // e.g. 30
   gracePeriodDays: number; // e.g. 7
   minLoanPrincipal: number; // e.g. 100
+  maxLoanPrincipal?: number | null; // e.g. 15000, null or 0 = no limit (shop policy setting)
 
   // Outright Buys (Second-Hand Goods Act 06 of 2009)
   defaultRetailMarkupMultiplier: number; // e.g. 1.8 (1.8x = +80% markup)

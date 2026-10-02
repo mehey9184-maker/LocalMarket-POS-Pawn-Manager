@@ -2,15 +2,29 @@ import React from 'react';
 import { useTerminalSession } from '../hooks/useTerminalSession';
 import { TerminalConflictModal } from './common/TerminalConflictModal';
 import { useAuth } from '../context/AuthContext';
+import { terminalService } from '../services/terminalService';
 import { Loader2, MonitorOff, WifiOff, RefreshCw, LogOut } from 'lucide-react';
 
 export const TerminalGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, isProfileLoading, isSwitchingAccount } = useAuth();
+  const { user, profile, isProfileLoading, isSwitchingAccount } = useAuth();
   const { session, conflict, isLoading, isOfflineRevalidation, switchTerminal, reconnectTerminal } = useTerminalSession();
 
   if (!user || isSwitchingAccount) return <>{children}</>;
 
-  if (isProfileLoading || isLoading) {
+  // Check if we have an active matching local terminal session
+  const hasMatchingActiveSession =
+    session &&
+    session.status === 'active' &&
+    session.userId === user.id &&
+    (!profile?.shop_id || session.shopId === profile.shop_id) &&
+    session.deviceId === terminalService.getDeviceId();
+
+  // On genuine cold start or when no usable local session exists, show loading screen.
+  // If a matching local session exists, do not block the entire application with the overlay
+  // while profile revalidation or background checks occur.
+  const shouldBlockWithLoader = (isProfileLoading || isLoading) && !hasMatchingActiveSession;
+
+  if (shouldBlockWithLoader) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-stone-50/90 backdrop-blur-md z-[100]">
         <div className="bg-white border border-stone-200 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl space-y-4">

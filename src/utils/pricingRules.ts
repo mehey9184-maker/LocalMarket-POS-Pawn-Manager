@@ -6,6 +6,7 @@ export const DEFAULT_BUSINESS_RULES: BusinessRules = {
   defaultLoanTermDays: 30,
   gracePeriodDays: 7,
   minLoanPrincipal: 100,
+  maxLoanPrincipal: null, // Default to null (no maximum limit, preserving existing behaviour)
 
   defaultRetailMarkupMultiplier: 1.8, // 1.8x = +80% markup
   retailRoundingMode: 'nearest10',

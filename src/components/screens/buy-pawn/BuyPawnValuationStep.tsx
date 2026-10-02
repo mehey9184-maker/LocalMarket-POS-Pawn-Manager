@@ -312,14 +312,37 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
                     }
                   }}
                   placeholder="0.00"
-                  className="w-full bg-white border-2 border-[#C85A32] rounded-xl pl-10 pr-4 py-3.5 text-3xl font-bold text-gray-900 font-mono outline-none shadow-xs"
+                  className={`w-full bg-white border-2 ${
+                    txType === 'pawn' && businessRules.maxLoanPrincipal && businessRules.maxLoanPrincipal > 0 && agreedOffer > businessRules.maxLoanPrincipal
+                      ? 'border-red-500 text-red-900'
+                      : 'border-[#C85A32] text-gray-900'
+                  } rounded-xl pl-10 pr-4 py-3.5 text-3xl font-bold font-mono outline-none shadow-xs`}
                   autoFocus
                 />
               </div>
+
+              {txType === 'pawn' && businessRules.maxLoanPrincipal && businessRules.maxLoanPrincipal > 0 && agreedOffer > businessRules.maxLoanPrincipal && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs space-y-0.5">
+                  <p className="font-bold text-red-700">Above this shop’s pawn limit</p>
+                  <p className="text-red-600 font-mono">Maximum pawn amount: R {businessRules.maxLoanPrincipal.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}</p>
+                </div>
+              )}
+
+              {txType === 'pawn' && agreedOffer > 0 && agreedOffer < (businessRules.minLoanPrincipal || 100) && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-0.5">
+                  <p className="font-bold">Below shop minimum loan amount</p>
+                  <p className="font-mono">Minimum pawn amount: R {(businessRules.minLoanPrincipal || 100).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}</p>
+                </div>
+              )}
+
               <p className="text-xs text-gray-500 italic">
                 {txType === 'buy'
                   ? 'Confirm agreed payout before reviewing deal terms.'
-                  : 'Confirm loan principal before reviewing pledge terms.'}
+                  : `Confirm loan principal before reviewing pledge terms.${
+                      businessRules.maxLoanPrincipal && businessRules.maxLoanPrincipal > 0
+                        ? ` (Shop policy limit: R ${businessRules.maxLoanPrincipal.toLocaleString('en-ZA', { minimumFractionDigits: 2 })})`
+                        : ''
+                    }`}
               </p>
             </div>
           </div>

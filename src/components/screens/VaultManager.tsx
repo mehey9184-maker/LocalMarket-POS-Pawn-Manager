@@ -1,14 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useInventory } from '../../context/InventoryContext';
 import { useLoans } from '../../context/LoanContext';
 import { useAuth } from '../../context/AuthContext';
 import { PawnLoan } from '../../types';
-import * as ReactWindow from 'react-window';
-import { AutoSizer as AutoSizerComponent } from 'react-virtualized-auto-sizer';
-
-const FixedSizeList = (ReactWindow as any).List;
-const AutoSizer = (AutoSizerComponent as any);
+import { List } from 'react-window';
+import { AutoSizer } from 'react-virtualized-auto-sizer';
 import {
   Lock,
   AlertTriangle,
@@ -94,41 +91,52 @@ export const VaultManager: React.FC = () => {
   const floorItems = useMemo(() => inventory.filter(i => i.status === 'Retail Floor'), [inventory]);
   const totalFloorValue = useMemo(() => floorItems.reduce((sum, i) => sum + i.retailPrice, 0), [floorItems]);
 
+  // Fast map to lookup matching inventory details (brand, model) for each pawn item
+  const inventoryItemByLoanKey = useMemo(() => {
+    const map = new Map<string, typeof inventory[0]>();
+    for (const item of inventory) {
+      if (item.id) map.set(item.id, item);
+      if (item.pawnTicketId) map.set(item.pawnTicketId, item);
+    }
+    return map;
+  }, [inventory]);
+
+  const matchesSearch = useCallback((loan: PawnLoan, q: string): boolean => {
+    if (!q) return true;
+    if (
+      loan.itemTitle.toLowerCase().includes(q) || 
+      loan.ticketNumber.toLowerCase().includes(q) || 
+      loan.customerName.toLowerCase().includes(q) || 
+      loan.vaultShelf.toLowerCase().includes(q) || 
+      (loan.serialOrImei && loan.serialOrImei.toLowerCase().includes(q))
+    ) {
+      return true;
+    }
+    const invItem = inventoryItemByLoanKey.get(loan.itemId) || inventoryItemByLoanKey.get(loan.ticketNumber);
+    if (invItem) {
+      if (invItem.brand && invItem.brand.toLowerCase().includes(q)) return true;
+      if (invItem.model && invItem.model.toLowerCase().includes(q)) return true;
+    }
+    return false;
+  }, [inventoryItemByLoanKey]);
+
   const filteredActiveStorage = useMemo(() => {
     const q = searchFilter.toLowerCase().trim();
     if (!q) return activeVaultLoans;
-    return activeVaultLoans.filter(l => 
-      l.itemTitle.toLowerCase().includes(q) || 
-      l.ticketNumber.toLowerCase().includes(q) || 
-      l.customerName.toLowerCase().includes(q) || 
-      l.vaultShelf.toLowerCase().includes(q) || 
-      l.serialOrImei.toLowerCase().includes(q)
-    );
-  }, [activeVaultLoans, searchFilter]);
+    return activeVaultLoans.filter(l => matchesSearch(l, q));
+  }, [activeVaultLoans, searchFilter, matchesSearch]);
 
   const filteredOverdue = useMemo(() => {
     const q = searchFilter.toLowerCase().trim();
     if (!q) return overdueLoans;
-    return overdueLoans.filter(l => 
-      l.itemTitle.toLowerCase().includes(q) || 
-      l.ticketNumber.toLowerCase().includes(q) || 
-      l.customerName.toLowerCase().includes(q) || 
-      l.vaultShelf.toLowerCase().includes(q) || 
-      l.serialOrImei.toLowerCase().includes(q)
-    );
-  }, [overdueLoans, searchFilter]);
+    return overdueLoans.filter(l => matchesSearch(l, q));
+  }, [overdueLoans, searchFilter, matchesSearch]);
 
   const filteredReviewQueue = useMemo(() => {
     const q = searchFilter.toLowerCase().trim();
     if (!q) return reviewQueueLoans;
-    return reviewQueueLoans.filter(l => 
-      l.itemTitle.toLowerCase().includes(q) || 
-      l.ticketNumber.toLowerCase().includes(q) || 
-      l.customerName.toLowerCase().includes(q) || 
-      l.vaultShelf.toLowerCase().includes(q) || 
-      l.serialOrImei.toLowerCase().includes(q)
-    );
-  }, [reviewQueueLoans, searchFilter]);
+    return reviewQueueLoans.filter(l => matchesSearch(l, q));
+  }, [reviewQueueLoans, searchFilter, matchesSearch]);
 
   // Lookup matching catalog item for brand and model specifications
   const matchingDetailInventoryItem = useMemo(() => {
@@ -226,6 +234,8 @@ export const VaultManager: React.FC = () => {
     const liveDays = getLiveDaysRemaining(loan);
     const isOverdue = liveDays <= 0;
     const isCritical = liveDays > 0 && liveDays <= 5;
+    const invItem = inventoryItemByLoanKey.get(loan.itemId) || inventoryItemByLoanKey.get(loan.ticketNumber);
+    const brandModel = invItem ? [invItem.brand, invItem.model].filter(Boolean).join(' ') : null;
 
     return (
       <div style={style} className="px-1 py-1.5">
@@ -251,6 +261,11 @@ export const VaultManager: React.FC = () => {
                 <h4 className="font-bold text-xs sm:text-sm text-stone-900 font-headline truncate group-hover:text-[#C85A32] transition">
                   {loan.itemTitle}
                 </h4>
+                {brandModel && (
+                  <span className="px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 font-mono text-[10px] border border-stone-200 truncate max-w-[140px]">
+                    {brandModel}
+                  </span>
+                )}
                 <span className="px-2 py-0.5 rounded bg-stone-50 text-[#C85A32] font-mono text-[10px] font-bold border border-stone-200">
                   {loan.ticketNumber}
                 </span>
@@ -552,7 +567,7 @@ export const VaultManager: React.FC = () => {
             type="text" 
             value={searchFilter} 
             onChange={(e) => setSearchFilter(e.target.value)} 
-            placeholder="Search ticket, item, or bin shelf..." 
+            placeholder="Search ticket, item, customer, shelf, serial..." 
             className="w-full bg-white border border-stone-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-[#C85A32] font-mono shadow-xs" 
           />
           <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2.5" />
@@ -561,50 +576,46 @@ export const VaultManager: React.FC = () => {
 
       {/* Main List with Virtualization */}
       <div className="flex-1 min-h-0 bg-stone-50/30 rounded-xl border border-stone-200 overflow-hidden relative">
-        <AutoSizer>
-          {({ height, width }: any) => {
+        <AutoSizer
+          renderProp={({ height, width }) => {
+            const listHeight = height || 500;
+            const listWidth = width || '100%';
             if (activeTab === 'storage') {
               return (
-                <FixedSizeList
-                  height={height}
-                  width={width}
-                  itemCount={filteredActiveStorage.length}
-                  itemSize={88}
-                >
-                  {({ index, style }: any) => (
-                    <ActiveVaultRow index={index} style={style} />
-                  )}
-                </FixedSizeList>
+                <List<any>
+                  rowCount={filteredActiveStorage.length}
+                  rowHeight={88}
+                  rowComponent={ActiveVaultRow}
+                  rowProps={{}}
+                  style={{ height: listHeight, width: listWidth }}
+                  defaultHeight={500}
+                />
               );
             } else if (activeTab === 'overdue') {
               return (
-                <FixedSizeList
-                  height={height}
-                  width={width}
-                  itemCount={filteredOverdue.length}
-                  itemSize={100}
-                >
-                  {({ index, style }: any) => (
-                    <OverdueRow index={index} style={style} />
-                  )}
-                </FixedSizeList>
+                <List<any>
+                  rowCount={filteredOverdue.length}
+                  rowHeight={100}
+                  rowComponent={OverdueRow}
+                  rowProps={{}}
+                  style={{ height: listHeight, width: listWidth }}
+                  defaultHeight={500}
+                />
               );
             } else {
               return (
-                <FixedSizeList
-                  height={height}
-                  width={width}
-                  itemCount={filteredReviewQueue.length}
-                  itemSize={100}
-                >
-                  {({ index, style }: any) => (
-                    <ReviewRow index={index} style={style} />
-                  )}
-                </FixedSizeList>
+                <List<any>
+                  rowCount={filteredReviewQueue.length}
+                  rowHeight={100}
+                  rowComponent={ReviewRow}
+                  rowProps={{}}
+                  style={{ height: listHeight, width: listWidth }}
+                  defaultHeight={500}
+                />
               );
             }
           }}
-        </AutoSizer>
+        />
 
         {(activeTab === 'storage' && filteredActiveStorage.length === 0) && (
           <div className="absolute inset-0 flex items-center justify-center p-8 text-center bg-stone-100/50">
