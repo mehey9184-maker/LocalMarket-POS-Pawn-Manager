@@ -389,7 +389,7 @@ export async function runPhase2eSearchContinuityTests() {
 
   // --- Test J — Exact customer ID beats seller name contains ---
   const queryJ = '1234567890';
-  const sellerJ: Seller = { id: 's1', fullName: 'Name contains 1234567890', idNumber: '999', mobile: '000', address: 'addr', createdAt: '2026', verified: true };
+  const sellerJ: Seller = { id: 's1', fullName: 'Name contains 1234567890', idNumber: '999', mobile: '000', address: 'addr', createdAt: '2026', verified: true, idType: 'RSA Smart ID' };
   const customerJ: Customer = { id: 'c1', fullName: 'John', idNumber: '1234567890', mobile: '000', address: 'addr', verified: true, createdAt: '2026', idType: 'RSA Smart ID' };
   const candidatesJ: ScoredResult[] = [
     { type: 'seller', data: sellerJ, score: getSearchMatchScore('seller', sellerJ, queryJ) },

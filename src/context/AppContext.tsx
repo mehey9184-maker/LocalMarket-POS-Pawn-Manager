@@ -158,6 +158,7 @@ interface AppContextType {
   updateCartQuantity: (itemId: string, qty: number) => void;
   updateCartItemPrice: (itemId: string, newPrice: number) => void;
   clearCart: () => void;
+  restoreCart: (items: CartItem[]) => void;
   completeCheckout: (tenderMethod: PaymentMethod, amountTendered: number, receiptType: ReceiptDelivery, customerMobile?: string) => Promise<SaleTransaction>;
   processRefund: (receiptNumber: string, itemId: string, reason: string) => Promise<boolean>;
 
@@ -527,6 +528,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const clearCart = () => setCart([]);
 
+  const restoreCart = useCallback((items: CartItem[]) => {
+    setCart(items);
+  }, []);
+
   const completeCheckout = useCallback(async (
     tenderMethod: PaymentMethod,
     amountTendered: number,
@@ -637,6 +642,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateCartQuantity,
         updateCartItemPrice,
         clearCart,
+        restoreCart,
         inventory,
         customers,
         pawnLoans,

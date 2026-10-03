@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSync } from '../../context/SyncContext';
-import { PaymentMethod, ReceiptDelivery, InventoryItem } from '../../types';
+import { PaymentMethod, ReceiptDelivery, InventoryItem, CartItem } from '../../types';
 import { validateAndNormalizeSaPhone } from '../../utils/phoneValidator';
 import { normalizeScannerInput } from '../../utils/scannerNormalizer';
 import { focusAndScrollErrorField } from '../../utils/errorNavigator';
@@ -25,8 +25,84 @@ import {
   Printer,
   AlertTriangle,
   Loader2,
-  MapPin
+  MapPin,
+  RotateCcw
 } from 'lucide-react';
+
+export interface CartSnapshot {
+  items: CartItem[];
+  clearedAt: number;
+}
+
+export function createCartSnapshot(cart: CartItem[]): CartSnapshot {
+  return {
+    items: cart.map(ci => ({
+      item: { ...ci.item },
+      quantity: ci.quantity,
+      overridePrice: ci.overridePrice
+    })),
+    clearedAt: Date.now()
+  };
+}
+
+export function restoreCartFromSnapshot(snapshot: CartSnapshot): CartItem[] {
+  return snapshot.items.map(ci => ({
+    item: { ...ci.item },
+    quantity: ci.quantity,
+    overridePrice: ci.overridePrice
+  }));
+}
+
+export interface CashPaymentState {
+  status: 'still_due' | 'exact' | 'change';
+  amount: number;
+  stillDue: number;
+  change: number;
+  label: string;
+  formattedText: string;
+  isComplete: boolean;
+}
+
+export function getCashPaymentState(total: number, tendered: number): CashPaymentState {
+  const safeTotal = Math.max(0, total);
+  const safeTendered = Math.max(0, tendered);
+  const diff = Math.round((safeTendered - safeTotal) * 100) / 100;
+
+  if (diff < 0) {
+    const stillDue = Math.abs(diff);
+    return {
+      status: 'still_due',
+      amount: stillDue,
+      stillDue,
+      change: 0,
+      label: 'Still Due',
+      formattedText: `Still due R ${stillDue.toFixed(2)}`,
+      isComplete: false
+    };
+  }
+
+  if (diff === 0) {
+    return {
+      status: 'exact',
+      amount: 0,
+      stillDue: 0,
+      change: 0,
+      label: 'Payment Status',
+      formattedText: 'Exact payment',
+      isComplete: true
+    };
+  }
+
+  return {
+    status: 'change',
+    amount: diff,
+    stillDue: 0,
+    change: diff,
+    label: 'Change Due',
+    formattedText: `Change R ${diff.toFixed(2)}`,
+    isComplete: true
+  };
+}
 
 const CartItemRow: React.FC<{ 
   ci: any; 
@@ -147,6 +223,7 @@ export const Sell: React.FC = () => {
     updateCartItemPrice, 
     updateCartQuantity, 
     clearCart,
+    restoreCart,
     completeCheckout,
     showToast,
     setIsScannerModalOpen,
@@ -165,12 +242,75 @@ export const Sell: React.FC = () => {
   const [receiptType, setReceiptType] = useState<ReceiptDelivery>('thermal');
   const [customerMobile, setCustomerMobile] = useState<string>('');
   const [mobileError, setMobileError] = useState<string | null>(null);
+
+  // Undo Recovery State for "Clear Basket"
+  const [undoSnapshot, setUndoSnapshot] = useState<CartSnapshot | null>(null);
+  const undoTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   const isCheckingOutRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cashInputRef = useRef<HTMLInputElement>(null);
   const mobileInputRef = useRef<HTMLInputElement>(null);
   const lastScanRef = useRef<{ query: string; time: number }>({ query: '', time: 0 });
+
+  const dismissPendingUndo = () => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+    setUndoSnapshot(null);
+  };
+
+  const handleClearCart = () => {
+    if (cart.length === 0 || isProcessing) return;
+
+    // 1. Capture complete current cart snapshot
+    const snapshot = createCartSnapshot(cart);
+    setUndoSnapshot(snapshot);
+
+    // 2. Clear basket immediately
+    clearCart();
+
+    // 3. Reset finite timer (~6 seconds)
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+    }
+    undoTimerRef.current = setTimeout(() => {
+      setUndoSnapshot(null);
+      undoTimerRef.current = null;
+    }, 6000);
+  };
+
+  const handleUndoClear = () => {
+    if (!undoSnapshot || isProcessing) return;
+
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+
+    const restoredItems = restoreCartFromSnapshot(undoSnapshot);
+    restoreCart(restoredItems);
+    setUndoSnapshot(null);
+
+    showToast('Basket Restored', `${restoredItems.length} ${restoredItems.length === 1 ? 'item' : 'items'} restored to basket`, 'success');
+  };
+
+  const handleDismissUndo = () => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+    setUndoSnapshot(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) {
+        clearTimeout(undoTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleProtectedPriceUpdate = (itemId: string, newPrice: number) => {
     if (!canEditPrice) {
@@ -217,7 +357,8 @@ export const Sell: React.FC = () => {
   }, [cart]);
 
   const numTendered = parseFloat(cashTendered) || 0;
-  const changeDue = Math.max(0, numTendered - total);
+  const cashPaymentState = useMemo(() => getCashPaymentState(total, numTendered), [total, numTendered]);
+  const changeDue = cashPaymentState.change;
 
   const isVatRegistered = Boolean(shopProfile?.vat_number && shopProfile.vat_number.trim().length > 0);
   const vatRate = isVatRegistered ? 0.15 : 0;
@@ -225,6 +366,7 @@ export const Sell: React.FC = () => {
   const subtotal = total - vatAmount;
 
   const handleTileClick = (item: InventoryItem) => {
+    dismissPendingUndo();
     if (item.status === 'Reserved' && !canSellReserved) {
       showToast('Reserved Stock', 'Reserved stock needs Manager or Owner approval.', 'amber');
       return;
@@ -235,6 +377,7 @@ export const Sell: React.FC = () => {
   };
 
   const handleBarcodeSearchSubmit = (eOrQuery?: React.FormEvent | string) => {
+    dismissPendingUndo();
     if (typeof eOrQuery === 'object' && eOrQuery !== null && 'preventDefault' in eOrQuery) {
       eOrQuery.preventDefault();
     }
@@ -362,6 +505,7 @@ export const Sell: React.FC = () => {
         'success'
       );
 
+      dismissPendingUndo();
       setCashTendered('');
       setCustomerMobile('');
       setMobileError(null);
@@ -517,7 +661,7 @@ export const Sell: React.FC = () => {
             </span>
             {cart.length > 0 && (
               <button
-                onClick={clearCart}
+                onClick={handleClearCart}
                 disabled={isProcessing}
                 className="text-xs font-medium text-gray-500 hover:text-red-600 transition flex items-center gap-1 cursor-pointer"
                 title="Clear Basket"
@@ -531,6 +675,48 @@ export const Sell: React.FC = () => {
 
         {/* Cart Items */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2.5 no-scrollbar min-h-[220px]">
+          {/* Basket Cleared Undo Recovery Banner */}
+          <AnimatePresence>
+            {undoSnapshot && (
+              <motion.div
+                initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                className="p-3 bg-stone-900 text-white rounded-xl shadow-lg border border-stone-800 flex items-center justify-between gap-3 mb-2"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-stone-800 flex items-center justify-center text-stone-300 shrink-0">
+                    <Trash2 className="w-3.5 h-3.5 text-stone-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-white font-headline leading-tight">Basket cleared</p>
+                    <p className="text-[11px] text-stone-300 leading-snug">
+                      {undoSnapshot.items.length} {undoSnapshot.items.length === 1 ? 'item' : 'items'} removed.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleUndoClear}
+                    className="px-3 py-1.5 bg-[#C85A32] hover:bg-[#A94725] text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs active:scale-95 flex items-center gap-1"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Undo</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDismissUndo}
+                    className="p-1 text-stone-400 hover:text-white transition cursor-pointer"
+                    title="Dismiss"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <AnimatePresence mode="popLayout">
             {cart.map(ci => (
               <CartItemRow 
@@ -647,11 +833,30 @@ export const Sell: React.FC = () => {
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-semibold text-gray-500 uppercase">Change Due</label>
-                    <div className="w-full bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 flex items-center justify-end">
-                      <span className="text-sm font-bold text-emerald-700 font-mono">
-                        R {changeDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
+                    <label className={`text-[10px] font-semibold uppercase flex items-center justify-between ${
+                      cashPaymentState.status === 'still_due'
+                        ? 'text-amber-800'
+                        : 'text-emerald-800'
+                    }`}>
+                      <span>{cashPaymentState.label}</span>
+                    </label>
+                    <div className={`w-full rounded-lg px-3 py-1.5 flex items-center justify-end border ${
+                      cashPaymentState.status === 'still_due'
+                        ? 'bg-amber-50/70 border-amber-300/80 text-amber-900'
+                        : cashPaymentState.status === 'exact'
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    }`}>
+                      {cashPaymentState.status === 'exact' ? (
+                        <span className="text-xs font-bold font-sans flex items-center gap-1.5 py-0.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Exact payment</span>
+                        </span>
+                      ) : (
+                        <span className="text-sm font-bold font-mono">
+                          R {cashPaymentState.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -755,7 +960,13 @@ export const Sell: React.FC = () => {
             )}
           </div>
 
-          <div className="flex gap-2 pt-1">
+          <div className="space-y-2 pt-1">
+            {cart.length > 0 && selectedTender === 'cash' && !cashPaymentState.isComplete && (
+              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200/80 rounded-lg px-2.5 py-1.5 text-center font-medium flex items-center justify-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>Still due R {cashPaymentState.stillDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} — enter cash tendered</span>
+              </p>
+            )}
             <button 
               onClick={handleCompleteSale}
               disabled={isProcessing || cart.length === 0}
