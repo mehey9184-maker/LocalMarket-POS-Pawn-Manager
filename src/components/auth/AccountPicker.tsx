@@ -7,7 +7,7 @@ import { ProfileRow } from '../../types/supabase';
 import { Loader2, ArrowLeft, Key, ShieldCheck, Lock, X, Calendar } from 'lucide-react';
 
 // Helper to get wall-clock components in shop timezone
-function getShopComponents(date: Date, timezone: string) {
+export function getShopComponents(date: Date, timezone: string) {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',
@@ -32,29 +32,25 @@ function getShopComponents(date: Date, timezone: string) {
 }
 
 // Helper to construct an absolute instant Date from wall-clock components
-function getInstantFromShopComponents(c: {year: number, month: number, day: number, hour: number, minute: number}, timezone: string): Date {
-  // 1. Create a UTC date as if the wall-clock time were UTC
-  const utcDate = new Date(Date.UTC(c.year, c.month - 1, c.day, c.hour, c.minute, 0));
+export function getInstantFromShopComponents(c: {year: number, month: number, day: number, hour: number, minute: number}, timezone: string): Date {
+  // 1. Start with a guess: the wall-clock components as UTC
+  let instant = new Date(Date.UTC(c.year, c.month - 1, c.day, c.hour, c.minute, 0));
   
-  // 2. See what wall-clock time that UTC date results in for the target timezone
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-  });
+  // 2. Iterate to find the exact instant where formatting in the target timezone
+  // results in the desired wall-clock components. 3 iterations is usually enough even for DST.
+  for (let i = 0; i < 3; i++) {
+    const actual = getShopComponents(instant, timezone);
+    
+    // Construct UTC timestamps for both target and actual wall-clocks to find the error in ms
+    const targetUtc = Date.UTC(c.year, c.month - 1, c.day, c.hour, c.minute, 0);
+    const actualUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, 0);
+    
+    const diffMs = targetUtc - actualUtc;
+    if (diffMs === 0) break;
+    instant = new Date(instant.getTime() + diffMs);
+  }
   
-  const parts = formatter.formatToParts(utcDate);
-  const d: any = {};
-  parts.forEach(p => { if (p.type !== 'literal') d[p.type] = p.value; });
-  
-  // 3. Construct another UTC date from the target wall-clock parts
-  const projectedUtc = new Date(Date.UTC(
-    parseInt(d.year), parseInt(d.month) - 1, parseInt(d.day),
-    parseInt(d.hour), parseInt(d.minute), parseInt(d.second)
-  ));
-  
-  // 4. The difference is the offset we need to subtract from our initial target wall-clock
-  const offsetMs = projectedUtc.getTime() - utcDate.getTime();
-  return new Date(utcDate.getTime() - offsetMs);
+  return instant;
 }
 
 // ... (rest of file)
@@ -98,7 +94,7 @@ export interface ShiftStatus {
   countdownLabel: string;
 }
 
-export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftStatus {
+export function evaluateShiftStatus(staff: ProfileRow, timezone: string, now: Date = new Date()): ShiftStatus {
   // Owners and Admins are always allowed
   if (staff.role === 'owner' || staff.role === 'admin') {
     return { status: 'allowed', title: "You're scheduled now", subtitle: "Unrestricted Owner/Admin access", nextLoginTime: null, reason: "", countdownLabel: "" };
@@ -115,7 +111,7 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
   const earlyMins = schedule.earlyLoginMinutes || 10;
   const overnight = !!schedule.overnight;
 
-  const shopNow = new Date(); // Current instant
+  const shopNow = now; // Use provided instant or real now
   const comp = getShopComponents(shopNow, timezone);
   const currentTotalMinutes = comp.hour * 60 + comp.minute;
 
@@ -129,25 +125,28 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
   // Use getInstantFromShopComponents to construct nextLoginTime
   const getNextPermittedDate = (day: number, time: string, earlyMins: number): Date => {
     // 1. Get components for now in target TZ
-    const now = new Date();
-    const c = getShopComponents(now, timezone);
-    // Note: getDay() on Date is always browser-local. Use Intl to get day of week.
-    const dayOfWeek = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'long' }).format(now);
-    const dayOfWeekIndex = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(dayOfWeek);
+    const c = getShopComponents(shopNow, timezone);
+    // Note: getDay() on Date is always browser-local. Use Intl to get day of week in shop timezone.
+    const dayOfWeekStr = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'long' }).format(shopNow);
+    const dayOfWeekIndex = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(dayOfWeekStr);
     
     let daysUntil = (day - dayOfWeekIndex + 7) % 7;
     // If today is target day, and we're past start time (including early mins), look to next week
-    if (daysUntil === 0 && (currentTotalMinutes > (startTotalMinutes - earlyMins))) daysUntil = 7;
-    
-    const target = new Date(now.getTime() + daysUntil * 24 * 60 * 60 * 1000);
-    const cTarget = getShopComponents(target, timezone);
     const [h, m] = time.split(':').map(Number);
+    if (daysUntil === 0 && (currentTotalMinutes > (h * 60 + m - earlyMins))) daysUntil = 7;
+    
+    // Construct target wall-clock components by shifting days
+    // We add days carefully using UTC to avoid browser DST issues during calculation, 
+    // then project back to wall clock.
+    const projectedDate = new Date(shopNow.getTime() + daysUntil * 24 * 60 * 60 * 1000);
+    const cp = getShopComponents(projectedDate, timezone);
+    
     const totalM = h * 60 + m - earlyMins;
     
     return getInstantFromShopComponents({
-      year: cTarget.year,
-      month: cTarget.month,
-      day: cTarget.day,
+      year: cp.year,
+      month: cp.month,
+      day: cp.day,
       hour: Math.floor(totalM / 60),
       minute: totalM % 60
     }, timezone);
@@ -166,7 +165,7 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
           status: 'too_early',
           title: `Your shift starts at ${startTime}`,
           subtitle: `You can sign in from ${startTime}.`,
-          nextLoginTime: getInstantFromShopComponents({ year: comp.year, month: comp.month, day: comp.day, hour: startH, minute: startM - earlyMins }, timezone),
+          nextLoginTime: getInstantFromShopComponents({ year: comp.year, month: comp.month, day: comp.day, hour: Math.floor(startWithEarlyTotalMinutes / 60), minute: startWithEarlyTotalMinutes % 60 }, timezone),
           reason: "You're a little early",
           countdownLabel: "Your shift starts in"
         };
@@ -183,22 +182,29 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
         };
       }
     } else {
+        // Overnight logic: Start evening day N, ends morning day N+1
+        // If we are currently in the start window (>= startTime) or the end window (<= endTime)
         if (currentTotalMinutes >= startWithEarlyTotalMinutes || currentTotalMinutes <= endTotalMinutes) {
           return { status: 'allowed', title: "You're scheduled now", subtitle: `${startTime}–${endTime} (Overnight)`, nextLoginTime: null, reason: "", countdownLabel: "" };
         } else {
-          let nextDay = (dayOfWeek + 1) % 7;
-          while (!workingDays.includes(nextDay)) nextDay = (nextDay + 1) % 7;
+          // If past endTime but before startTime, too late/early for next
           return {
             status: 'too_early',
             title: `Your shift starts at ${startTime}`,
             subtitle: `You can sign in from ${startTime}.`,
-            nextLoginTime: getNextPermittedDate(dayOfWeek, startTime, earlyMins),
+            nextLoginTime: getInstantFromShopComponents({ year: comp.year, month: comp.month, day: comp.day, hour: Math.floor(startWithEarlyTotalMinutes / 60), minute: startWithEarlyTotalMinutes % 60 }, timezone),
             reason: "You're a little early",
             countdownLabel: "Your shift starts in"
           };
         }
     }
   } else {
+    // Check if we are in the continuation of an overnight shift from "yesterday" in shop timezone
+    const yesterdayDay = (dayOfWeek + 6) % 7;
+    if (workingDays.includes(yesterdayDay) && overnight && currentTotalMinutes <= endTotalMinutes) {
+        return { status: 'allowed', title: "You're scheduled now", subtitle: `Active shift ends at ${endTime}`, nextLoginTime: null, reason: "", countdownLabel: "" };
+    }
+
     let nextDay = (dayOfWeek + 1) % 7;
     while (!workingDays.includes(nextDay)) nextDay = (nextDay + 1) % 7;
     return {
@@ -434,7 +440,7 @@ export const AccountPicker: React.FC = () => {
     const staff = selectedStaff || offShiftStaff;
     if (!staff) return null;
     const timezone = (shopProfile as any)?.timezone || 'Africa/Johannesburg';
-    return evaluateShiftStatus(staff, timezone);
+    return evaluateShiftStatus(staff, timezone, new Date());
   }, [selectedStaff, offShiftStaff, shopProfile, timeTick]);
 
   if (!isAccountPickerOpen) return null;
