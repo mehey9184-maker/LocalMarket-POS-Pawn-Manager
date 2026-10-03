@@ -134,6 +134,11 @@ BEGIN
                 v_db_item.title, v_db_item.sku, v_db_item.status;
         END IF;
 
+        -- Enforce Reserved stock authorization
+        IF v_db_item.status = 'Reserved' AND v_caller_profile.role = 'cashier' THEN
+            RAISE EXCEPTION 'Unauthorized: Cashiers are not permitted to sell Reserved stock.';
+        END IF;
+
         -- Mark item as Sold in database
         UPDATE public.shop_items
         SET status = 'Sold'::item_status,

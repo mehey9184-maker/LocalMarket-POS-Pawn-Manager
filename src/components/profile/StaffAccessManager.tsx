@@ -31,6 +31,56 @@ interface StaffAccessManagerProps {
   onSaveChangesRef?: React.MutableRefObject<(() => Promise<boolean>) | null>;
 }
 
+export function getFixedPermissionsForRole(role: string): Record<string, boolean> {
+  if (role === 'owner' || role === 'admin') {
+    return {
+      sales: true,
+      inventory: true,
+      pawn: true,
+      sellerAcquisitions: true,
+      refunds: true,
+      pricing: true,
+      reports: true,
+      staff: true,
+    };
+  }
+  if (role === 'manager') {
+    return {
+      sales: true,
+      inventory: true,
+      pawn: true,
+      sellerAcquisitions: true,
+      refunds: true,
+      reports: true,
+      pricing: false,
+      staff: false,
+    };
+  }
+  if (role === 'senior_cashier') {
+    return {
+      sales: true,
+      inventory: true,
+      pawn: true,
+      sellerAcquisitions: true,
+      refunds: false,
+      reports: false,
+      pricing: false,
+      staff: false,
+    };
+  }
+  // Default cashier
+  return {
+    sales: true,
+    inventory: true,
+    pawn: false,
+    sellerAcquisitions: false,
+    refunds: false,
+    reports: false,
+    pricing: false,
+    staff: false,
+  };
+}
+
 export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
   onUnsavedChangesChange,
   onSaveChangesRef
@@ -113,11 +163,9 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
   // Determine unsaved changes state
   const hasUnsavedChanges = useMemo(() => {
     if (!selectedStaff) return false;
-    const originalPerms = selectedStaff.permissions || {};
     const originalSchedule = selectedStaff.schedule || {};
-    return JSON.stringify(draftPermissions) !== JSON.stringify(originalPerms) ||
-           JSON.stringify(draftSchedule) !== JSON.stringify(originalSchedule);
-  }, [selectedStaff, draftPermissions, draftSchedule]);
+    return JSON.stringify(draftSchedule) !== JSON.stringify(originalSchedule);
+  }, [selectedStaff, draftSchedule]);
 
   // Sync dirty status with parent
   useEffect(() => {
@@ -169,7 +217,7 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
 
   const handleDiscardChanges = () => {
     if (!selectedStaff) return;
-    setDraftPermissions(selectedStaff.permissions || {});
+    setDraftPermissions(getFixedPermissionsForRole(selectedStaff.role));
     setDraftSchedule(selectedStaff.schedule || {});
     showToast('Changes Discarded', 'Your edits have been reverted.', 'info');
   };
@@ -245,7 +293,7 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
             runner.startStep('finish');
             const updated = { ...selectedStaff, role: newRole as any };
             setSelectedStaff(updated);
-            setDraftPermissions(updated.permissions || {});
+            setDraftPermissions(getFixedPermissionsForRole(newRole));
             setDraftSchedule(updated.schedule || {});
             try {
               await loadAuditLogs(selectedStaff.id);
@@ -371,7 +419,7 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
             runner.startStep('finish');
             const updated = { ...selectedStaff, is_active: !willDeactivate };
             setSelectedStaff(updated);
-            setDraftPermissions(updated.permissions || {});
+            setDraftPermissions(getFixedPermissionsForRole(updated.role));
             setDraftSchedule(updated.schedule || {});
             try {
               await loadAuditLogs(selectedStaff.id);
@@ -396,7 +444,7 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
 
   const handleSelectStaff = async (staff: ProfileRow) => {
     setSelectedStaff(staff);
-    setDraftPermissions(staff.permissions || {});
+    setDraftPermissions(getFixedPermissionsForRole(staff.role));
     setDraftSchedule(staff.schedule || {});
     await loadAuditLogs(staff.id);
   };
@@ -496,15 +544,24 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
           {/* PERMISSIONS SECTION */}
-          <div className="space-y-6">
+          <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex items-center justify-between text-emerald-600">
               <div className="flex items-center gap-3">
                 <Shield className="w-5 h-5" />
                 <h3 className="text-sm font-bold uppercase tracking-widest">Access Control</h3>
               </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-100 uppercase tracking-wider">
+              <span className="text-[10px] font-bold px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-100 uppercase tracking-wider">
                 {enabledPermsCount} enabled
               </span>
+            </div>
+
+            {/* Explanatory security policy banner */}
+            <div className="p-4 bg-stone-50 border border-stone-200 rounded-2xl text-xs text-stone-600 leading-relaxed flex items-start gap-3">
+              <Shield className="w-4 h-4 text-stone-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-stone-700">Permissions are fixed by role</p>
+                <p className="mt-0.5">Under system security policies, operator permissions are determined strictly by their role. Change the role dropdown above to adjust access.</p>
+              </div>
             </div>
             
             <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden divide-y divide-stone-100 shadow-xs">
@@ -517,24 +574,30 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
                 { id: 'pricing', label: 'Price Management', desc: 'Modify retail prices and markup rules' },
                 { id: 'reports', label: 'View Reports', desc: 'Access financial and performance analytics' },
                 ...(isOwner ? [{ id: 'staff', label: 'Staff Management', desc: 'Manage other staff accounts and access' }] : [])
-              ].map(item => (
-                <div key={item.id} className="p-5 flex items-center justify-between group hover:bg-stone-50 transition-colors">
-                  <div className="max-w-[70%]">
-                    <p className="text-sm font-bold text-stone-800">{item.label}</p>
-                    <p className="text-[11px] text-stone-500 mt-0.5 leading-relaxed">{item.desc}</p>
+              ].map(item => {
+                const isGranted = Boolean(perms[item.id]);
+                return (
+                  <div key={item.id} className="p-5 flex items-center justify-between group hover:bg-stone-50 transition-colors">
+                    <div className="max-w-[70%]">
+                      <p className="text-sm font-bold text-stone-800">{item.label}</p>
+                      <p className="text-[11px] text-stone-500 mt-0.5 leading-relaxed">{item.desc}</p>
+                    </div>
+                    <div className="flex items-center">
+                      {isGranted ? (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold whitespace-nowrap">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Granted</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-stone-50 text-stone-400 border border-stone-200 rounded-lg text-xs font-semibold whitespace-nowrap">
+                          <Lock className="w-3.5 h-3.5 text-stone-300" />
+                          <span>Locked</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer"
-                      checked={perms[item.id] ?? false}
-                      onChange={(e) => handleTogglePermission(item.id, e.target.checked)}
-                      disabled={isSaving}
-                    />
-                    <div className="w-11 h-6 bg-stone-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600 peer-checked:after:bg-white"></div>
-                  </label>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

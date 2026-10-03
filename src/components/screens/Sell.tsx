@@ -153,10 +153,10 @@ export const Sell: React.FC = () => {
     shopProfile
   } = useApp();
 
-  const { hasPermission, isOwner, isManager } = useAuth();
+  const { hasPermission, isOwner, isManager, role } = useAuth();
   const { isOnline, syncStatus } = useSync();
   const canEditPrice = hasPermission('pricing') || isOwner || isManager;
-  const canSellReserved = isOwner || isManager || hasPermission('inventory');
+  const canSellReserved = role !== 'cashier';
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTender, setSelectedTender] = useState<PaymentMethod>('cash');
