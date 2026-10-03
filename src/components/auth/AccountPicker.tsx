@@ -29,6 +29,22 @@ function getShopNow(timezone: string): Date {
   }
 }
 
+function getInitials(name: string | null | undefined) {
+  if (!name) return 'ST';
+  return name.split(' ').filter(Boolean).map(n => n[0]).join('').toUpperCase().substring(0, 2);
+}
+
+function getRoleLabel(role: string | null | undefined) {
+  if (!role) return 'Staff';
+  switch (role) {
+    case 'owner': return 'Owner';
+    case 'manager': return 'Manager';
+    case 'senior_cashier': return 'Senior Cashier';
+    case 'cashier': return 'Cashier';
+    default: return role.replace(/_/g, ' ');
+  }
+}
+
 // Calculate the next shift starting from currentDay + 1
 function getNextShiftInfo(workingDays: number[], scheduleStartTime: string, currentDay: number): string {
   if (!workingDays || workingDays.length === 0) return '';
@@ -414,28 +430,6 @@ export const AccountPicker: React.FC = () => {
     setError(null);
     setLockoutUntil(null);
     setRemainingSeconds(0);
-  };
-
-  const getRoleLabel = (role: string | null | undefined) => {
-    if (!role) return 'Staff';
-    switch (role) {
-      case 'owner': return 'Owner';
-      case 'manager': return 'Manager';
-      case 'senior_cashier': return 'Senior Cashier';
-      case 'cashier': return 'Cashier';
-      default: return role.replace(/_/g, ' ');
-    }
-  };
-
-  const getInitials = (name: string | null | undefined) => {
-    if (!name) return 'ST';
-    return name
-      .split(' ')
-      .filter(Boolean)
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .substring(0, 2);
   };
 
   const isLocked = remainingSeconds > 0;
