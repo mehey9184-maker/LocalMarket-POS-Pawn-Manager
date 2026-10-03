@@ -6,33 +6,50 @@ import { authApi } from '../../services/supabaseApi';
 import { ProfileRow } from '../../types/supabase';
 import { Loader2, ArrowLeft, Key, ShieldCheck, Lock, X, Calendar } from 'lucide-react';
 
-// Timezone-aware date generator matching server rules
-function getShopNow(timezone: string): Date {
-  const now = new Date();
-  try {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
-    const parts = formatter.formatToParts(now);
-    const d: any = {};
-    parts.forEach(p => { if (p.type !== 'literal') d[p.type] = p.value; });
-    
-    // Construct Date object using UTC methods to bypass browser local timezone
-    const date = new Date(0);
-    date.setUTCFullYear(parseInt(d.year), parseInt(d.month) - 1, parseInt(d.day));
-    date.setUTCHours(parseInt(d.hour), parseInt(d.minute), parseInt(d.second), 0);
-    return date;
-  } catch (e) {
-    return now;
-  }
+// Helper to get wall-clock components in shop timezone
+function getShopComponents(date: Date, timezone: string) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  const parts = formatter.formatToParts(date);
+  const d: any = {};
+  parts.forEach(p => { if (p.type !== 'literal') d[p.type] = p.value; });
+  return {
+    year: parseInt(d.year),
+    month: parseInt(d.month),
+    day: parseInt(d.day),
+    hour: parseInt(d.hour),
+    minute: parseInt(d.minute),
+    second: parseInt(d.second)
+  };
 }
+
+// Helper to construct an absolute instant Date from wall-clock components
+function getInstantFromShopComponents(c: {year: number, month: number, day: number, hour: number, minute: number}, timezone: string): Date {
+  // Construct a Date string representing the wall-clock time and interpret it in the target TZ
+  // This is a robust native way to parse timezone-specific times
+  const dateString = `${c.year}-${String(c.month).padStart(2, '0')}-${String(c.day).padStart(2, '0')}T${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}:00`;
+  const d = new Date(dateString + 'Z'); // Parse as UTC
+  
+  // Adjust for the offset of the target timezone at this instant
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
+  });
+  
+  // This is a common pattern to handle timezone offsets natively without libraries
+  const offset = (new Date(d.toLocaleString('en-US', { timeZone: timezone })).getTime() - d.getTime());
+  return new Date(d.getTime() - offset);
+}
+
+// ... (rest of file)
 
 function getInitials(name: string | null | undefined) {
   if (!name) return 'ST';
@@ -74,6 +91,7 @@ export interface ShiftStatus {
 }
 
 export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftStatus {
+  // Owners and Admins are always allowed
   if (staff.role === 'owner' || staff.role === 'admin') {
     return { status: 'allowed', title: "You're scheduled now", subtitle: "Unrestricted Owner/Admin access", nextLoginTime: null, reason: "", countdownLabel: "" };
   }
@@ -89,9 +107,9 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
   const earlyMins = schedule.earlyLoginMinutes || 10;
   const overnight = !!schedule.overnight;
 
-  const shopNow = getShopNow(timezone);
-  const currentDay = shopNow.getDay();
-  const currentTotalMinutes = shopNow.getHours() * 60 + shopNow.getMinutes();
+  const shopNow = new Date(); // Current instant
+  const comp = getShopComponents(shopNow, timezone);
+  const currentTotalMinutes = comp.hour * 60 + comp.minute;
 
   const [startH, startM] = startTime.split(':').map(Number);
   const [endH, endM] = endTime.split(':').map(Number);
@@ -100,24 +118,37 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
   const startWithEarlyTotalMinutes = startTotalMinutes - earlyMins;
   const endTotalMinutes = endH * 60 + endM;
 
-  const yesterdayDay = (currentDay + 6) % 7;
-  let isActiveOvernightFromYesterday = false;
-  if (workingDays.includes(yesterdayDay) && overnight) {
-    if (currentTotalMinutes <= endTotalMinutes) isActiveOvernightFromYesterday = true;
-  }
-
+  // Use getInstantFromShopComponents to construct nextLoginTime
   const getNextPermittedDate = (day: number, time: string, earlyMins: number): Date => {
-    const next = new Date(shopNow);
-    let daysUntil = (day - next.getDay() + 7) % 7;
-    if (daysUntil === 0 && (currentTotalMinutes > (startH * 60 + startM - earlyMins))) daysUntil = 7;
-    next.setDate(next.getDate() + daysUntil);
+    // 1. Get components for now in target TZ
+    const now = new Date();
+    const c = getShopComponents(now, timezone);
+    // Note: getDay() on Date is always browser-local. Use Intl to get day of week.
+    const dayOfWeek = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'long' }).format(now);
+    const dayOfWeekIndex = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(dayOfWeek);
+    
+    let daysUntil = (day - dayOfWeekIndex + 7) % 7;
+    // If today is target day, and we're past start time (including early mins), look to next week
+    if (daysUntil === 0 && (currentTotalMinutes > (startTotalMinutes - earlyMins))) daysUntil = 7;
+    
+    const target = new Date(now.getTime() + daysUntil * 24 * 60 * 60 * 1000);
+    const cTarget = getShopComponents(target, timezone);
     const [h, m] = time.split(':').map(Number);
-    let totalM = h * 60 + m - earlyMins;
-    next.setHours(Math.floor(totalM / 60), totalM % 60, 0, 0);
-    return next;
+    const totalM = h * 60 + m - earlyMins;
+    
+    return getInstantFromShopComponents({
+      year: cTarget.year,
+      month: cTarget.month,
+      day: cTarget.day,
+      hour: Math.floor(totalM / 60),
+      minute: totalM % 60
+    }, timezone);
   };
 
-  const isWorkingToday = workingDays.includes(currentDay);
+  const dayOfWeekString = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'long' }).format(shopNow);
+  const dayOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(dayOfWeekString);
+  const isWorkingToday = workingDays.includes(dayOfWeek);
+
   if (isWorkingToday) {
     if (!overnight) {
       if (currentTotalMinutes >= startWithEarlyTotalMinutes && currentTotalMinutes <= endTotalMinutes) {
@@ -126,13 +157,13 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
         return {
           status: 'too_early',
           title: `Your shift starts at ${startTime}`,
-          subtitle: `You can sign in from ${startTime.split(':').map((v, i) => i === 0 ? String(Math.floor((startH * 60 + startM - earlyMins) / 60)).padStart(2, '0') : String((startH * 60 + startM - earlyMins) % 60).padStart(2, '0')).join(':')}.`,
-          nextLoginTime: getNextPermittedDate(currentDay, startTime, earlyMins),
+          subtitle: `You can sign in from ${startTime}.`,
+          nextLoginTime: getInstantFromShopComponents({ year: comp.year, month: comp.month, day: comp.day, hour: startH, minute: startM - earlyMins }, timezone),
           reason: "You're a little early",
           countdownLabel: "Your shift starts in"
         };
       } else {
-        let nextDay = (currentDay + 1) % 7;
+        let nextDay = (dayOfWeek + 1) % 7;
         while (!workingDays.includes(nextDay)) nextDay = (nextDay + 1) % 7;
         return {
           status: 'too_late',
@@ -144,24 +175,23 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
         };
       }
     } else {
-        if (currentTotalMinutes >= startWithEarlyTotalMinutes) {
+        if (currentTotalMinutes >= startWithEarlyTotalMinutes || currentTotalMinutes <= endTotalMinutes) {
           return { status: 'allowed', title: "You're scheduled now", subtitle: `${startTime}–${endTime} (Overnight)`, nextLoginTime: null, reason: "", countdownLabel: "" };
-        } else if (currentTotalMinutes < startWithEarlyTotalMinutes) {
-          if (isActiveOvernightFromYesterday) return { status: 'allowed', title: "You're scheduled now", subtitle: `Active shift ends at ${endTime}`, nextLoginTime: null, reason: "", countdownLabel: "" };
+        } else {
+          let nextDay = (dayOfWeek + 1) % 7;
+          while (!workingDays.includes(nextDay)) nextDay = (nextDay + 1) % 7;
           return {
             status: 'too_early',
             title: `Your shift starts at ${startTime}`,
-            subtitle: `You can sign in from ${startTime.split(':').map((v, i) => i === 0 ? String(Math.floor((startH * 60 + startM - earlyMins) / 60)).padStart(2, '0') : String((startH * 60 + startM - earlyMins) % 60).padStart(2, '0')).join(':')}.`,
-            nextLoginTime: getNextPermittedDate(currentDay, startTime, earlyMins),
+            subtitle: `You can sign in from ${startTime}.`,
+            nextLoginTime: getNextPermittedDate(dayOfWeek, startTime, earlyMins),
             reason: "You're a little early",
             countdownLabel: "Your shift starts in"
           };
         }
     }
   } else {
-    if (isActiveOvernightFromYesterday) return { status: 'allowed', title: "You're scheduled now", subtitle: `Active shift ends at ${endTime}`, nextLoginTime: null, reason: "", countdownLabel: "" };
-
-    let nextDay = (currentDay + 1) % 7;
+    let nextDay = (dayOfWeek + 1) % 7;
     while (!workingDays.includes(nextDay)) nextDay = (nextDay + 1) % 7;
     return {
       status: 'non_working',
@@ -172,9 +202,7 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
       countdownLabel: "Next access in"
     };
   }
-  return { status: 'too_late', title: "Your shift has ended", subtitle: `Your scheduled hours are finished.`, nextLoginTime: null, reason: "Your shift has ended", countdownLabel: "" };
 }
-
 // Map server schedule rejection error messages to descriptive, user-friendly copy
 function translateServerError(serverError: string): React.ReactNode {
   if (serverError.includes("This shift starts at")) {
@@ -219,8 +247,9 @@ function formatDuration(ms: number) {
 const ShiftLocked: React.FC<{
   staff: ProfileRow;
   shiftInfo: ShiftStatus;
+  timezone: string;
   onBack: () => void;
-}> = ({ staff, shiftInfo, onBack }) => {
+}> = ({ staff, shiftInfo, timezone, onBack }) => {
   const [timeRemaining, setTimeRemaining] = useState<number>(() => Math.max(0, shiftInfo.nextLoginTime!.getTime() - Date.now()));
 
   useEffect(() => {
@@ -261,7 +290,7 @@ const ShiftLocked: React.FC<{
         {/* Main Content */}
         <div className="space-y-1 mb-8">
           <h2 className="text-xl font-semibold text-stone-900">{shiftInfo.title}</h2>
-          <p className="text-sm text-stone-600 font-medium">Access opens at {shiftInfo.nextLoginTime?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+          <p className="text-sm text-stone-600 font-medium">Access opens at {shiftInfo.nextLoginTime?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: timezone })}</p>
         </div>
 
         {/* Countdown */}
@@ -271,7 +300,7 @@ const ShiftLocked: React.FC<{
             {formatDuration(timeRemaining)}
           </div>
           <p className="text-xs font-medium text-stone-500 mt-2">
-             {shiftInfo.nextLoginTime?.toLocaleDateString([], { weekday: 'long' })} · {shiftInfo.nextLoginTime?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+             {shiftInfo.nextLoginTime?.toLocaleDateString([], { weekday: 'long', timeZone: timezone })} · {shiftInfo.nextLoginTime?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: timezone })}
           </p>
         </div>
 
@@ -703,9 +732,10 @@ export const AccountPicker: React.FC = () => {
             </div>
           </div>
         ) : isShiftLocked ? (
-          <ShiftLocked staff={selectedStaff} shiftInfo={shiftInfo} onBack={handleBack} />
-        ) : (
+          <ShiftLocked staff={offShiftStaff!} shiftInfo={shiftInfo!} timezone={(shopProfile as any)?.timezone || 'Africa/Johannesburg'} onBack={handleBack} />
+        ) : selectedStaff ? (
           <div className="max-w-md mx-auto">
+            {/* PIN ENTRY FORM ... */}
             <button
               onClick={handleBack}
               className="flex items-center gap-2 text-xs font-semibold text-stone-500 hover:text-stone-900 transition-colors mb-6 group cursor-pointer"
@@ -717,7 +747,7 @@ export const AccountPicker: React.FC = () => {
             <div className="flex flex-col items-center text-center mb-6">
               <div className="w-16 h-16 rounded-full bg-stone-100 border-2 border-stone-200 flex items-center justify-center mb-3 overflow-hidden shadow-xs">
                 {selectedStaff.avatar_url ? (
-                  <img src={selectedStaff.avatar_url} alt={selectedStaff.full_name} className="w-full h-full object-cover" />
+                  <img src={selectedStaff.avatar_url} alt={selectedStaff.full_name || ''} className="w-full h-full object-cover" />
                 ) : (
                   <span className="text-xl font-bold text-stone-600">{getInitials(selectedStaff.full_name)}</span>
                 )}
@@ -725,9 +755,9 @@ export const AccountPicker: React.FC = () => {
               <h2 className="font-headline font-bold text-2xl text-stone-900 tracking-tight">Welcome back, {selectedStaff.full_name}</h2>
               <p className="text-xs text-stone-500 mt-1">Enter your 6-digit PIN</p>
             </div>
-
+            
             <div className="space-y-5">
-              {/* LOCKOUT DISPLAY BANNER */}
+              {/* LOCKOUT DISPLAY BANNER ... */}
               {isLocked && (
                 <div
                   role="alert"
@@ -754,7 +784,7 @@ export const AccountPicker: React.FC = () => {
                 </div>
               )}
 
-              {/* PIN INPUT */}
+              {/* PIN INPUT ... */}
               <div className="relative">
                 <Key className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${isLocked ? 'text-stone-300' : 'text-stone-400'}`} />
                 <input
@@ -774,7 +804,7 @@ export const AccountPicker: React.FC = () => {
                 />
               </div>
 
-              {/* STANDARD NON-LOCKOUT ERROR */}
+              {/* STANDARD NON-LOCKOUT ERROR ... */}
               {!isLocked && error && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2.5 animate-auth-fade">
                   <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5 text-white font-bold text-[10px]">
@@ -784,7 +814,7 @@ export const AccountPicker: React.FC = () => {
                 </div>
               )}
 
-              {/* AUTHORIZE BUTTON */}
+              {/* AUTHORIZE BUTTON ... */}
               <button
                 onClick={handleLogin}
                 disabled={isLocked || isAuthenticating || pin.length !== 6}
@@ -830,12 +860,12 @@ export const AccountPicker: React.FC = () => {
               </p>
             </div>
           </div>
-        )}
+        ) : null}
         </div>
       )}
     </div>
   );
-
+  
   if (typeof document === 'undefined') return null;
   return createPortal(content, document.body);
 };
