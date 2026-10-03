@@ -170,6 +170,31 @@ export function runStaffPermissionsAndDualCredentialSecurityTests() {
   assert(staffManagerSrc.includes('Connection required'), 'StaffAccessManager enforces offline security boundary');
   assert(staffManagerSrc.includes('handleToggleOptionalPermission'), 'StaffAccessManager provides dedicated optional capability toggles');
 
+  // =========================================================================
+  // 4. DUAL-CREDENTIAL ACCOUNT PICKER UX CONTRACT
+  // =========================================================================
+  console.log('\n--- 4. Dual-Credential Account Picker UX Contract ---');
+
+  const accountPickerPath = path.join(process.cwd(), 'src/components/auth/AccountPicker.tsx');
+  const accountPickerSrc = fs.readFileSync(accountPickerPath, 'utf8');
+
+  // Must not bypass owner or manager with logout() to login screen
+  assert(!accountPickerSrc.includes("staff.role === 'owner' && logout()"), 'Owner selection does not force logout');
+  assert(!accountPickerSrc.includes("sessionStorage.setItem('lm_login_hint'"), 'Owner selection does not use login hint redirection');
+
+  // Credential modes
+  assert(accountPickerSrc.includes('credentialMode'), 'AccountPicker computes role-specific credential mode');
+  assert(accountPickerSrc.includes('handleLoginWithPin'), 'AccountPicker supports PIN authentication for cashiers');
+  assert(accountPickerSrc.includes('handleLoginWithPassword'), 'AccountPicker supports password authentication for managers and owners');
+  assert(accountPickerSrc.includes('handleSetupManagerPassword'), 'AccountPicker supports one-time password setup for managers');
+
+  // Text & headings contract
+  assert(accountPickerSrc.includes('Enter your 6-digit PIN'), 'PIN mode presents 6-digit PIN prompt');
+  assert(accountPickerSrc.includes('Enter your account password'), 'Password mode presents account password prompt');
+  assert(accountPickerSrc.includes('Create your Manager password'), 'Setup mode presents Manager password creation title');
+  assert(accountPickerSrc.includes('This password is private to your account.'), 'Setup mode presents privacy explanation');
+  assert(accountPickerSrc.includes('Current 6-Digit PIN'), 'Setup mode requires bootstrap PIN');
+
   console.log('\n====================================================');
   console.log('   ALL STAFF PERMISSIONS & CREDENTIAL TESTS PASSED! ');
   console.log('====================================================\n');

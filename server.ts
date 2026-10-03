@@ -870,6 +870,10 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         return res.status(400).json({ success: false, error: "Target staff ID and password are required." });
       }
 
+      if (!shopId) {
+        return res.status(400).json({ success: false, error: "Shop branch ID is required." });
+      }
+
       const adminSupabase = getSupabaseAdminClient();
       if (!adminSupabase) {
         return res.status(503).json({ success: false, error: "Database service unavailable." });
@@ -889,7 +893,7 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         return res.status(403).json({ success: false, error: "Account is deactivated." });
       }
 
-      if (shopId && targetProfile.shop_id && targetProfile.shop_id !== shopId) {
+      if (targetProfile.shop_id !== shopId) {
         return res.status(403).json({ success: false, error: "Staff member does not belong to this shop branch." });
       }
 
@@ -931,6 +935,15 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         return res.status(403).json({ success: false, error: "Authenticated user identity mismatch." });
       }
 
+      // Audit successful password switch
+      await logStaffAudit(adminSupabase, {
+        shopId: targetProfile.shop_id!,
+        actorId: targetProfile.id,
+        targetId: targetProfile.id,
+        eventType: 'STAFF_LOGIN_PASSWORD',
+        reason: 'Staff terminal switched via password verification'
+      });
+
       return res.json({
         success: true,
         session: authData.session,
@@ -948,6 +961,10 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       const { managerId, pin, newPassword, shopId } = req.body;
       if (!managerId || !pin || !newPassword) {
         return res.status(400).json({ success: false, error: "Manager ID, PIN, and new password are required." });
+      }
+
+      if (!shopId) {
+        return res.status(400).json({ success: false, error: "Shop branch ID is required." });
       }
 
       if (String(newPassword).length < 6) {
@@ -973,6 +990,10 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         return res.status(403).json({ success: false, error: "Account is deactivated." });
       }
 
+      if (managerProfile.shop_id !== shopId) {
+        return res.status(403).json({ success: false, error: "Manager does not belong to this shop branch." });
+      }
+
       if (managerProfile.role !== 'manager') {
         return res.status(403).json({ success: false, error: "Only Manager accounts use this password setup." });
       }
@@ -987,9 +1008,12 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       });
       if (lockoutData?.locked) {
         const remainingMinutes = Number(lockoutData.remaining_minutes) || 15;
+        const remainingSeconds = Number(lockoutData.remaining_seconds) || (remainingMinutes * 60);
         return res.status(429).json({
           success: false,
           locked: true,
+          remainingSeconds,
+          remainingMinutes,
           error: `Too many failed attempts. Try again in ${remainingMinutes} minutes.`
         });
       }
@@ -1026,10 +1050,17 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       }
 
       // Mark password_setup_required = false
-      await adminSupabase.from("profiles").update({
+      const { error: profileFlagErr } = await adminSupabase.from("profiles").update({
         password_setup_required: false,
         updated_at: new Date().toISOString()
       }).eq("id", managerProfile.id);
+
+      if (profileFlagErr) {
+        return res.status(500).json({
+          success: false,
+          error: "Account password was updated, but profile setup flag failed to save. Setup is incomplete."
+        });
+      }
 
       // Audit log (never log password or PIN!)
       await logStaffAudit(adminSupabase, {
@@ -1051,9 +1082,16 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         password: String(newPassword)
       });
 
+      if (signInErr || !authData?.session) {
+        return res.status(500).json({
+          success: false,
+          error: "Password was established, but session sign-in failed. Please sign in with your new password."
+        });
+      }
+
       return res.json({
         success: true,
-        session: authData?.session || null,
+        session: authData.session,
         message: "Manager password created successfully."
       });
     } catch (err: any) {
@@ -1098,6 +1136,10 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
 
       if (verifyErr || !verifyData?.user) {
         return res.status(401).json({ success: false, error: "Incorrect password" });
+      }
+
+      if (verifyData.user.id !== callerProfile.id) {
+        return res.status(403).json({ success: false, error: "Authenticated user identity mismatch." });
       }
 
       // Password verified! Invoke the dedicated service-role only RPC
@@ -1254,7 +1296,7 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       });
 
       const isManagerSelfReset = callerProfile.role === 'manager' && callerProfile.id === targetId;
-      const eventType = isManagerSelfReset ? 'PIN_CHANGED' : 'PIN_RESET';
+      const eventType = isManagerSelfReset ? 'MANAGER_PIN_CHANGED' : 'PIN_RESET_BY_ADMIN';
       const eventReason = isManagerSelfReset ? (reason || 'Manager changed own terminal PIN') : (reason || 'Staff PIN reset by authorized administrator');
 
       const { data, error } = await userScopedClient.rpc('secure_update_staff_profile', {

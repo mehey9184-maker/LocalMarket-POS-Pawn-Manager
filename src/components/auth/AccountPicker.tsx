@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { authApi } from '../../services/supabaseApi';
 import { ProfileRow } from '../../types/supabase';
-import { Loader2, ArrowLeft, Key, ShieldCheck, Lock, X, Calendar } from 'lucide-react';
+import { Loader2, ArrowLeft, Key, ShieldCheck, Lock, X, Calendar, Eye, EyeOff, LockKeyhole } from 'lucide-react';
 
 // Helper to get wall-clock components in shop timezone
 export function getShopComponents(date: Date, timezone: string) {
@@ -341,6 +341,8 @@ export const AccountPicker: React.FC = () => {
     isSwitchingAccount,
     resetSwitchState,
     switchAccountWithPin,
+    loginWithPassword,
+    setupManagerPassword,
     switchState,
     switchError,
     switchTarget,
@@ -353,6 +355,11 @@ export const AccountPicker: React.FC = () => {
   const [selectedStaff, setSelectedStaff] = useState<ProfileRow | null>(null);
   const [offShiftStaff, setOffShiftStaff] = useState<ProfileRow | null>(null);
   const [pin, setPin] = useState('');
+  const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [forcePasswordSetup, setForcePasswordSetup] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [error, setError] = useState<React.ReactNode | null>(null);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
@@ -360,6 +367,17 @@ export const AccountPicker: React.FC = () => {
   const [timeTick, setTimeTick] = useState(0);
 
   const displayedStaff = selectedStaff || offShiftStaff;
+
+  const credentialMode: 'pin' | 'password' | 'manager_password_setup' = useMemo(() => {
+    if (!selectedStaff) return 'pin';
+    if (selectedStaff.role === 'cashier' || selectedStaff.role === 'senior_cashier') {
+      return 'pin';
+    }
+    if (selectedStaff.role === 'manager' && (selectedStaff.password_setup_required || forcePasswordSetup)) {
+      return 'manager_password_setup';
+    }
+    return 'password';
+  }, [selectedStaff, forcePasswordSetup]);
 
   // Auto-refresh the selected staff shift awareness status as time passes
   useEffect(() => {
@@ -396,15 +414,24 @@ export const AccountPicker: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isAccountPickerOpen, setIsAccountPickerOpen, isSwitchingAccount]);
 
+  const handleBack = () => {
+    setSelectedStaff(null);
+    setOffShiftStaff(null);
+    setPin('');
+    setPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowPassword(false);
+    setForcePasswordSetup(false);
+    setError(null);
+    setLockoutUntil(null);
+    setRemainingSeconds(0);
+  };
+
   // Reset local state when picker closes
   useEffect(() => {
     if (!isAccountPickerOpen) {
-      setSelectedStaff(null);
-      setOffShiftStaff(null);
-      setPin('');
-      setError(null);
-      setLockoutUntil(null);
-      setRemainingSeconds(0);
+      handleBack();
     }
   }, [isAccountPickerOpen]);
 
@@ -458,16 +485,6 @@ export const AccountPicker: React.FC = () => {
       return;
     }
 
-    if (staff.role === 'owner') {
-      // Owner selection ends current staff session and returns to login flow
-      if (staff.email) {
-        sessionStorage.setItem('lm_login_hint', staff.email);
-      }
-      setIsAccountPickerOpen(false);
-      logout();
-      return;
-    }
-
     const timezone = (shopProfile as any)?.timezone || 'Africa/Johannesburg';
     const status = evaluateShiftStatus(staff, timezone);
 
@@ -480,6 +497,11 @@ export const AccountPicker: React.FC = () => {
     }
     
     setPin('');
+    setPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowPassword(false);
+    setForcePasswordSetup(false);
     setError(null);
 
     // Restore any existing session lockout timestamp for this staff
@@ -506,19 +528,10 @@ export const AccountPicker: React.FC = () => {
     }
   };
 
-  const handleBack = () => {
-    setSelectedStaff(null);
-    setOffShiftStaff(null);
-    setPin('');
-    setError(null);
-    setLockoutUntil(null);
-    setRemainingSeconds(0);
-  };
-
   const isLocked = remainingSeconds > 0;
   const isShiftLocked = shiftInfo && shiftInfo.status !== 'allowed';
 
-  const handleLogin = async () => {
+  const handleLoginWithPin = async () => {
     if (!selectedStaff || isLocked || isAuthenticating || pin.length !== 6) return;
     
     // Security check again before calling switchAccountWithPin
@@ -559,14 +572,111 @@ export const AccountPicker: React.FC = () => {
         setActiveTab('sell');
       }
       setIsAccountPickerOpen(false);
-      setSelectedStaff(null);
-      setOffShiftStaff(null); // ALSO CLEAR THIS
-      setPin('');
-      setLockoutUntil(null);
-      setRemainingSeconds(0);
+      handleBack();
       resetSwitchState();
     } catch (err: any) {
       setError(translateServerError(err.message || 'Connection error during authentication'));
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const handleLoginWithPassword = async () => {
+    if (!selectedStaff || isAuthenticating || !password.trim()) return;
+
+    const timezone = (shopProfile as any)?.timezone || 'Africa/Johannesburg';
+    const shiftInfoNow = evaluateShiftStatus(selectedStaff, timezone);
+    if (shiftInfoNow.status !== 'allowed') return;
+
+    setIsAuthenticating(true);
+    setError(null);
+
+    try {
+      const res = await loginWithPassword({
+        targetStaffId: selectedStaff.id,
+        targetShopId: selectedStaff.shop_id || '',
+        password,
+        staffName: selectedStaff.full_name
+      });
+
+      if (!res.success) {
+        if (res.requirePasswordSetup) {
+          setForcePasswordSetup(true);
+          setPassword('');
+          setError(null);
+          return;
+        }
+        setError(translateServerError(res.error || 'Incorrect password.'));
+        return;
+      }
+
+      showToast('Welcome Back', `Logged in as ${selectedStaff.full_name}`, 'success');
+      setIsAccountPickerOpen(false);
+      handleBack();
+      resetSwitchState();
+    } catch (err: any) {
+      setError(translateServerError(err.message || 'Connection error during authentication'));
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const handleSetupManagerPassword = async () => {
+    if (!selectedStaff || isAuthenticating || isLocked) return;
+
+    if (pin.length !== 6) {
+      setError('Please enter your 6-digit PIN.');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    const timezone = (shopProfile as any)?.timezone || 'Africa/Johannesburg';
+    const shiftInfoNow = evaluateShiftStatus(selectedStaff, timezone);
+    if (shiftInfoNow.status !== 'allowed') return;
+
+    setIsAuthenticating(true);
+    setError(null);
+
+    try {
+      const res = await setupManagerPassword({
+        managerId: selectedStaff.id,
+        shopId: selectedStaff.shop_id || '',
+        pin,
+        newPassword,
+        staffName: selectedStaff.full_name
+      });
+
+      if (!res.success) {
+        if (res.locked) {
+          const seconds = res.remainingSeconds || 900;
+          const until = Date.now() + seconds * 1000;
+          setLockoutUntil(until);
+          setRemainingSeconds(seconds);
+          try {
+            sessionStorage.setItem(`pin_lockout_${selectedStaff.id}`, String(until));
+          } catch {}
+          setError(translateServerError(res.error || 'Too many failed attempts.'));
+        } else {
+          setError(translateServerError(res.error || 'Failed to establish password.'));
+        }
+        return;
+      }
+
+      showToast('Password Created', `Welcome to your Manager account, ${selectedStaff.full_name}`, 'success');
+      setIsAccountPickerOpen(false);
+      handleBack();
+      resetSwitchState();
+    } catch (err: any) {
+      setError(translateServerError(err.message || 'Connection error during password setup'));
     } finally {
       setIsAuthenticating(false);
     }
@@ -583,8 +693,6 @@ export const AccountPicker: React.FC = () => {
       onClick={() => !isSwitchingAccount && setIsAccountPickerOpen(false)}
     >
       {isSwitchingAccount ? (
-        // ... (existing isSwitchingAccount rendering block)
-        // [Existing block]
         switchState === 'error' ? (
           <div className="text-center space-y-6 flex flex-col items-center max-w-md w-full animate-auth-fade" onClick={(e) => e.stopPropagation()}>
             <div className="w-20 h-20 rounded-full bg-red-50 border border-red-100 flex items-center justify-center shrink-0 text-[#C85A32] shadow-sm">
@@ -616,10 +724,7 @@ export const AccountPicker: React.FC = () => {
                     if (res && res.success) {
                       showToast('Welcome Back', `Logged in as ${switchTarget?.staffName || selectedStaff?.full_name || 'Staff'}`, 'success');
                       setIsAccountPickerOpen(false);
-                      setSelectedStaff(null);
-                      setPin('');
-                      setLockoutUntil(null);
-                      setRemainingSeconds(0);
+                      handleBack();
                       resetSwitchState();
                     } else {
                       showToast('Switch Failed', res?.error || 'Failed to complete switch', 'error');
@@ -643,9 +748,7 @@ export const AccountPicker: React.FC = () => {
                   try {
                     await cancelSwitchAccount();
                     setIsAccountPickerOpen(false);
-                    setSelectedStaff(null);
-                    setOffShiftStaff(null); // ALSO CLEAR THIS
-                    setPin('');
+                    handleBack();
                   } catch (err: any) {
                     showToast('Error', err.message || 'Failed to cancel', 'error');
                   }
@@ -677,7 +780,7 @@ export const AccountPicker: React.FC = () => {
                 Signing in as <span className="font-bold">{(selectedStaff || currentProfile)?.full_name}</span>…
               </p>
               <p className="text-stone-400 text-sm mt-1">
-                {switchState === 'authenticating' && 'Checking PIN…'}
+                {switchState === 'authenticating' && (selectedStaff?.role === 'manager' || selectedStaff?.role === 'owner' ? 'Authenticating…' : 'Checking PIN…')}
                 {switchState === 'loading_profile' && 'Getting your workspace ready…'}
                 {switchState === 'acquiring_terminal' && 'Almost ready…'}
                 {switchState === 'ready' && 'Ready.'}
@@ -766,7 +869,6 @@ export const AccountPicker: React.FC = () => {
           <ShiftLocked staff={displayedStaff!} shiftInfo={shiftInfo!} timezone={(shopProfile as any)?.timezone || 'Africa/Johannesburg'} onBack={handleBack} />
         ) : selectedStaff ? (
           <div className="max-w-md mx-auto">
-            {/* PIN ENTRY FORM ... */}
             <button
               onClick={handleBack}
               className="flex items-center gap-2 text-xs font-semibold text-stone-500 hover:text-stone-900 transition-colors mb-6 group cursor-pointer"
@@ -775,121 +877,334 @@ export const AccountPicker: React.FC = () => {
               <span>Back to staff list</span>
             </button>
 
-            <div className="flex flex-col items-center text-center mb-6">
-              <div className="w-16 h-16 rounded-full bg-stone-100 border-2 border-stone-200 flex items-center justify-center mb-3 overflow-hidden shadow-xs">
-                {selectedStaff.avatar_url ? (
-                  <img src={selectedStaff.avatar_url} alt={selectedStaff.full_name || ''} className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-xl font-bold text-stone-600">{getInitials(selectedStaff.full_name)}</span>
-                )}
+            {/* 1. PIN AUTHENTICATION FORM (Cashier & Senior Cashier) */}
+            {credentialMode === 'pin' && (
+              <div>
+                <div className="flex flex-col items-center text-center mb-6">
+                  <div className="w-16 h-16 rounded-full bg-stone-100 border-2 border-stone-200 flex items-center justify-center mb-3 overflow-hidden shadow-xs">
+                    {selectedStaff.avatar_url ? (
+                      <img src={selectedStaff.avatar_url} alt={selectedStaff.full_name || ''} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-xl font-bold text-stone-600">{getInitials(selectedStaff.full_name)}</span>
+                    )}
+                  </div>
+                  <h2 className="font-headline font-bold text-2xl text-stone-900 tracking-tight">Welcome back, {selectedStaff.full_name}</h2>
+                  <p className="text-xs text-stone-500 mt-1">Enter your 6-digit PIN</p>
+                </div>
+                
+                <div className="space-y-5">
+                  {isLocked && (
+                    <div
+                      role="alert"
+                      aria-live="polite"
+                      className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center space-y-2 animate-auth-fade"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs text-amber-900">Too many failed attempts</h4>
+                        <p className="text-[11px] text-amber-700 mt-0.5">
+                          Please try again when the timer ends.
+                        </p>
+                      </div>
+                      <div className="pt-1">
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-stone-500 block mb-1">
+                          Try again in
+                        </span>
+                        <div className="inline-block bg-white border border-amber-200 rounded-xl px-4 py-1 font-mono text-xl font-bold tracking-wider text-amber-700 shadow-inner">
+                          {formatTime(remainingSeconds)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="relative">
+                    <Key className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${isLocked ? 'text-stone-300' : 'text-stone-400'}`} />
+                    <input
+                      type="password"
+                      disabled={isLocked || isAuthenticating}
+                      value={pin}
+                      onChange={(e) => !isLocked && setPin(e.target.value.replace(/\D/g, '').substring(0, 6))}
+                      onKeyDown={(e) => e.key === 'Enter' && !isLocked && handleLoginWithPin()}
+                      placeholder={isLocked ? '••••••' : '6-Digit PIN'}
+                      autoFocus={!isLocked}
+                      aria-label="6-Digit PIN"
+                      className={`w-full h-12 border rounded-xl pl-12 pr-4 text-center text-xl tracking-[0.5em] font-mono transition-all outline-none ${
+                        isLocked
+                          ? 'bg-stone-100 border-stone-200 text-stone-400 cursor-not-allowed opacity-60'
+                          : 'bg-stone-50 border-stone-200 text-stone-900 focus:border-[#C85A32] focus:bg-white focus:ring-2 focus:ring-[#C85A32]/20 placeholder:text-stone-400'
+                      }`}
+                    />
+                  </div>
+
+                  {!isLocked && error && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2.5 animate-auth-fade">
+                      <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5 text-white font-bold text-[10px]">
+                        !
+                      </div>
+                      <div className="text-xs text-red-600 font-medium leading-relaxed">{error}</div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleLoginWithPin}
+                    disabled={isLocked || isAuthenticating || pin.length !== 6}
+                    aria-disabled={isLocked || isAuthenticating || pin.length !== 6}
+                    className={`w-full h-12 font-bold rounded-xl flex items-center justify-center gap-2.5 text-sm transition-all ${
+                      isLocked
+                        ? 'bg-stone-100 border border-stone-200 text-stone-400 cursor-not-allowed opacity-60'
+                        : 'bg-[#C85A32] hover:bg-[#B84E27] disabled:bg-stone-200 disabled:text-stone-400 text-white shadow-xs active:scale-[0.98] cursor-pointer'
+                    }`}
+                  >
+                    {isAuthenticating ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : isLocked ? (
+                      <>
+                        <Lock className="w-4 h-4 text-stone-400" />
+                        <span>Try again in {formatTime(remainingSeconds)}</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>Continue</span>
+                      </>
+                    )}
+                  </button>
+                  
+                  <div className="flex justify-center gap-1.5 mt-3">
+                    {[...Array(6)].map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-2.5 h-2.5 rounded-full border transition-all duration-200 ${
+                          isLocked
+                            ? 'bg-transparent border-stone-200'
+                            : i < pin.length
+                            ? 'bg-[#C85A32] border-[#C85A32] scale-110'
+                            : 'bg-transparent border-stone-300'
+                        }`}
+                      ></div>
+                    ))}
+                  </div>
+
+                  <p className="text-[11px] text-stone-500 text-center mt-3 font-normal">
+                    Forgot your PIN? Ask your Manager or Owner to reset it under Staff Settings.
+                  </p>
+                </div>
               </div>
-              <h2 className="font-headline font-bold text-2xl text-stone-900 tracking-tight">Welcome back, {selectedStaff.full_name}</h2>
-              <p className="text-xs text-stone-500 mt-1">Enter your 6-digit PIN</p>
-            </div>
-            
-            <div className="space-y-5">
-              {/* LOCKOUT DISPLAY BANNER ... */}
-              {isLocked && (
-                <div
-                  role="alert"
-                  aria-live="polite"
-                  className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center space-y-2 animate-auth-fade"
-                >
-                  <div className="w-8 h-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
-                    <Lock className="w-4 h-4" />
+            )}
+
+            {/* 2. PASSWORD AUTHENTICATION FORM (Established Manager & Owner) */}
+            {credentialMode === 'password' && (
+              <div>
+                <div className="flex flex-col items-center text-center mb-6">
+                  <div className="w-16 h-16 rounded-full bg-stone-100 border-2 border-stone-200 flex items-center justify-center mb-3 overflow-hidden shadow-xs">
+                    {selectedStaff.avatar_url ? (
+                      <img src={selectedStaff.avatar_url} alt={selectedStaff.full_name || ''} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-xl font-bold text-stone-600">{getInitials(selectedStaff.full_name)}</span>
+                    )}
                   </div>
+                  <h2 className="font-headline font-bold text-2xl text-stone-900 tracking-tight">Welcome back, {selectedStaff.full_name}</h2>
+                  <p className="text-xs text-stone-500 mt-1">Enter your account password</p>
+                </div>
+
+                <div className="space-y-5">
+                  <div className="relative">
+                    <LockKeyhole className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-400" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      disabled={isAuthenticating}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleLoginWithPassword()}
+                      placeholder="Account Password"
+                      autoFocus
+                      aria-label="Account Password"
+                      className="w-full h-12 border rounded-xl pl-12 pr-12 text-base font-medium transition-all outline-none bg-stone-50 border-stone-200 text-stone-900 focus:border-[#C85A32] focus:bg-white focus:ring-2 focus:ring-[#C85A32]/20 placeholder:text-stone-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-colors p-1"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+
+                  {error && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2.5 animate-auth-fade">
+                      <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5 text-white font-bold text-[10px]">
+                        !
+                      </div>
+                      <div className="text-xs text-red-600 font-medium leading-relaxed">{error}</div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleLoginWithPassword}
+                    disabled={isAuthenticating || !password.trim()}
+                    aria-disabled={isAuthenticating || !password.trim()}
+                    className="w-full h-12 font-bold rounded-xl flex items-center justify-center gap-2.5 text-sm transition-all bg-[#C85A32] hover:bg-[#B84E27] disabled:bg-stone-200 disabled:text-stone-400 text-white shadow-xs active:scale-[0.98] cursor-pointer"
+                  >
+                    {isAuthenticating ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>Continue</span>
+                      </>
+                    )}
+                  </button>
+
+                  <p className="text-[11px] text-stone-500 text-center mt-3 font-normal">
+                    Forgot your password? Sign out to use password recovery via email.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 3. MANAGER ONE-TIME PASSWORD SETUP FORM */}
+            {credentialMode === 'manager_password_setup' && (
+              <div>
+                <div className="flex flex-col items-center text-center mb-6">
+                  <div className="w-16 h-16 rounded-full bg-stone-100 border-2 border-stone-200 flex items-center justify-center mb-3 overflow-hidden shadow-xs">
+                    {selectedStaff.avatar_url ? (
+                      <img src={selectedStaff.avatar_url} alt={selectedStaff.full_name || ''} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-xl font-bold text-stone-600">{getInitials(selectedStaff.full_name)}</span>
+                    )}
+                  </div>
+                  <h2 className="font-headline font-bold text-2xl text-stone-900 tracking-tight">Create your Manager password</h2>
+                  <p className="text-xs text-stone-500 mt-1">This password is private to your account.</p>
+                </div>
+
+                <div className="space-y-4">
+                  {isLocked && (
+                    <div
+                      role="alert"
+                      aria-live="polite"
+                      className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center space-y-2 animate-auth-fade"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs text-amber-900">Too many failed attempts</h4>
+                        <p className="text-[11px] text-amber-700 mt-0.5">
+                          Please try again when the timer ends.
+                        </p>
+                      </div>
+                      <div className="pt-1">
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-stone-500 block mb-1">
+                          Try again in
+                        </span>
+                        <div className="inline-block bg-white border border-amber-200 rounded-xl px-4 py-1 font-mono text-xl font-bold tracking-wider text-amber-700 shadow-inner">
+                          {formatTime(remainingSeconds)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 1. Enter bootstrap PIN */}
                   <div>
-                    <h4 className="font-bold text-xs text-amber-900">Too many failed attempts</h4>
-                    <p className="text-[11px] text-amber-700 mt-0.5">
-                      Please try again when the timer ends.
-                    </p>
-                  </div>
-                  <div className="pt-1">
-                    <span className="text-[9px] font-bold uppercase tracking-widest text-stone-500 block mb-1">
-                      Try again in
-                    </span>
-                    <div className="inline-block bg-white border border-amber-200 rounded-xl px-4 py-1 font-mono text-xl font-bold tracking-wider text-amber-700 shadow-inner">
-                      {formatTime(remainingSeconds)}
+                    <label className="block text-xs font-semibold text-stone-700 mb-1.5">
+                      Current 6-Digit PIN
+                    </label>
+                    <div className="relative">
+                      <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                      <input
+                        type="password"
+                        disabled={isLocked || isAuthenticating}
+                        value={pin}
+                        onChange={(e) => !isLocked && setPin(e.target.value.replace(/\D/g, '').substring(0, 6))}
+                        placeholder="••••••"
+                        autoFocus={!isLocked}
+                        aria-label="Current 6-Digit PIN"
+                        className="w-full h-11 border rounded-xl pl-10 pr-4 text-base tracking-widest font-mono transition-all outline-none bg-stone-50 border-stone-200 text-stone-900 focus:border-[#C85A32] focus:bg-white focus:ring-2 focus:ring-[#C85A32]/20 placeholder:text-stone-400"
+                      />
                     </div>
                   </div>
-                </div>
-              )}
 
-              {/* PIN INPUT ... */}
-              <div className="relative">
-                <Key className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${isLocked ? 'text-stone-300' : 'text-stone-400'}`} />
-                <input
-                  type="password"
-                  disabled={isLocked || isAuthenticating}
-                  value={pin}
-                  onChange={(e) => !isLocked && setPin(e.target.value.replace(/\D/g, '').substring(0, 6))}
-                  onKeyDown={(e) => e.key === 'Enter' && !isLocked && handleLogin()}
-                  placeholder={isLocked ? '••••••' : '6-Digit PIN'}
-                  autoFocus={!isLocked}
-                  aria-label="6-Digit PIN"
-                  className={`w-full h-12 border rounded-xl pl-12 pr-4 text-center text-xl tracking-[0.5em] font-mono transition-all outline-none ${
-                    isLocked
-                      ? 'bg-stone-100 border-stone-200 text-stone-400 cursor-not-allowed opacity-60'
-                      : 'bg-stone-50 border-stone-200 text-stone-900 focus:border-[#C85A32] focus:bg-white focus:ring-2 focus:ring-[#C85A32]/20 placeholder:text-stone-400'
-                  }`}
-                />
-              </div>
-
-              {/* STANDARD NON-LOCKOUT ERROR ... */}
-              {!isLocked && error && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2.5 animate-auth-fade">
-                  <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5 text-white font-bold text-[10px]">
-                    !
+                  {/* 2. New Password */}
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-700 mb-1.5">
+                      New Password (min. 6 characters)
+                    </label>
+                    <div className="relative">
+                      <LockKeyhole className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        disabled={isAuthenticating}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="Create new password"
+                        aria-label="New Password"
+                        className="w-full h-11 border rounded-xl pl-10 pr-10 text-sm font-medium transition-all outline-none bg-stone-50 border-stone-200 text-stone-900 focus:border-[#C85A32] focus:bg-white focus:ring-2 focus:ring-[#C85A32]/20 placeholder:text-stone-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition-colors p-1"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-xs text-red-600 font-medium leading-relaxed">{error}</div>
+
+                  {/* 3. Confirm Password */}
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-700 mb-1.5">
+                      Confirm Password
+                    </label>
+                    <div className="relative">
+                      <LockKeyhole className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        disabled={isAuthenticating}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSetupManagerPassword()}
+                        placeholder="Repeat new password"
+                        aria-label="Confirm Password"
+                        className="w-full h-11 border rounded-xl pl-10 pr-4 text-sm font-medium transition-all outline-none bg-stone-50 border-stone-200 text-stone-900 focus:border-[#C85A32] focus:bg-white focus:ring-2 focus:ring-[#C85A32]/20 placeholder:text-stone-400"
+                      />
+                    </div>
+                  </div>
+
+                  {error && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2.5 animate-auth-fade">
+                      <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center shrink-0 mt-0.5 text-white font-bold text-[10px]">
+                        !
+                      </div>
+                      <div className="text-xs text-red-600 font-medium leading-relaxed">{error}</div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleSetupManagerPassword}
+                    disabled={isLocked || isAuthenticating || pin.length !== 6 || newPassword.length < 6 || !confirmPassword}
+                    aria-disabled={isLocked || isAuthenticating || pin.length !== 6 || newPassword.length < 6 || !confirmPassword}
+                    className="w-full h-12 font-bold rounded-xl flex items-center justify-center gap-2.5 text-sm transition-all bg-[#C85A32] hover:bg-[#B84E27] disabled:bg-stone-200 disabled:text-stone-400 text-white shadow-xs active:scale-[0.98] cursor-pointer mt-2"
+                  >
+                    {isAuthenticating ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>Create Password</span>
+                      </>
+                    )}
+                  </button>
+
+                  <p className="text-[11px] text-stone-500 text-center mt-2 font-normal">
+                    Once created, you will use this password to switch into your Manager account.
+                  </p>
                 </div>
-              )}
-
-              {/* AUTHORIZE BUTTON ... */}
-              <button
-                onClick={handleLogin}
-                disabled={isLocked || isAuthenticating || pin.length !== 6}
-                aria-disabled={isLocked || isAuthenticating || pin.length !== 6}
-                className={`w-full h-12 font-bold rounded-xl flex items-center justify-center gap-2.5 text-sm transition-all ${
-                  isLocked
-                    ? 'bg-stone-100 border border-stone-200 text-stone-400 cursor-not-allowed opacity-60'
-                    : 'bg-[#C85A32] hover:bg-[#B84E27] disabled:bg-stone-200 disabled:text-stone-400 text-white shadow-xs active:scale-[0.98] cursor-pointer'
-                }`}
-              >
-                {isAuthenticating ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : isLocked ? (
-                  <>
-                    <Lock className="w-4 h-4 text-stone-400" />
-                    <span>Try again in {formatTime(remainingSeconds)}</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Continue</span>
-                  </>
-                )}
-              </button>
-              
-              <div className="flex justify-center gap-1.5 mt-3">
-                {[...Array(6)].map((_, i) => (
-                  <div
-                    key={i}
-                    className={`w-2.5 h-2.5 rounded-full border transition-all duration-200 ${
-                      isLocked
-                        ? 'bg-transparent border-stone-200'
-                        : i < pin.length
-                        ? 'bg-[#C85A32] border-[#C85A32] scale-110'
-                        : 'bg-transparent border-stone-300'
-                    }`}
-                  ></div>
-                ))}
               </div>
-
-              <p className="text-[11px] text-stone-500 text-center mt-3 font-normal">
-                Forgot your PIN? Ask your Manager or Owner to reset it under Staff Settings.
-              </p>
-            </div>
+            )}
           </div>
         ) : null}
         </div>

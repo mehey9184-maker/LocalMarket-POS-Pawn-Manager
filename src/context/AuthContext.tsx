@@ -46,7 +46,8 @@ interface AuthContextType {
     shopId: string;
     pin: string;
     newPassword: string;
-  }) => Promise<{ success: boolean; error?: string }>;
+    staffName?: string;
+  }) => Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }>;
   users: ProfileRow[];
   isAccountPickerOpen: boolean;
   setIsAccountPickerOpen: (open: boolean) => void;
@@ -677,22 +678,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     shopId: string;
     pin: string;
     newPassword: string;
-  }): Promise<{ success: boolean; error?: string }> => {
+    staffName?: string;
+  }): Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }> => {
+    if (switchOperationRef.current) {
+      return { success: false, error: 'A switch is already in progress' };
+    }
+
+    switchOperationRef.current = true;
+    setSwitchState('authenticating');
+    setSwitchTarget({
+      targetStaffId: params.managerId,
+      targetShopId: params.shopId,
+      cashierCode: '',
+      staffName: params.staffName || 'Manager'
+    });
+    setSwitchError(null);
+
     try {
       const res = await authApi.setupManagerPassword(params);
       if (!res.success) {
+        setSwitchState('idle');
+        setSwitchTarget(null);
         return res;
       }
+
+      const currentUser = await authApi.getUser();
+      if (!currentUser || currentUser.id !== params.managerId) {
+        const errMessage = 'Security mismatch: Authenticated identity does not match.';
+        setSwitchState('error');
+        setSwitchError(errMessage);
+        return { success: false, error: errMessage };
+      }
+
       const stepRes = await completeSwitchSteps(params.managerId, params.shopId, '');
       if (!stepRes.success) {
-        return stepRes;
+        return { success: false, error: stepRes.error };
       }
+
       setSwitchState('ready');
       setIsAccountPickerOpen(false);
       await refreshProfile();
       return { success: true };
     } catch (err: any) {
-      return { success: false, error: err?.message || 'Password setup failed' };
+      const errMsg = err?.message || 'Password setup failed';
+      setSwitchState('error');
+      setSwitchError(errMsg);
+      return { success: false, error: errMsg };
+    } finally {
+      switchOperationRef.current = false;
     }
   };
 

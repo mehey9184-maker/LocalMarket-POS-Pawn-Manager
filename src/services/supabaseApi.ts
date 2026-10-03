@@ -260,9 +260,9 @@ export const authApi = {
     }
   },
 
-  async setupManagerPassword(params: { managerId: string; pin: string; newPassword: string; shopId?: string }): Promise<{ success: boolean; error?: string }> {
+  async setupManagerPassword(params: { managerId: string; pin: string; newPassword: string; shopId?: string }): Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }> {
     try {
-      const result = await apiPost<{ success: boolean; session?: any; error?: string }>(
+      const result = await apiPost<{ success: boolean; locked?: boolean; remainingSeconds?: number; session?: any; error?: string }>(
         '/api/auth/setup-manager-password',
         params
       );
@@ -270,13 +270,24 @@ export const authApi = {
       if (!result.ok || !result.data?.success) {
         return {
           success: false,
+          locked: result.data?.locked,
+          remainingSeconds: result.data?.remainingSeconds,
           error: result.data?.error || result.error || 'Failed to setup manager password.'
         };
       }
 
       const supabase = getSupabase();
-      if (supabase && result.data?.session) {
-        await supabase.auth.setSession(result.data.session);
+      if (!supabase) {
+        return { success: false, error: 'Supabase client is not initialized.' };
+      }
+
+      if (!result.data?.session) {
+        return { success: false, error: 'Session was not returned after password setup.' };
+      }
+
+      const { error: sessionErr } = await supabase.auth.setSession(result.data.session);
+      if (sessionErr) {
+        return { success: false, error: `Failed to install session: ${sessionErr.message}` };
       }
 
       return { success: true };
