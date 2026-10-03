@@ -53,7 +53,7 @@ export async function runPhase2jSecurityAndReservedStockTests() {
   const serverPath = path.join(process.cwd(), 'server.ts');
   const serverSrc = fs.readFileSync(serverPath, 'utf8');
 
-  const checkoutMigrationPath = path.join(process.cwd(), 'supabase/migrations/20260924080000_complete_retail_sale.sql');
+  const checkoutMigrationPath = path.join(process.cwd(), 'supabase/migrations/20261003000000_enforce_reserved_stock_cashier_authorization.sql');
   const checkoutMigrationSql = fs.readFileSync(checkoutMigrationPath, 'utf8');
 
   // =========================================================================
