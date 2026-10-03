@@ -503,7 +503,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (finalProfile.shop_id !== targetShopId) {
         throw new Error('Atomic verification failed: Profile shop ID mismatch.');
       }
-      if (finalProfile.cashier_code !== cashierCode) {
+      if (cashierCode && finalProfile.cashier_code !== cashierCode) {
         throw new Error('Atomic verification failed: Profile cashier code mismatch.');
       }
       if (finalProfile.is_active !== true) {

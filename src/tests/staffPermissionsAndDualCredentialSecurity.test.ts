@@ -195,6 +195,151 @@ export function runStaffPermissionsAndDualCredentialSecurityTests() {
   assert(accountPickerSrc.includes('This password is private to your account.'), 'Setup mode presents privacy explanation');
   assert(accountPickerSrc.includes('Current 6-Digit PIN'), 'Setup mode requires bootstrap PIN');
 
+  // =========================================================================
+  // 5. ACCOUNT-SWITCH ATOMIC IDENTITY & CASHIER CODE INVARIANTS
+  // =========================================================================
+  console.log('\n--- 5. Account-Switch Atomic Identity & Cashier Code Invariants ---');
+
+  const authContextPath = path.join(process.cwd(), 'src/context/AuthContext.tsx');
+  const authContextSrc = fs.readFileSync(authContextPath, 'utf8');
+
+  assert(
+    authContextSrc.includes('if (cashierCode && finalProfile.cashier_code !== cashierCode)'),
+    'AuthContext conditionally checks cashier_code only when cashierCode is provided'
+  );
+
+  // Simulation validator replicating exact logic in completeSwitchSteps
+  function validateSwitchInvariants(params: {
+    targetStaffId: string;
+    targetShopId: string;
+    cashierCode: string;
+    finalUser: { id: string } | null;
+    finalProfile: { id: string; shop_id: string; cashier_code?: string; is_active: boolean } | null;
+    currentUser: { id: string } | null;
+    freshProfile: { id: string } | null;
+  }) {
+    const { targetStaffId, targetShopId, cashierCode, finalUser, finalProfile, currentUser, freshProfile } = params;
+    if (!finalUser || finalUser.id !== targetStaffId) {
+      throw new Error('Atomic verification failed: Supabase user ID mismatch.');
+    }
+    if (!finalProfile || finalProfile.id !== targetStaffId) {
+      throw new Error('Atomic verification failed: Profile ID mismatch.');
+    }
+    if (finalProfile.shop_id !== targetShopId) {
+      throw new Error('Atomic verification failed: Profile shop ID mismatch.');
+    }
+    if (cashierCode && finalProfile.cashier_code !== cashierCode) {
+      throw new Error('Atomic verification failed: Profile cashier code mismatch.');
+    }
+    if (finalProfile.is_active !== true) {
+      throw new Error('Atomic verification failed: Target profile is not active.');
+    }
+    if (!currentUser || currentUser.id !== targetStaffId) {
+      throw new Error('Atomic verification failed: React user queue mismatch.');
+    }
+    if (!freshProfile || freshProfile.id !== targetStaffId) {
+      throw new Error('Atomic verification failed: React profile queue mismatch.');
+    }
+    return true;
+  }
+
+  // Regression Test 1: PIN switch with mismatched cashier code fails
+  let pinMismatchThrown = false;
+  try {
+    validateSwitchInvariants({
+      targetStaffId: 'staff-123',
+      targetShopId: 'shop-abc',
+      cashierCode: 'CSH-02',
+      finalUser: { id: 'staff-123' },
+      finalProfile: { id: 'staff-123', shop_id: 'shop-abc', cashier_code: 'CSH-01', is_active: true },
+      currentUser: { id: 'staff-123' },
+      freshProfile: { id: 'staff-123' }
+    });
+  } catch (err: any) {
+    if (err.message.includes('Profile cashier code mismatch')) {
+      pinMismatchThrown = true;
+    }
+  }
+  assert(pinMismatchThrown, 'PIN switch fails when provided cashierCode does not match profile cashier_code');
+  console.log('[PASS] Test — PIN switch requires cashier code match');
+
+  // Regression Test 2: PIN switch with matching cashier code succeeds
+  const pinMatchResult = validateSwitchInvariants({
+    targetStaffId: 'staff-123',
+    targetShopId: 'shop-abc',
+    cashierCode: 'CSH-01',
+    finalUser: { id: 'staff-123' },
+    finalProfile: { id: 'staff-123', shop_id: 'shop-abc', cashier_code: 'CSH-01', is_active: true },
+    currentUser: { id: 'staff-123' },
+    freshProfile: { id: 'staff-123' }
+  });
+  assert(pinMatchResult === true, 'PIN switch succeeds when cashierCode matches');
+  console.log('[PASS] Test — PIN switch succeeds when cashier code matches');
+
+  // Regression Test 3: Password switch with empty cashierCode does NOT fail on cashier_code difference
+  const passwordSwitchResult = validateSwitchInvariants({
+    targetStaffId: 'manager-456',
+    targetShopId: 'shop-abc',
+    cashierCode: '', // Password switch does not supply cashier code
+    finalUser: { id: 'manager-456' },
+    finalProfile: { id: 'manager-456', shop_id: 'shop-abc', cashier_code: 'MGR-01', is_active: true },
+    currentUser: { id: 'manager-456' },
+    freshProfile: { id: 'manager-456' }
+  });
+  assert(passwordSwitchResult === true, 'Password switch succeeds with empty cashierCode and does not assert on profile cashier_code');
+  console.log('[PASS] Test — Password switch does not require cashier code');
+
+  // Regression Test 4: Password switch still strictly verifies target user ID, profile ID, shop ID, active status
+  let userMismatchThrown = false;
+  try {
+    validateSwitchInvariants({
+      targetStaffId: 'manager-456',
+      targetShopId: 'shop-abc',
+      cashierCode: '',
+      finalUser: { id: 'wrong-user' },
+      finalProfile: { id: 'manager-456', shop_id: 'shop-abc', is_active: true },
+      currentUser: { id: 'manager-456' },
+      freshProfile: { id: 'manager-456' }
+    });
+  } catch (err: any) {
+    if (err.message.includes('Supabase user ID mismatch')) userMismatchThrown = true;
+  }
+  assert(userMismatchThrown, 'Password switch still enforces finalUser ID matching');
+
+  let shopMismatchThrown = false;
+  try {
+    validateSwitchInvariants({
+      targetStaffId: 'manager-456',
+      targetShopId: 'shop-abc',
+      cashierCode: '',
+      finalUser: { id: 'manager-456' },
+      finalProfile: { id: 'manager-456', shop_id: 'wrong-shop', is_active: true },
+      currentUser: { id: 'manager-456' },
+      freshProfile: { id: 'manager-456' }
+    });
+  } catch (err: any) {
+    if (err.message.includes('Profile shop ID mismatch')) shopMismatchThrown = true;
+  }
+  assert(shopMismatchThrown, 'Password switch still enforces shop ID matching');
+
+  let inactiveMismatchThrown = false;
+  try {
+    validateSwitchInvariants({
+      targetStaffId: 'manager-456',
+      targetShopId: 'shop-abc',
+      cashierCode: '',
+      finalUser: { id: 'manager-456' },
+      finalProfile: { id: 'manager-456', shop_id: 'shop-abc', is_active: false },
+      currentUser: { id: 'manager-456' },
+      freshProfile: { id: 'manager-456' }
+    });
+  } catch (err: any) {
+    if (err.message.includes('Target profile is not active')) inactiveMismatchThrown = true;
+  }
+  assert(inactiveMismatchThrown, 'Password switch still enforces is_active === true');
+
+  console.log('[PASS] Test — Password switch preserves all authoritative identity and security checks');
+
   console.log('\n====================================================');
   console.log('   ALL STAFF PERMISSIONS & CREDENTIAL TESTS PASSED! ');
   console.log('====================================================\n');
