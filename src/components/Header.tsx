@@ -17,6 +17,94 @@ import {
   ArrowLeftRight
 } from 'lucide-react';
 
+export type SearchResultType = 'inventory' | 'loan' | 'customer' | 'seller' | 'sale';
+
+export interface ScoredResult {
+  type: SearchResultType;
+  data: any;
+  score: number;
+}
+
+export function getSearchMatchScore(
+  type: SearchResultType,
+  item: any,
+  query: string
+): number {
+  const q = query.toLowerCase();
+  
+  if (type === 'inventory') {
+    const i = item as InventoryItem;
+    const title = i.title.toLowerCase();
+    const sku = i.sku.toLowerCase();
+    const serial = i.serialOrImei?.toLowerCase() || '';
+    
+    if (sku === q) return 1;
+    if (serial === q) return 2;
+    if (title === q) return 3;
+    if (sku.startsWith(q) || serial.startsWith(q) || title.startsWith(q)) return 4;
+    return 5;
+  }
+  
+  if (type === 'loan') {
+    const l = item as PawnLoan;
+    const ticket = l.ticketNumber.toLowerCase();
+    const id = l.customerIdNumber.toLowerCase();
+    const mobile = l.customerMobile.toLowerCase();
+    const title = l.itemTitle.toLowerCase();
+    const name = l.customerName.toLowerCase();
+    
+    if (ticket === q) return 1;
+    if (id === q) return 2;
+    if (mobile === q) return 3;
+    if (title === q) return 4;
+    if (ticket.startsWith(q) || id.startsWith(q) || mobile.startsWith(q) || name.startsWith(q) || title.startsWith(q)) return 5;
+    return 6;
+  }
+  
+  if (type === 'customer' || type === 'seller') {
+    const p = item as any;
+    const id = p.idNumber.toLowerCase();
+    const mobile = p.mobile.toLowerCase();
+    const name = p.fullName.toLowerCase();
+    
+    if (id === q) return 1;
+    if (mobile === q) return 2;
+    if (name === q) return 3;
+    if (id.startsWith(q) || mobile.startsWith(q) || name.startsWith(q)) return 4;
+    return 5;
+  }
+  
+  if (type === 'sale') {
+    const s = item as any; // SaleTransaction
+    const rec = s.receiptNumber.toLowerCase();
+    
+    if (rec === q) return 1;
+    if (rec.startsWith(q)) return 2;
+    return 3;
+  }
+  
+  return 100;
+}
+
+export function getBestSearchMatch(candidates: ScoredResult[]): ScoredResult | null {
+  if (candidates.length === 0) return null;
+  
+  return [...candidates].sort((a, b) => {
+    if (a.score !== b.score) return a.score - b.score;
+    
+    // Tie-breaker: Inventory → Loan → Sale → Customer → Seller
+    const order: Record<SearchResultType, number> = {
+      inventory: 1,
+      loan: 2,
+      sale: 3,
+      customer: 4,
+      seller: 5
+    };
+    
+    return order[a.type] - order[b.type];
+  })[0];
+}
+
 export function getSearchItemStatus(item: InventoryItem, pawnLoans: PawnLoan[]): {
   type: 'retail' | 'vault' | 'reserved' | 'pawned' | 'sold' | 'other';
   label: string;
@@ -153,116 +241,54 @@ export const Header: React.FC<HeaderProps> = () => {
       i.title.toLowerCase().includes(q) ||
       i.sku.toLowerCase().includes(q) ||
       (i.serialOrImei && i.serialOrImei.toLowerCase().includes(q))
-    ).sort((a, b) => {
-      const aTitle = a.title.toLowerCase();
-      const aSku = a.sku.toLowerCase();
-      const aSerial = a.serialOrImei?.toLowerCase() || '';
-      const bTitle = b.title.toLowerCase();
-      const bSku = b.sku.toLowerCase();
-      const bSerial = b.serialOrImei?.toLowerCase() || '';
-
-      const getScore = (sku: string, serial: string, title: string) => {
-        if (sku === q) return 1;
-        if (serial === q) return 2;
-        if (title === q) return 3;
-        if (sku.startsWith(q) || serial.startsWith(q) || title.startsWith(q)) return 4;
-        return 5;
-      };
-      return getScore(aSku, aSerial, aTitle) - getScore(bSku, bSerial, bTitle);
-    }).slice(0, 3);
+    ).sort((a, b) => 
+      getSearchMatchScore('inventory', a, q) - getSearchMatchScore('inventory', b, q)
+    ).slice(0, 3);
 
     const loanMatches = pawnLoans.filter(l =>
       l.ticketNumber.toLowerCase().includes(q) ||
       l.customerName.toLowerCase().includes(q) ||
       l.customerIdNumber.includes(q) ||
+      l.customerMobile.includes(q) ||
       l.itemTitle.toLowerCase().includes(q)
-    ).sort((a, b) => {
-      const aTicket = a.ticketNumber.toLowerCase();
-      const aId = a.customerIdNumber.toLowerCase();
-      const aMobile = a.customerMobile.toLowerCase();
-      const aTitle = a.itemTitle.toLowerCase();
-      const bTicket = b.ticketNumber.toLowerCase();
-      const bId = b.customerIdNumber.toLowerCase();
-      const bMobile = b.customerMobile.toLowerCase();
-      const bTitle = b.itemTitle.toLowerCase();
-
-      const getScore = (ticket: string, id: string, mobile: string, title: string) => {
-        if (ticket === q) return 1;
-        if (id === q) return 2;
-        if (mobile === q) return 3;
-        if (title === q) return 4;
-        return 5;
-      };
-      return getScore(aTicket, aId, aMobile, aTitle) - getScore(bTicket, bId, bMobile, bTitle);
-    }).slice(0, 3);
+    ).sort((a, b) => 
+      getSearchMatchScore('loan', a, q) - getSearchMatchScore('loan', b, q)
+    ).slice(0, 3);
 
     const customerMatches = customers.filter(c =>
       c.fullName.toLowerCase().includes(q) ||
       c.idNumber.includes(q) ||
       c.mobile.includes(q)
-    ).sort((a, b) => {
-      const aId = a.idNumber.toLowerCase();
-      const aMobile = a.mobile.toLowerCase();
-      const aName = a.fullName.toLowerCase();
-      const bId = b.idNumber.toLowerCase();
-      const bMobile = b.mobile.toLowerCase();
-      const bName = b.fullName.toLowerCase();
-
-      const getScore = (id: string, mobile: string, name: string) => {
-        if (id === q) return 1;
-        if (mobile === q) return 2;
-        if (name === q) return 3;
-        if (id.startsWith(q) || mobile.startsWith(q) || name.startsWith(q)) return 4;
-        return 5;
-      };
-      return getScore(aId, aMobile, aName) - getScore(bId, bMobile, bName);
-    }).slice(0, 3);
+    ).sort((a, b) => 
+      getSearchMatchScore('customer', a, q) - getSearchMatchScore('customer', b, q)
+    ).slice(0, 3);
 
     const sellerMatches = sellers.filter(s =>
       s.fullName.toLowerCase().includes(q) ||
       s.idNumber.includes(q) ||
       s.mobile.includes(q)
-    ).sort((a, b) => {
-      const aId = a.idNumber.toLowerCase();
-      const aMobile = a.mobile.toLowerCase();
-      const aName = a.fullName.toLowerCase();
-      const bId = b.idNumber.toLowerCase();
-      const bMobile = b.mobile.toLowerCase();
-      const bName = b.fullName.toLowerCase();
-
-      const getScore = (id: string, mobile: string, name: string) => {
-        if (id === q) return 1;
-        if (mobile === q) return 2;
-        if (name === q) return 3;
-        if (id.startsWith(q) || mobile.startsWith(q) || name.startsWith(q)) return 4;
-        return 5;
-      };
-      return getScore(aId, aMobile, aName) - getScore(bId, bMobile, bName);
-    }).slice(0, 3);
+    ).sort((a, b) => 
+      getSearchMatchScore('seller', a, q) - getSearchMatchScore('seller', b, q)
+    ).slice(0, 3);
 
     const saleMatches = salesHistory.filter(s =>
       s.receiptNumber.toLowerCase().includes(q)
-    ).sort((a, b) => {
-      const aRec = a.receiptNumber.toLowerCase();
-      const bRec = b.receiptNumber.toLowerCase();
-      if (aRec === q) return -1;
-      if (bRec === q) return 1;
-      if (aRec.startsWith(q)) return -1;
-      if (bRec.startsWith(q)) return 1;
-      return 0;
-    }).slice(0, 2);
+    ).sort((a, b) => 
+      getSearchMatchScore('sale', a, q) - getSearchMatchScore('sale', b, q)
+    ).slice(0, 2);
 
     const totalCount = inventoryMatches.length + loanMatches.length + customerMatches.length + sellerMatches.length + saleMatches.length;
 
-    // Determine the "best" result for Enter behavior
-    let bestMatch: { type: 'inventory' | 'loan' | 'customer' | 'seller' | 'sale'; data: any } | null = null;
-    
-    // Priority order for categories if multiple matches exist with same relative rank
-    if (inventoryMatches.length > 0) bestMatch = { type: 'inventory', data: inventoryMatches[0] };
-    else if (loanMatches.length > 0) bestMatch = { type: 'loan', data: loanMatches[0] };
-    else if (saleMatches.length > 0) bestMatch = { type: 'sale', data: saleMatches[0] };
-    else if (customerMatches.length > 0) bestMatch = { type: 'customer', data: customerMatches[0] };
-    else if (sellerMatches.length > 0) bestMatch = { type: 'seller', data: sellerMatches[0] };
+    // Collect all candidates for global bestMatch selection
+    const allCandidates: ScoredResult[] = [
+      ...inventoryMatches.map(data => ({ type: 'inventory' as const, data, score: getSearchMatchScore('inventory', data, q) })),
+      ...loanMatches.map(data => ({ type: 'loan' as const, data, score: getSearchMatchScore('loan', data, q) })),
+      ...saleMatches.map(data => ({ type: 'sale' as const, data, score: getSearchMatchScore('sale', data, q) })),
+      ...customerMatches.map(data => ({ type: 'customer' as const, data, score: getSearchMatchScore('customer', data, q) })),
+      ...sellerMatches.map(data => ({ type: 'seller' as const, data, score: getSearchMatchScore('seller', data, q) }))
+    ];
+
+    const bestMatch = getBestSearchMatch(allCandidates);
 
     return {
       inventory: inventoryMatches,

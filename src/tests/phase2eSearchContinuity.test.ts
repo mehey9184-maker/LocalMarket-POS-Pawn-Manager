@@ -1,10 +1,11 @@
 import assert from 'node:assert';
-import { getSearchItemStatus } from '../components/Header';
-import { InventoryItem, PawnLoan, SaleTransaction } from '../types';
+import { getSearchItemStatus, getSearchMatchScore, getBestSearchMatch, ScoredResult } from '../components/Header';
+import { InventoryItem, PawnLoan, SaleTransaction, Customer, Seller } from '../types';
 
 /**
  * Phase 2F Universal Search Continuity & Phase 2E Safety Test Suite:
  * Covers Tests 1-3 (Pawn Loan Exact Selection, Identity, No Fabrication) and Tests A-G (Phase 2E Safety & Ambiguity Guard).
+ * And Tests H-N (Global Best-Match Scoring).
  */
 export async function runPhase2eSearchContinuityTests() {
   console.log('=== RUNNING PHASE 2F UNIVERSAL SEARCH CONTINUITY & SAFETY TEST SUITE ===');
@@ -363,7 +364,92 @@ export async function runPhase2eSearchContinuityTests() {
   const matchedSaleDup = resolveMatchingSale(soldItemDup, mockSales);
   assert.strictEqual(matchedSaleDup, undefined, 'Test G: Ambiguous serial guard verified');
 
-  console.log('[PASS] Tests 1-3 & A-G: All Phase 2F Universal Search Continuity & Safety tests passed successfully!');
+  // --- Test H — Exact cross-category match wins ---
+  const queryH = 'PAWN-123';
+  const itemH: InventoryItem = { ...mockInventory[0], title: 'Contains PAWN-123' };
+  const loanH: PawnLoan = { ...mockLoans[0], ticketNumber: 'PAWN-123' };
+  const candidatesH: ScoredResult[] = [
+    { type: 'inventory', data: itemH, score: getSearchMatchScore('inventory', itemH, queryH) },
+    { type: 'loan', data: loanH, score: getSearchMatchScore('loan', loanH, queryH) }
+  ];
+  const bestH = getBestSearchMatch(candidatesH);
+  assert.strictEqual(bestH?.type, 'loan', 'Test H: Exact loan ticket beats inventory title contains');
+  assert.strictEqual(bestH?.score, 1, 'Test H: Exact match has score 1');
+
+  // --- Test I — Exact SKU beats a weak inventory title ---
+  const queryI = 'SKU-ABC';
+  const itemI1: InventoryItem = { ...mockInventory[0], id: 'i1', title: 'Contains SKU-ABC' };
+  const itemI2: InventoryItem = { ...mockInventory[0], id: 'i2', sku: 'SKU-ABC' };
+  const candidatesI: ScoredResult[] = [
+    { type: 'inventory', data: itemI1, score: getSearchMatchScore('inventory', itemI1, queryI) },
+    { type: 'inventory', data: itemI2, score: getSearchMatchScore('inventory', itemI2, queryI) }
+  ];
+  const bestI = getBestSearchMatch(candidatesI);
+  assert.strictEqual(bestI?.data.id, 'i2', 'Test I: Exact SKU beats title contains');
+
+  // --- Test J — Exact customer ID beats seller name contains ---
+  const queryJ = '1234567890';
+  const sellerJ: Seller = { id: 's1', fullName: 'Name contains 1234567890', idNumber: '999', mobile: '000', address: 'addr', createdAt: '2026', verified: true };
+  const customerJ: Customer = { id: 'c1', fullName: 'John', idNumber: '1234567890', mobile: '000', address: 'addr', verified: true, createdAt: '2026', idType: 'RSA Smart ID' };
+  const candidatesJ: ScoredResult[] = [
+    { type: 'seller', data: sellerJ, score: getSearchMatchScore('seller', sellerJ, queryJ) },
+    { type: 'customer', data: customerJ, score: getSearchMatchScore('customer', customerJ, queryJ) }
+  ];
+  const bestJ = getBestSearchMatch(candidatesJ);
+  assert.strictEqual(bestJ?.type, 'customer', 'Test J: Exact customer ID beats seller name contains');
+
+  // --- Test K — Exact receipt beats weak inventory match ---
+  const queryK = 'REC-999';
+  const itemK: InventoryItem = { ...mockInventory[0], title: 'Contains REC-999' };
+  const saleK: SaleTransaction = { ...realSaleA, receiptNumber: 'REC-999' };
+  const candidatesK: ScoredResult[] = [
+    { type: 'inventory', data: itemK, score: getSearchMatchScore('inventory', itemK, queryK) },
+    { type: 'sale', data: saleK, score: getSearchMatchScore('sale', saleK, queryK) }
+  ];
+  const bestK = getBestSearchMatch(candidatesK);
+  assert.strictEqual(bestK?.type, 'sale', 'Test K: Exact receipt beats inventory title contains');
+
+  // --- Test L — Prefix beats contains ---
+  const queryL = 'apple';
+  const itemL1: InventoryItem = { ...mockInventory[0], id: 'l1', title: 'The apple' }; // Contains
+  const itemL2: InventoryItem = { ...mockInventory[0], id: 'l2', title: 'Apple juice' }; // Prefix
+  const candidatesL: ScoredResult[] = [
+    { type: 'inventory', data: itemL1, score: getSearchMatchScore('inventory', itemL1, queryL) },
+    { type: 'inventory', data: itemL2, score: getSearchMatchScore('inventory', itemL2, queryL) }
+  ];
+  const bestL = getBestSearchMatch(candidatesL);
+  assert.strictEqual(bestL?.data.id, 'l2', 'Test L: Prefix beats contains');
+
+  // --- Test M — Deterministic tie break ---
+  const queryM = 'tie';
+  // Inventory "Contains" (Score 5) vs Loan "Starts With" (Score 5)
+  const itemM: InventoryItem = { ...mockInventory[0], title: 'contains-tie-suffix' }; 
+  const loanM: PawnLoan = { ...mockLoans[0], ticketNumber: 'tie-prefix' }; 
+  
+  const scoreInv = getSearchMatchScore('inventory', itemM, queryM);
+  const scoreLoan = getSearchMatchScore('loan', loanM, queryM);
+  
+  const candidatesMReal: ScoredResult[] = [
+    { type: 'loan', data: loanM, score: scoreLoan },
+    { type: 'inventory', data: itemM, score: scoreInv }
+  ];
+  const bestM = getBestSearchMatch(candidatesMReal);
+  assert.strictEqual(scoreInv, 5, 'Test M: Inventory contains should be score 5');
+  assert.strictEqual(scoreLoan, 5, 'Test M: Loan prefix should be score 5');
+  assert.strictEqual(bestM?.type, 'inventory', 'Test M: Inventory beats Loan in tie-break');
+
+  // --- Test N — Enter/action contract ---
+  const queryN = 'action-test';
+  const itemN: InventoryItem = { ...mockInventory[0], sku: 'action-test' };
+  const candidatesN: ScoredResult[] = [
+    { type: 'inventory', data: itemN, score: getSearchMatchScore('inventory', itemN, queryN) }
+  ];
+  const bestN = getBestSearchMatch(candidatesN);
+  assert.ok(bestN, 'Test N: Best match exists');
+  assert.strictEqual(bestN?.type, 'inventory', 'Test N: Type matches');
+  assert.strictEqual(bestN?.data.sku, 'action-test', 'Test N: Data matches');
+
+  console.log('[PASS] Tests 1-3 & A-N: All Phase 2F Universal Search Continuity, Safety & Global Scoring tests passed successfully!');
   console.log('====================================================');
   console.log('   ALL PHASE 2F UNIVERSAL SEARCH TESTS PASSED!');
   console.log('====================================================');
