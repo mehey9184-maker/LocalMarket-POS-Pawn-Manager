@@ -561,26 +561,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     switchOperationRef.current = true;
 
-    setSwitchState('authenticating');
-    setSwitchError(null);
-    setSwitchTarget({
-      targetStaffId: params.targetStaffId,
-      targetShopId: params.targetShopId,
-      cashierCode: params.cashierCode,
-      staffName: params.staffName
-    });
-
     try {
       console.log('[Client Switch] Calling authApi.loginWithPin');
       const res = await authApi.loginWithPin(params.cashierCode, params.pin, params.targetShopId, params.targetStaffId);
       console.log(`[Client Switch] loginWithPin result success: ${res.success}`);
 
       if (!res.success) {
-        console.warn('[Client Switch] loginWithPin failed. Resetting state to idle.');
-        setSwitchState('idle');
-        setSwitchTarget(null);
+        console.warn('[Client Switch] loginWithPin failed. Credential error handled inline.');
         return res;
       }
+
+      // ONLY AFTER successful PIN authentication, begin account-switch transition:
+      setSwitchTarget({
+        targetStaffId: params.targetStaffId,
+        targetShopId: params.targetShopId,
+        cashierCode: params.cashierCode,
+        staffName: params.staffName
+      });
+      setSwitchError(null);
 
       // Verify the authenticated user is really the target, per Point 3
       console.log('[Client Switch] PIN login succeeded on server. Checking current active user...');
@@ -600,7 +598,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log(`[Client Switch] completeSwitchSteps result success: ${stepRes.success}`);
 
       if (!stepRes.success) {
-        // Do NOT immediately destroy the recovery state, remain authenticated to target to allow retry, per Requirement 6
         return { success: false, error: stepRes.error };
       }
 
@@ -610,8 +607,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: any) {
       console.error('[Client Switch] Account switch pipeline failed');
       const errMsg = err?.message || 'Authentication failed';
-      setSwitchState('error');
-      setSwitchError(errMsg);
       return { success: false, error: errMsg };
     } finally {
       switchOperationRef.current = false;
@@ -629,23 +624,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     switchOperationRef.current = true;
-    setSwitchState('authenticating');
-    setSwitchTarget({
-      targetStaffId: params.targetStaffId,
-      targetShopId: params.targetShopId,
-      cashierCode: '',
-      staffName: params.staffName
-    });
-    setSwitchError(null);
 
     try {
       const res = await authApi.loginWithPassword(params.targetStaffId, params.password, params.targetShopId);
 
       if (!res.success) {
-        setSwitchState('idle');
-        setSwitchTarget(null);
         return res;
       }
+
+      // ONLY AFTER successful password authentication, begin account-switch transition:
+      setSwitchTarget({
+        targetStaffId: params.targetStaffId,
+        targetShopId: params.targetShopId,
+        cashierCode: '',
+        staffName: params.staffName
+      });
+      setSwitchError(null);
 
       const currentUser = await authApi.getUser();
       if (!currentUser || currentUser.id !== params.targetStaffId) {
@@ -665,8 +659,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true };
     } catch (err: any) {
       const errMsg = err?.message || 'Authentication failed';
-      setSwitchState('error');
-      setSwitchError(errMsg);
       return { success: false, error: errMsg };
     } finally {
       switchOperationRef.current = false;
@@ -685,22 +677,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     switchOperationRef.current = true;
-    setSwitchState('authenticating');
-    setSwitchTarget({
-      targetStaffId: params.managerId,
-      targetShopId: params.shopId,
-      cashierCode: '',
-      staffName: params.staffName || 'Manager'
-    });
-    setSwitchError(null);
 
     try {
       const res = await authApi.setupManagerPassword(params);
       if (!res.success) {
-        setSwitchState('idle');
-        setSwitchTarget(null);
         return res;
       }
+
+      // ONLY AFTER successful password setup, begin account switch transition:
+      setSwitchTarget({
+        targetStaffId: params.managerId,
+        targetShopId: params.shopId,
+        cashierCode: '',
+        staffName: params.staffName || 'Manager'
+      });
+      setSwitchError(null);
 
       const currentUser = await authApi.getUser();
       if (!currentUser || currentUser.id !== params.managerId) {
@@ -721,8 +712,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true };
     } catch (err: any) {
       const errMsg = err?.message || 'Password setup failed';
-      setSwitchState('error');
-      setSwitchError(errMsg);
       return { success: false, error: errMsg };
     } finally {
       switchOperationRef.current = false;

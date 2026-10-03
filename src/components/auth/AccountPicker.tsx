@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
@@ -219,6 +219,8 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string, now: Da
 }
 // Map server schedule rejection error messages to descriptive, user-friendly copy
 function translateServerError(serverError: string): React.ReactNode {
+  const errLower = serverError.toLowerCase();
+
   if (serverError.includes("This shift starts at")) {
     const shiftTime = serverError.replace("This shift starts at ", "").replace(".", "");
     return (
@@ -243,6 +245,42 @@ function translateServerError(serverError: string): React.ReactNode {
         <p>Your scheduled hours are finished.</p>
       </div>
     );
+  }
+  if (
+    errLower.includes("backend is not reachable") ||
+    errLower.includes("connection error") ||
+    errLower.includes("database service unavailable") ||
+    errLower.includes("failed to fetch") ||
+    errLower.includes("network")
+  ) {
+    return (
+      <div className="space-y-1">
+        <p className="font-bold text-red-700">Connection problem</p>
+        <p>We couldn't verify the password. Check the connection and try again.</p>
+      </div>
+    );
+  }
+  if (errLower.includes("deactivated") || errLower.includes("no longer active")) {
+    return (
+      <div className="space-y-1">
+        <p className="font-bold text-red-700">Account unavailable</p>
+        <p>This staff account is no longer active.</p>
+      </div>
+    );
+  }
+  if (errLower.includes("does not belong to this shop branch")) {
+    return (
+      <div className="space-y-1">
+        <p className="font-bold text-red-700">Account unavailable</p>
+        <p>Staff member does not belong to this shop branch.</p>
+      </div>
+    );
+  }
+  if (serverError === "Incorrect password.") {
+    return "Incorrect password";
+  }
+  if (serverError === "Invalid PIN.") {
+    return "Invalid PIN";
   }
   return serverError;
 }
@@ -365,6 +403,9 @@ export const AccountPicker: React.FC = () => {
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
   const [timeTick, setTimeTick] = useState(0);
+
+  const pinInputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
 
   const displayedStaff = selectedStaff || offShiftStaff;
 
@@ -552,6 +593,7 @@ export const AccountPicker: React.FC = () => {
       });
       
       if (!res.success) {
+        setPin('');
         if (res.locked) {
           const seconds = res.remainingSeconds || 900;
           const until = Date.now() + seconds * 1000;
@@ -563,6 +605,7 @@ export const AccountPicker: React.FC = () => {
           setError(translateServerError(res.error || 'Too many failed attempts.'));
         } else {
           setError(translateServerError(res.error || 'Invalid PIN.'));
+          setTimeout(() => pinInputRef.current?.focus(), 20);
         }
         return;
       }
@@ -575,7 +618,9 @@ export const AccountPicker: React.FC = () => {
       handleBack();
       resetSwitchState();
     } catch (err: any) {
+      setPin('');
       setError(translateServerError(err.message || 'Connection error during authentication'));
+      setTimeout(() => pinInputRef.current?.focus(), 20);
     } finally {
       setIsAuthenticating(false);
     }
@@ -606,7 +651,9 @@ export const AccountPicker: React.FC = () => {
           setError(null);
           return;
         }
+        setPassword('');
         setError(translateServerError(res.error || 'Incorrect password.'));
+        setTimeout(() => passwordInputRef.current?.focus(), 20);
         return;
       }
 
@@ -615,7 +662,9 @@ export const AccountPicker: React.FC = () => {
       handleBack();
       resetSwitchState();
     } catch (err: any) {
+      setPassword('');
       setError(translateServerError(err.message || 'Connection error during authentication'));
+      setTimeout(() => passwordInputRef.current?.focus(), 20);
     } finally {
       setIsAuthenticating(false);
     }
@@ -626,6 +675,7 @@ export const AccountPicker: React.FC = () => {
 
     if (pin.length !== 6) {
       setError('Please enter your 6-digit PIN.');
+      setTimeout(() => pinInputRef.current?.focus(), 20);
       return;
     }
 
@@ -656,6 +706,7 @@ export const AccountPicker: React.FC = () => {
       });
 
       if (!res.success) {
+        setPin('');
         if (res.locked) {
           const seconds = res.remainingSeconds || 900;
           const until = Date.now() + seconds * 1000;
@@ -667,6 +718,7 @@ export const AccountPicker: React.FC = () => {
           setError(translateServerError(res.error || 'Too many failed attempts.'));
         } else {
           setError(translateServerError(res.error || 'Failed to establish password.'));
+          setTimeout(() => pinInputRef.current?.focus(), 20);
         }
         return;
       }
@@ -676,7 +728,9 @@ export const AccountPicker: React.FC = () => {
       handleBack();
       resetSwitchState();
     } catch (err: any) {
+      setPin('');
       setError(translateServerError(err.message || 'Connection error during password setup'));
+      setTimeout(() => pinInputRef.current?.focus(), 20);
     } finally {
       setIsAuthenticating(false);
     }
@@ -922,11 +976,19 @@ export const AccountPicker: React.FC = () => {
                   <div className="relative">
                     <Key className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 transition-colors ${isLocked ? 'text-stone-300' : 'text-stone-400'}`} />
                     <input
+                      ref={pinInputRef}
                       type="password"
                       disabled={isLocked || isAuthenticating}
                       value={pin}
                       onChange={(e) => !isLocked && setPin(e.target.value.replace(/\D/g, '').substring(0, 6))}
-                      onKeyDown={(e) => e.key === 'Enter' && !isLocked && handleLoginWithPin()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (!isLocked && !isAuthenticating && pin.length === 6) {
+                            handleLoginWithPin();
+                          }
+                        }
+                      }}
                       placeholder={isLocked ? '••••••' : '6-Digit PIN'}
                       autoFocus={!isLocked}
                       aria-label="6-Digit PIN"
