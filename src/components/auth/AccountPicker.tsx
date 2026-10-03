@@ -348,7 +348,7 @@ export const AccountPicker: React.FC = () => {
     if (!selectedStaff) return;
     const interval = setInterval(() => {
       setTimeTick(t => t + 1);
-    }, 10000); // Trigger a tick evaluation every 10 seconds
+    }, 1000); // Trigger a tick evaluation every 1 second
     return () => clearInterval(interval);
   }, [selectedStaff]);
 
