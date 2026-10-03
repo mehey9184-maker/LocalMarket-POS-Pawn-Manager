@@ -33,20 +33,28 @@ function getShopComponents(date: Date, timezone: string) {
 
 // Helper to construct an absolute instant Date from wall-clock components
 function getInstantFromShopComponents(c: {year: number, month: number, day: number, hour: number, minute: number}, timezone: string): Date {
-  // Construct a Date string representing the wall-clock time and interpret it in the target TZ
-  // This is a robust native way to parse timezone-specific times
-  const dateString = `${c.year}-${String(c.month).padStart(2, '0')}-${String(c.day).padStart(2, '0')}T${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}:00`;
-  const d = new Date(dateString + 'Z'); // Parse as UTC
+  // 1. Create a UTC date as if the wall-clock time were UTC
+  const utcDate = new Date(Date.UTC(c.year, c.month - 1, c.day, c.hour, c.minute, 0));
   
-  // Adjust for the offset of the target timezone at this instant
+  // 2. See what wall-clock time that UTC date results in for the target timezone
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
-    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
   });
   
-  // This is a common pattern to handle timezone offsets natively without libraries
-  const offset = (new Date(d.toLocaleString('en-US', { timeZone: timezone })).getTime() - d.getTime());
-  return new Date(d.getTime() - offset);
+  const parts = formatter.formatToParts(utcDate);
+  const d: any = {};
+  parts.forEach(p => { if (p.type !== 'literal') d[p.type] = p.value; });
+  
+  // 3. Construct another UTC date from the target wall-clock parts
+  const projectedUtc = new Date(Date.UTC(
+    parseInt(d.year), parseInt(d.month) - 1, parseInt(d.day),
+    parseInt(d.hour), parseInt(d.minute), parseInt(d.second)
+  ));
+  
+  // 4. The difference is the offset we need to subtract from our initial target wall-clock
+  const offsetMs = projectedUtc.getTime() - utcDate.getTime();
+  return new Date(utcDate.getTime() - offsetMs);
 }
 
 // ... (rest of file)
@@ -345,14 +353,28 @@ export const AccountPicker: React.FC = () => {
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
   const [timeTick, setTimeTick] = useState(0);
 
+  const displayedStaff = selectedStaff || offShiftStaff;
+
   // Auto-refresh the selected staff shift awareness status as time passes
   useEffect(() => {
-    if (!selectedStaff) return;
+    if (!displayedStaff) return;
     const interval = setInterval(() => {
       setTimeTick(t => t + 1);
     }, 1000); // Trigger a tick evaluation every 1 second
     return () => clearInterval(interval);
-  }, [selectedStaff]);
+  }, [displayedStaff]);
+
+  // Transition off-shift staff to selected once their shift starts
+  useEffect(() => {
+    if (!offShiftStaff) return;
+    const timezone = (shopProfile as any)?.timezone || 'Africa/Johannesburg';
+    const status = evaluateShiftStatus(offShiftStaff, timezone);
+    
+    if (status.status === 'allowed') {
+      setSelectedStaff(offShiftStaff);
+      setOffShiftStaff(null);
+    }
+  }, [offShiftStaff, timeTick, shopProfile]);
 
   // Close modal on Escape key press
   useEffect(() => {
@@ -372,6 +394,7 @@ export const AccountPicker: React.FC = () => {
   useEffect(() => {
     if (!isAccountPickerOpen) {
       setSelectedStaff(null);
+      setOffShiftStaff(null);
       setPin('');
       setError(null);
       setLockoutUntil(null);
@@ -531,6 +554,7 @@ export const AccountPicker: React.FC = () => {
       }
       setIsAccountPickerOpen(false);
       setSelectedStaff(null);
+      setOffShiftStaff(null); // ALSO CLEAR THIS
       setPin('');
       setLockoutUntil(null);
       setRemainingSeconds(0);
@@ -614,6 +638,7 @@ export const AccountPicker: React.FC = () => {
                     await cancelSwitchAccount();
                     setIsAccountPickerOpen(false);
                     setSelectedStaff(null);
+                    setOffShiftStaff(null); // ALSO CLEAR THIS
                     setPin('');
                   } catch (err: any) {
                     showToast('Error', err.message || 'Failed to cancel', 'error');
@@ -732,7 +757,7 @@ export const AccountPicker: React.FC = () => {
             </div>
           </div>
         ) : isShiftLocked ? (
-          <ShiftLocked staff={offShiftStaff!} shiftInfo={shiftInfo!} timezone={(shopProfile as any)?.timezone || 'Africa/Johannesburg'} onBack={handleBack} />
+          <ShiftLocked staff={displayedStaff!} shiftInfo={shiftInfo!} timezone={(shopProfile as any)?.timezone || 'Africa/Johannesburg'} onBack={handleBack} />
         ) : selectedStaff ? (
           <div className="max-w-md mx-auto">
             {/* PIN ENTRY FORM ... */}
