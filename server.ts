@@ -666,11 +666,12 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       console.log(`[PIN Login] Initiated login check`);
 
       if ((!cashierCode && !staffId) || !pin) {
-        console.warn(`[PIN Login] Missing credentials or pin`);
+        // Log generic error without sensitive data
+        console.warn(`[PIN Login] Login attempt with missing credentials`);
         return res.status(400).json({ success: false, error: "Cashier code and PIN are required." });
       }
       if (!/^\d{6}$/.test(String(pin))) {
-        console.warn(`[PIN Login] PIN format mismatch`);
+        console.warn(`[PIN Login] Login attempt with invalid PIN format`);
         return res.status(400).json({ success: false, error: "PIN must be exactly 6 numeric digits." });
       }
 
@@ -699,7 +700,7 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       const { data: profile, error: profileErr } = await profileQuery.maybeSingle();
 
       if (profileErr) {
-        console.error(`[PIN Login] Profile query failed. Error:`, profileErr.message);
+        console.error(`[PIN Login] Profile query error`);
         return res.status(401).json({ success: false, error: "Invalid credentials." });
       }
 
@@ -731,15 +732,14 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       });
 
       if (lockoutErr) {
-        console.error(`[PIN Login] Lockout check RPC failed`);
+        console.error(`[PIN Login] Lockout check RPC error`);
       }
 
       if (!lockoutErr && lockoutData) {
-        console.log(`[PIN Login] Lockout check RPC query complete`);
         if (lockoutData.locked) {
           const remainingMinutes = Number(lockoutData.remaining_minutes) || 15;
           const remainingSeconds = Number(lockoutData.remaining_seconds) || (remainingMinutes * 60);
-          console.warn(`[PIN Login] Account lockout active. Remaining duration: ${remainingSeconds}s`);
+          console.warn(`[PIN Login] Account lockout active`);
           return res.status(429).json({
             success: false,
             locked: true,
@@ -749,7 +749,7 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
           });
         }
         if (lockoutData.attempt_admitted === false) {
-          console.warn(`[PIN Login] Attempt not admitted due to lockout constraint.`);
+          console.warn(`[PIN Login] Attempt not admitted due to lockout constraint`);
           return res.status(429).json({
             success: false,
             locked: true,
@@ -763,10 +763,8 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       // 3. Verify PIN
       let isPinValid = false;
       if (profile.pin_hash) {
-        console.log(`[PIN Login] Verifying PIN against pin_hash`);
         isPinValid = verifyPinHash(pin, profile.pin_hash);
       } else if (profile.pin_code && String(profile.pin_code) === String(pin)) {
-        console.log(`[PIN Login] Verifying PIN against legacy pin_code, migrating`);
         isPinValid = true;
         const newHash = hashPin(pin);
         const { error: migrationErr } = await adminSupabase.from('profiles').update({
@@ -775,16 +773,14 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         }).eq('id', profile.id);
         
         if (migrationErr) {
-          console.error(`[PIN Login] PIN migration failed`);
-        } else {
-          console.log(`[PIN Login] Legacy PIN migrated to secure hash`);
+          console.error(`[PIN Login] PIN migration error`);
         }
       } else {
-        console.warn(`[PIN Login] Profile has no PIN configuration`);
+        console.warn(`[PIN Login] Invalid PIN configuration`);
       }
 
       // 4. Atomically record attempt result
-      console.log(`[PIN Login] Recording PIN attempt result. Success: ${isPinValid}`);
+      console.log(`[PIN Login] Recording PIN attempt result`);
       const { error: recordErr } = await adminSupabase.rpc('record_pin_attempt', {
         p_user_id: profile.id,
         p_success: isPinValid
@@ -794,44 +790,40 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       }
 
       if (!isPinValid) {
-        console.warn(`[PIN Login] Invalid PIN entered`);
+        console.warn(`[PIN Login] Invalid PIN attempt`);
         return res.status(401).json({ success: false, error: "Invalid PIN." });
       }
 
       // 5. Check Schedule Enforcement
       console.log(`[PIN Login] Verifying schedule enforcement`);
       const scheduleCheck = verifyStaffSchedule(profile, profile.shop);
-      console.log(`[PIN Login] Schedule check result. Allowed: ${scheduleCheck.allowed}`);
       if (!scheduleCheck.allowed) {
         console.warn(`[PIN Login] Login rejected by schedule constraint`);
         return res.status(403).json({ success: false, error: scheduleCheck.error });
       }
 
       // 6. Establish Real Supabase Session
-      console.log(`[PIN Login] Updating Supabase Auth password with admin bypass`);
+      console.log(`[PIN Login] Establishing secure session`);
       const tempPassword = crypto.randomBytes(16).toString('hex') + "A1!";
       const { error: updateAuthErr } = await adminSupabase.auth.admin.updateUserById(profile.id, {
         password: tempPassword
       });
 
       if (updateAuthErr) {
-        console.error(`[PIN Login] Auth password update failed`);
+        console.error(`[PIN Login] Auth session establishment error`);
         return res.status(500).json({ success: false, error: "Failed to establish secure session." });
       }
-      console.log(`[PIN Login] Auth password updated successfully`);
 
       // Sign in on server to get session
-      console.log(`[PIN Login] Signing in with password to Supabase Auth`);
       const { data: authData, error: signInErr } = await adminSupabase.auth.signInWithPassword({
         email: profile.email!,
         password: tempPassword
       });
 
       if (signInErr || !authData.session) {
-        console.error(`[PIN Login] Sign-in with password failed`);
+        console.error(`[PIN Login] Sign-in error`);
         return res.status(500).json({ success: false, error: "Session establishment failed." });
       }
-      console.log(`[PIN Login] Supabase Auth sign-in succeeded`);
 
       // Audit login
       console.log(`[PIN Login] Logging staff audit event`);
@@ -843,7 +835,7 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         reason: 'Staff terminal activation'
       });
 
-      console.log(`[PIN Login] Successful terminal activation`);
+      console.log(`[PIN Login] Terminal activated`);
       return res.json({ 
         success: true, 
         session: authData.session,
