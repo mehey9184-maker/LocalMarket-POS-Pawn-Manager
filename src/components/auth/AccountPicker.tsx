@@ -23,7 +23,12 @@ function getShopNow(timezone: string): Date {
     const parts = formatter.formatToParts(now);
     const d: any = {};
     parts.forEach(p => { if (p.type !== 'literal') d[p.type] = p.value; });
-    return new Date(`${d.year}-${d.month}-${d.day}T${d.hour}:${d.minute}:${d.second}`);
+    
+    // Construct Date object using UTC methods to bypass browser local timezone
+    const date = new Date(0);
+    date.setUTCFullYear(parseInt(d.year), parseInt(d.month) - 1, parseInt(d.day));
+    date.setUTCHours(parseInt(d.hour), parseInt(d.minute), parseInt(d.second), 0);
+    return date;
   } catch (e) {
     return now;
   }
@@ -303,6 +308,7 @@ export const AccountPicker: React.FC = () => {
   const { showToast, setActiveTab, shopProfile } = useApp();
   
   const [selectedStaff, setSelectedStaff] = useState<ProfileRow | null>(null);
+  const [offShiftStaff, setOffShiftStaff] = useState<ProfileRow | null>(null);
   const [pin, setPin] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [error, setError] = useState<React.ReactNode | null>(null);
@@ -373,10 +379,11 @@ export const AccountPicker: React.FC = () => {
   }, [lockoutUntil, selectedStaff]);
 
   const shiftInfo = useMemo(() => {
-    if (!selectedStaff) return null;
+    const staff = selectedStaff || offShiftStaff;
+    if (!staff) return null;
     const timezone = (shopProfile as any)?.timezone || 'Africa/Johannesburg';
-    return evaluateShiftStatus(selectedStaff, timezone);
-  }, [selectedStaff, shopProfile, timeTick]);
+    return evaluateShiftStatus(staff, timezone);
+  }, [selectedStaff, offShiftStaff, shopProfile, timeTick]);
 
   if (!isAccountPickerOpen) return null;
 
@@ -403,7 +410,17 @@ export const AccountPicker: React.FC = () => {
       return;
     }
 
-    setSelectedStaff(staff);
+    const timezone = (shopProfile as any)?.timezone || 'Africa/Johannesburg';
+    const status = evaluateShiftStatus(staff, timezone);
+
+    if (status.status !== 'allowed') {
+      setOffShiftStaff(staff);
+      setSelectedStaff(null);
+    } else {
+      setSelectedStaff(staff);
+      setOffShiftStaff(null);
+    }
+    
     setPin('');
     setError(null);
 
@@ -433,6 +450,7 @@ export const AccountPicker: React.FC = () => {
 
   const handleBack = () => {
     setSelectedStaff(null);
+    setOffShiftStaff(null);
     setPin('');
     setError(null);
     setLockoutUntil(null);
@@ -625,7 +643,7 @@ export const AccountPicker: React.FC = () => {
             <X className="w-5 h-5" />
           </button>
 
-          {!selectedStaff ? (
+          {!selectedStaff && !offShiftStaff ? (
           <div className="text-center">
             <h1 className="font-headline font-bold text-3xl sm:text-4xl text-stone-900 mb-2 tracking-tight">
               Switch Staff
