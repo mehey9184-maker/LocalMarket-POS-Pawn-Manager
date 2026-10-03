@@ -228,47 +228,54 @@ const ShiftLocked: React.FC<{
     return () => clearInterval(timer);
   }, [shiftInfo.nextLoginTime]);
 
-  const shopProfile = useApp().shopProfile;
-  const timezone = (shopProfile as any)?.timezone || 'Africa/Johannesburg';
-
   return (
-    <div className="fixed inset-0 z-[10000] bg-stone-50 flex flex-col items-center justify-center p-8 animate-auth-fade">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-stone-100 via-stone-50 to-stone-50"></div>
+    <div className="fixed inset-0 z-[10000] bg-stone-50 flex items-center justify-center p-4 animate-auth-fade">
+      {/* Immersive subtle ambient background */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,_#f5f5f4_0%,_#e7e5e4_100%)]"></div>
       
-      <div className="relative z-10 flex flex-col items-center max-w-lg w-full text-center space-y-8">
-        <div className="space-y-4">
-          <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center shadow-lg mx-auto mb-4 overflow-hidden border border-stone-200">
-             {staff.avatar_url ? <img src={staff.avatar_url} alt="" className="w-full h-full object-cover" /> : <span className="text-2xl font-bold text-stone-600">{getInitials(staff.full_name)}</span>}
+      {/* Compact premium panel */}
+      <div className="relative z-10 bg-white/60 backdrop-blur-xl border border-white/50 rounded-[24px] shadow-2xl p-8 max-w-md w-full text-center">
+        {/* Staff Identity */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-16 h-16 rounded-full bg-stone-200 flex items-center justify-center shadow-sm overflow-hidden mb-4">
+             {staff.avatar_url ? <img src={staff.avatar_url} alt="" className="w-full h-full object-cover" /> : <span className="text-xl font-bold text-stone-600">{getInitials(staff.full_name)}</span>}
           </div>
-          <h1 className="font-headline font-bold text-3xl text-stone-900">{staff.full_name}</h1>
-          <p className="text-stone-500 uppercase tracking-widest text-xs font-mono">{getRoleLabel(staff.role)}</p>
+          <h1 className="text-xl font-bold text-stone-900">{staff.full_name}</h1>
+          <p className="text-stone-500 uppercase tracking-widest text-[10px] font-mono mt-0.5">{getRoleLabel(staff.role)}</p>
+          <div className="inline-block mt-3 px-3 py-1 rounded-full bg-stone-100 text-[10px] font-bold text-stone-600 uppercase tracking-wider">
+            {shiftInfo.reason}
+          </div>
         </div>
 
-        <div className="relative py-8">
-          <div className="absolute inset-0 bg-[#C85A32]/5 rounded-full blur-3xl animate-pulse"></div>
-          <Lock className="w-20 h-20 text-[#C85A32] relative z-10" />
+        {/* Lock Animation */}
+        <div className="relative w-16 h-16 mx-auto mb-8 flex items-center justify-center">
+          <div className="absolute inset-0 border border-[#C85A32]/20 rounded-full animate-slow-pulse"></div>
+          <Lock className="w-8 h-8 text-[#C85A32] relative z-10" />
         </div>
         
-        <div className="space-y-2">
-          <h2 className="font-headline font-bold text-4xl text-stone-900">{shiftInfo.reason}</h2>
-          <p className="text-stone-600 text-lg">{shiftInfo.title}</p>
+        {/* Main Content */}
+        <div className="space-y-1 mb-8">
+          <h2 className="text-xl font-semibold text-stone-900">{shiftInfo.title}</h2>
+          <p className="text-sm text-stone-600 font-medium">Access opens at {shiftInfo.nextLoginTime?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
         </div>
 
-        <div className="w-full bg-white/50 backdrop-blur-sm border border-stone-200 p-8 rounded-3xl space-y-4 shadow-sm">
-          <p className="text-sm font-bold uppercase tracking-widest text-stone-500">{shiftInfo.countdownLabel}</p>
-          <div className="text-6xl font-mono font-bold text-stone-900 tabular-nums tracking-tighter">
+        {/* Countdown */}
+        <div className="bg-white/50 border border-stone-200 rounded-2xl p-6 mb-8">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-stone-500 mb-2">{shiftInfo.countdownLabel}</p>
+          <div className="text-5xl font-mono font-bold text-stone-900 tabular-nums tracking-tight">
             {formatDuration(timeRemaining)}
           </div>
-          <p className="text-base font-semibold text-stone-700">
+          <p className="text-xs font-medium text-stone-500 mt-2">
              {shiftInfo.nextLoginTime?.toLocaleDateString([], { weekday: 'long' })} · {shiftInfo.nextLoginTime?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </p>
         </div>
 
+        {/* Back Button */}
         <button
           onClick={onBack}
-          className="text-base font-semibold text-stone-500 hover:text-stone-900 transition-colors cursor-pointer flex items-center gap-2"
+          className="w-full h-12 flex items-center justify-center gap-2 text-sm font-semibold text-stone-700 bg-white hover:bg-stone-50 border border-stone-200 rounded-xl transition-all shadow-sm active:scale-[0.98] cursor-pointer"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="w-4 h-4" />
           Back to staff list
         </button>
       </div>
