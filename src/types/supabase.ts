@@ -159,6 +159,7 @@ export interface Database {
           digital_signature: string | null;
           schedule: Json;
           permissions: Json;
+          password_setup_required?: boolean | null;
           is_active: boolean;
           last_sign_in_at: string | null;
           created_at: string;
@@ -178,6 +179,7 @@ export interface Database {
           digital_signature?: string | null;
           schedule?: Json;
           permissions?: Json;
+          password_setup_required?: boolean | null;
           is_active?: boolean;
           last_sign_in_at?: string | null;
           created_at?: string;
@@ -197,6 +199,7 @@ export interface Database {
           digital_signature?: string | null;
           schedule?: Json;
           permissions?: Json;
+          password_setup_required?: boolean | null;
           is_active?: boolean;
           last_sign_in_at?: string | null;
           created_at?: string;

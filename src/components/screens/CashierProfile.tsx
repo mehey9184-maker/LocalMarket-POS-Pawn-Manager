@@ -67,6 +67,7 @@ export const CashierProfile: React.FC = () => {
 
   const { 
     isOwner, 
+    isManager,
     isAtLeastManager,
     hasPermission,
     role, 
@@ -147,7 +148,7 @@ export const CashierProfile: React.FC = () => {
   const sidebarItems = [
     { id: 'account', label: 'My Account', icon: User, show: true },
     { id: 'shop', label: 'Shop Profile', icon: Building2, show: isOwner },
-    { id: 'staff', label: 'Staff & Security', icon: UserPlus, show: isOwner },
+    { id: 'staff', label: 'Staff & Security', icon: UserPlus, show: isOwner || isManager },
     { id: 'rules', label: 'Business Rules & Legal', icon: Sliders, show: isOwner },
     { id: 'system', label: 'Device & Backup', icon: HardDrive, show: true },
   ];

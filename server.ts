@@ -716,12 +716,26 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         return res.status(403).json({ success: false, error: "Account is deactivated." });
       }
 
-      // 1b. Prevent Owner password replacement via PIN mechanism
+      // 1b. Prevent Owner & Manager password replacement via PIN mechanism
       if (profile.role === 'owner' || profile.role === 'admin') {
         console.warn(`[PIN Login] Prevented PIN authentication bypass attempt for high-privilege account`);
         return res.status(403).json({ 
           success: false, 
-          error: "Owner/Admin accounts must authenticate via email and password for terminal security. Please use 'Sign Out' to return to the login screen." 
+          error: "Owner/Admin accounts must authenticate via email and password for terminal security." 
+        });
+      }
+
+      if (profile.role === 'manager') {
+        if (profile.password_setup_required) {
+          return res.status(403).json({
+            success: false,
+            requirePasswordSetup: true,
+            error: "Manager password setup required."
+          });
+        }
+        return res.status(403).json({
+          success: false,
+          error: "Managers must sign in with their account password."
         });
       }
 
@@ -848,6 +862,269 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
     }
   });
 
+  // --- API ROUTE: LOGIN WITH PASSWORD (FOR MANAGER & OWNER SWITCHING) ---
+  app.post("/api/auth/login-with-password", async (req, res) => {
+    try {
+      const { targetStaffId, password, shopId } = req.body;
+      if (!targetStaffId || !password) {
+        return res.status(400).json({ success: false, error: "Target staff ID and password are required." });
+      }
+
+      const adminSupabase = getSupabaseAdminClient();
+      if (!adminSupabase) {
+        return res.status(503).json({ success: false, error: "Database service unavailable." });
+      }
+
+      const { data: targetProfile, error: profileErr } = await adminSupabase
+        .from("profiles")
+        .select("*, shop:shop_profiles(*)")
+        .eq("id", targetStaffId)
+        .maybeSingle();
+
+      if (profileErr || !targetProfile) {
+        return res.status(401).json({ success: false, error: "Invalid credentials." });
+      }
+
+      if (!targetProfile.is_active) {
+        return res.status(403).json({ success: false, error: "Account is deactivated." });
+      }
+
+      if (shopId && targetProfile.shop_id && targetProfile.shop_id !== shopId) {
+        return res.status(403).json({ success: false, error: "Staff member does not belong to this shop branch." });
+      }
+
+      if (targetProfile.role !== 'owner' && targetProfile.role !== 'admin' && targetProfile.role !== 'manager') {
+        return res.status(403).json({ success: false, error: "Cashier accounts sign in with a PIN, not on this screen." });
+      }
+
+      if (targetProfile.role === 'manager' && targetProfile.password_setup_required) {
+        return res.status(403).json({ 
+          success: false, 
+          requirePasswordSetup: true, 
+          error: "Manager password setup required before switching." 
+        });
+      }
+
+      // Check shift schedule
+      const scheduleCheck = verifyStaffSchedule(targetProfile, targetProfile.shop);
+      if (!scheduleCheck.allowed) {
+        return res.status(403).json({ success: false, error: scheduleCheck.error });
+      }
+
+      // Authenticate with Supabase Auth using the user's REAL password (never modifies user password!)
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+      const anonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+      const authClient = createClient(supabaseUrl!, anonKey!, {
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+
+      const { data: authData, error: authError } = await authClient.auth.signInWithPassword({
+        email: targetProfile.email!,
+        password: String(password)
+      });
+
+      if (authError || !authData?.session || !authData.user) {
+        return res.status(401).json({ success: false, error: "Incorrect password." });
+      }
+
+      if (authData.user.id !== targetStaffId) {
+        return res.status(403).json({ success: false, error: "Authenticated user identity mismatch." });
+      }
+
+      return res.json({
+        success: true,
+        session: authData.session,
+        message: "Account switched successfully."
+      });
+    } catch (err: any) {
+      console.error("[Password Login] Unhandled exception:", err);
+      return res.status(500).json({ success: false, error: "Internal server error during password login." });
+    }
+  });
+
+  // --- API ROUTE: SETUP MANAGER PASSWORD (ONE-TIME PIN BOOTSTRAP) ---
+  app.post("/api/auth/setup-manager-password", async (req, res) => {
+    try {
+      const { managerId, pin, newPassword, shopId } = req.body;
+      if (!managerId || !pin || !newPassword) {
+        return res.status(400).json({ success: false, error: "Manager ID, PIN, and new password are required." });
+      }
+
+      if (String(newPassword).length < 6) {
+        return res.status(400).json({ success: false, error: "Password must be at least 6 characters." });
+      }
+
+      const adminSupabase = getSupabaseAdminClient();
+      if (!adminSupabase) {
+        return res.status(503).json({ success: false, error: "Database service unavailable." });
+      }
+
+      const { data: managerProfile, error: profileErr } = await adminSupabase
+        .from("profiles")
+        .select("*, shop:shop_profiles(*)")
+        .eq("id", managerId)
+        .maybeSingle();
+
+      if (profileErr || !managerProfile) {
+        return res.status(404).json({ success: false, error: "Manager profile not found." });
+      }
+
+      if (!managerProfile.is_active) {
+        return res.status(403).json({ success: false, error: "Account is deactivated." });
+      }
+
+      if (managerProfile.role !== 'manager') {
+        return res.status(403).json({ success: false, error: "Only Manager accounts use this password setup." });
+      }
+
+      if (!managerProfile.password_setup_required) {
+        return res.status(400).json({ success: false, error: "Password has already been established for this account." });
+      }
+
+      // Check lockout status
+      const { data: lockoutData } = await adminSupabase.rpc('check_pin_lockout', {
+        p_user_id: managerProfile.id
+      });
+      if (lockoutData?.locked) {
+        const remainingMinutes = Number(lockoutData.remaining_minutes) || 15;
+        return res.status(429).json({
+          success: false,
+          locked: true,
+          error: `Too many failed attempts. Try again in ${remainingMinutes} minutes.`
+        });
+      }
+
+      // Verify 6-digit PIN
+      let isPinValid = false;
+      if (managerProfile.pin_hash) {
+        isPinValid = verifyPinHash(String(pin), managerProfile.pin_hash);
+      } else if (managerProfile.pin_code && String(managerProfile.pin_code) === String(pin)) {
+        isPinValid = true;
+      }
+
+      await adminSupabase.rpc('record_pin_attempt', {
+        p_user_id: managerProfile.id,
+        p_success: isPinValid
+      });
+
+      if (!isPinValid) {
+        return res.status(401).json({ success: false, error: "Invalid PIN." });
+      }
+
+      // Check schedule
+      const scheduleCheck = verifyStaffSchedule(managerProfile, managerProfile.shop);
+      if (!scheduleCheck.allowed) {
+        return res.status(403).json({ success: false, error: scheduleCheck.error });
+      }
+
+      // Set real password on Auth user
+      const { error: updateAuthErr } = await adminSupabase.auth.admin.updateUserById(managerProfile.id, {
+        password: String(newPassword)
+      });
+      if (updateAuthErr) {
+        return res.status(500).json({ success: false, error: "Failed to set account password." });
+      }
+
+      // Mark password_setup_required = false
+      await adminSupabase.from("profiles").update({
+        password_setup_required: false,
+        updated_at: new Date().toISOString()
+      }).eq("id", managerProfile.id);
+
+      // Audit log (never log password or PIN!)
+      await logStaffAudit(adminSupabase, {
+        shopId: managerProfile.shop_id,
+        actorId: managerProfile.id,
+        targetId: managerProfile.id,
+        eventType: 'MANAGER_PASSWORD_CREATED',
+        reason: 'Manager established personal account password'
+      });
+
+      // Obtain fresh Supabase Auth session with the new password
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+      const anonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+      const authClient = createClient(supabaseUrl!, anonKey!, {
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+      const { data: authData, error: signInErr } = await authClient.auth.signInWithPassword({
+        email: managerProfile.email!,
+        password: String(newPassword)
+      });
+
+      return res.json({
+        success: true,
+        session: authData?.session || null,
+        message: "Manager password created successfully."
+      });
+    } catch (err: any) {
+      console.error("[Manager Password Setup] Error:", err);
+      return res.status(500).json({ success: false, error: "Failed to setup manager password." });
+    }
+  });
+
+  // --- API ROUTE: ATOMIC STAFF ACCESS UPDATE WITH PASSWORD CONFIRMATION ---
+  app.post("/api/staff/update-access", async (req, res) => {
+    try {
+      const auth = await authenticateCaller(req);
+      if (auth.status !== 200) {
+        return res.status(auth.status).json({ success: false, error: auth.error || "Authentication required." });
+      }
+
+      const callerProfile = auth.profile;
+      if (callerProfile.role !== "owner" && callerProfile.role !== "admin" && callerProfile.role !== "manager") {
+        return res.status(403).json({ success: false, error: "Forbidden: Staff access management requires Owner or Manager privileges." });
+      }
+
+      const { targetId, permissions, schedule, password, reason } = req.body;
+      if (!targetId) {
+        return res.status(400).json({ success: false, error: "Target staff ID is required." });
+      }
+
+      if (!password) {
+        return res.status(400).json({ success: false, error: "Your account password is required to save security changes." });
+      }
+
+      // Verify caller's OWN account password via Supabase Auth
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+      const anonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+      const verifyClient = createClient(supabaseUrl!, anonKey!, {
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+
+      const { data: verifyData, error: verifyErr } = await verifyClient.auth.signInWithPassword({
+        email: callerProfile.email!,
+        password: String(password)
+      });
+
+      if (verifyErr || !verifyData?.user) {
+        return res.status(401).json({ success: false, error: "Incorrect password" });
+      }
+
+      // Password verified! Invoke the dedicated service-role only RPC
+      const adminSupabase = getSupabaseAdminClient();
+      if (!adminSupabase) {
+        return res.status(503).json({ success: false, error: "Database service unavailable." });
+      }
+
+      const { data: rpcData, error: rpcErr } = await adminSupabase.rpc('secure_update_staff_access', {
+        p_actor_id: callerProfile.id,
+        p_target_id: targetId,
+        p_permissions: permissions || {},
+        p_schedule: schedule || {},
+        p_reason: reason || 'Staff access and schedule updated with password verification'
+      });
+
+      if (rpcErr) {
+        return res.status(400).json({ success: false, error: rpcErr.message });
+      }
+
+      return res.json({ success: true, data: rpcData });
+    } catch (err: any) {
+      console.error("[Staff Access Update] Error:", err);
+      return res.status(500).json({ success: false, error: "Failed to update staff access." });
+    }
+  });
+
   // --- API ROUTE: SECURE STAFF PROFILE UPDATE ---
   app.post("/api/staff/update-profile", async (req, res) => {
     try {
@@ -877,6 +1154,12 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
       const processedUpdates = { ...updates };
       // Strip any browser-provided pin_hash to ensure client cannot inject hashes
       delete processedUpdates.pin_hash;
+      // Strip permissions: all permission mutations must go through /api/staff/update-access with password verification!
+      delete processedUpdates.permissions;
+
+      if (processedUpdates.role === 'manager') {
+        processedUpdates.password_setup_required = true;
+      }
 
       const rawPin = processedUpdates.pinCode || processedUpdates.pin_code || processedUpdates.pin;
       if (rawPin !== undefined) {
@@ -970,10 +1253,23 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         global: { headers: { Authorization: `Bearer ${token}` } }
       });
 
+      const isManagerSelfReset = callerProfile.role === 'manager' && callerProfile.id === targetId;
+      const eventType = isManagerSelfReset ? 'PIN_CHANGED' : 'PIN_RESET';
+      const eventReason = isManagerSelfReset ? (reason || 'Manager changed own terminal PIN') : (reason || 'Staff PIN reset by authorized administrator');
+
       const { data, error } = await userScopedClient.rpc('secure_update_staff_profile', {
         p_target_id: targetId,
         p_updates: { pin_hash: newHash },
-        p_reason: reason || 'Staff PIN reset by authorized administrator'
+        p_reason: eventReason
+      });
+
+      // Always ensure explicit audit log with exact eventType (PIN_CHANGED for manager self-reset)
+      await logStaffAudit(adminSupabase, {
+        shopId: callerProfile.shop_id,
+        actorId: callerProfile.id,
+        targetId: targetId,
+        eventType,
+        reason: eventReason
       });
 
       if (error) {
@@ -983,14 +1279,6 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
           pin_code: null,
           updated_at: new Date().toISOString()
         }).eq("id", targetId);
-
-        await logStaffAudit(adminSupabase, {
-          shopId: callerProfile.shop_id,
-          actorId: callerProfile.id,
-          targetId: targetId,
-          eventType: 'PIN_RESET',
-          reason: reason || 'Staff PIN reset by authorized administrator'
-        });
       }
 
       return res.json({ success: true, message: "Staff PIN reset successfully." });
@@ -1148,6 +1436,12 @@ async function createApp(options: { isServerless?: boolean } = {}): Promise<expr
         cashier_code: finalCashierCode,
         pin_hash: hashedPin,
         pin_code: null,
+        password_setup_required: role === 'manager',
+        permissions: role === 'manager'
+          ? { sales: true, inventory: true, pawn: true, sellerAcquisitions: true, refunds: true, reports: true, staff: true, pricing: false }
+          : role === 'senior_cashier'
+          ? { sales: true, inventory: true, pawn: true, sellerAcquisitions: true, refunds: false, pricing: false, reports: false, staff: false }
+          : { sales: true, inventory: true, pawn: false, sellerAcquisitions: false, refunds: false, pricing: false, reports: false, staff: false },
         is_active: true,
         updated_at: new Date().toISOString()
       };

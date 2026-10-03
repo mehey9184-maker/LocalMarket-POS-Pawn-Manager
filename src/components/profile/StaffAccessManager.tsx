@@ -5,6 +5,12 @@ import { ProfileRow } from '../../types/supabase';
 import { useOperationProgress } from '../../hooks/useOperationProgress';
 import { OperationProgressScreen } from '../common/OperationProgressScreen';
 import { 
+  Permissions,
+  ROLE_BASELINE_PERMISSIONS,
+  ROLE_OPTIONAL_PERMISSIONS,
+  getEffectivePermissions
+} from '../../types';
+import { 
   User, 
   Shield, 
   ChevronRight, 
@@ -31,61 +37,26 @@ interface StaffAccessManagerProps {
   onSaveChangesRef?: React.MutableRefObject<(() => Promise<boolean>) | null>;
 }
 
+export const PERMISSION_METADATA: Record<keyof Permissions, { label: string; desc: string }> = {
+  sales: { label: 'Sales & Register', desc: 'Process checkout, sales, and receipts' },
+  inventory: { label: 'Inventory Management', desc: 'Add, edit, or adjust shop stock' },
+  pawn: { label: 'Pawn Operations', desc: 'Create and manage pawn loan contracts' },
+  sellerAcquisitions: { label: 'Seller Intake', desc: 'Process outright second-hand buys' },
+  refunds: { label: 'Authorize Refunds', desc: 'Approve or reject customer refund requests' },
+  pricing: { label: 'Price Management', desc: 'Modify retail prices and markup rules' },
+  reports: { label: 'View Reports', desc: 'Access financial and performance analytics' },
+  staff: { label: 'Staff Management', desc: 'Manage other staff accounts and access' }
+};
+
 export function getFixedPermissionsForRole(role: string): Record<string, boolean> {
-  if (role === 'owner' || role === 'admin') {
-    return {
-      sales: true,
-      inventory: true,
-      pawn: true,
-      sellerAcquisitions: true,
-      refunds: true,
-      pricing: true,
-      reports: true,
-      staff: true,
-    };
-  }
-  if (role === 'manager') {
-    return {
-      sales: true,
-      inventory: true,
-      pawn: true,
-      sellerAcquisitions: true,
-      refunds: true,
-      reports: true,
-      pricing: false,
-      staff: false,
-    };
-  }
-  if (role === 'senior_cashier') {
-    return {
-      sales: true,
-      inventory: true,
-      pawn: true,
-      sellerAcquisitions: true,
-      refunds: false,
-      reports: false,
-      pricing: false,
-      staff: false,
-    };
-  }
-  // Default cashier
-  return {
-    sales: true,
-    inventory: true,
-    pawn: false,
-    sellerAcquisitions: false,
-    refunds: false,
-    reports: false,
-    pricing: false,
-    staff: false,
-  };
+  return getEffectivePermissions(role) as unknown as Record<string, boolean>;
 }
 
 export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
   onUnsavedChangesChange,
   onSaveChangesRef
 }) => {
-  const { users, profile, user, updateStaffProfile, resetStaffPin, isOwner, isManager } = useAuth();
+  const { users, profile, user, updateStaffProfile, updateStaffAccessWithPassword, resetStaffPin, isOwner, isManager } = useAuth();
   const { showToast, isOnline } = useApp();
   const staffProgress = useOperationProgress();
   const [selectedStaff, setSelectedStaff] = useState<ProfileRow | null>(null);
@@ -103,6 +74,12 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
     onConfirm: () => void;
     onCancel: () => void;
   } | null>(null);
+
+  // In-modal dialog state for Password Verification on Save
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [passwordInputValue, setPasswordInputValue] = useState('');
+  const [showPasswordInput, setShowPasswordInput] = useState(false);
+  const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
 
   // In-modal dialog state for PIN Reset
   const [isResetPinModalOpen, setIsResetPinModalOpen] = useState(false);
@@ -160,12 +137,29 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
     }
   };
 
-  // Determine unsaved changes state
+  const canConfigureSelectedStaff = useMemo(() => {
+    if (!selectedStaff) return false;
+    if (selectedStaff.id === profile?.id) return false;
+    if (selectedStaff.role === 'owner' || selectedStaff.role === 'admin') return false;
+    if (isOwner) return true;
+    if (isManager) {
+      return selectedStaff.role === 'senior_cashier' || selectedStaff.role === 'cashier';
+    }
+    return false;
+  }, [selectedStaff, profile?.id, isOwner, isManager]);
+
+  // Determine unsaved changes state (both permissions and schedule)
   const hasUnsavedChanges = useMemo(() => {
     if (!selectedStaff) return false;
     const originalSchedule = selectedStaff.schedule || {};
-    return JSON.stringify(draftSchedule) !== JSON.stringify(originalSchedule);
-  }, [selectedStaff, draftSchedule]);
+    const scheduleChanged = JSON.stringify(draftSchedule) !== JSON.stringify(originalSchedule);
+
+    const effectiveCurrent = getEffectivePermissions(selectedStaff.role, selectedStaff.permissions as any);
+    const effectiveDraft = getEffectivePermissions(selectedStaff.role, draftPermissions);
+    const permissionsChanged = JSON.stringify(effectiveCurrent) !== JSON.stringify(effectiveDraft);
+
+    return scheduleChanged || permissionsChanged;
+  }, [selectedStaff, draftSchedule, draftPermissions]);
 
   // Sync dirty status with parent
   useEffect(() => {
@@ -183,43 +177,104 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
     };
   }, [onUnsavedChangesChange]);
 
-  // Direct fast save without OperationProgressScreen
+  const handleOpenPasswordModal = () => {
+    if (!isOnline) {
+      showToast(
+        'Connection required',
+        'Security changes need server verification before they can take effect.',
+        'error'
+      );
+      return false;
+    }
+    setPasswordInputValue('');
+    setPasswordModalError(null);
+    setIsPasswordModalOpen(true);
+    return true;
+  };
+
+  // Direct save triggers password verification modal
   const handleSaveChanges = async (): Promise<boolean> => {
     if (!selectedStaff) return false;
-    setIsSaving(true);
-    try {
-      const res = await updateStaffProfile(
-        selectedStaff.id,
-        { permissions: draftPermissions, schedule: draftSchedule },
-        'Access and schedule saved'
+    return handleOpenPasswordModal();
+  };
+
+  const handleConfirmSaveWithPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStaff || !passwordInputValue) return;
+
+    if (!isOnline) {
+      showToast(
+        'Connection required',
+        'Security changes need server verification before they can take effect.',
+        'error'
       );
-      if (res.success) {
-        setSelectedStaff({
-          ...selectedStaff,
+      return;
+    }
+
+    setIsSaving(true);
+    setPasswordModalError(null);
+
+    try {
+      const res = await updateStaffAccessWithPassword(
+        selectedStaff.id,
+        draftPermissions,
+        draftSchedule,
+        passwordInputValue,
+        `Staff access updated by ${profile?.full_name || 'Administrator'}`
+      );
+
+      if (!res.success) {
+        setPasswordModalError(res.error || 'Password verification failed.');
+        setIsSaving(false);
+        return;
+      }
+
+      // Success!
+      setIsPasswordModalOpen(false);
+      setPasswordInputValue('');
+      setPasswordModalError(null);
+
+      // Refresh staff record from authoritative server state
+      const { profilesApi } = await import('../../services/supabaseApi');
+      const allProfiles = await profilesApi.getProfiles();
+      const refreshed = allProfiles.find(p => p.id === selectedStaff.id);
+      if (refreshed) {
+        setSelectedStaff(refreshed);
+        setDraftPermissions(refreshed.permissions || {});
+        setDraftSchedule(refreshed.schedule || {});
+      } else {
+        setSelectedStaff(prev => prev ? {
+          ...prev,
           permissions: draftPermissions,
           schedule: draftSchedule
-        });
-        showToast('Changes saved', 'Access and schedule saved successfully.', 'success');
-        await loadAuditLogs(selectedStaff.id);
-        setIsSaving(false);
-        return true;
-      } else {
-        showToast('Save Failed', res.error || 'Could not save staff settings.', 'error');
-        setIsSaving(false);
-        return false;
+        } : null);
       }
+
+      await loadAuditLogs(selectedStaff.id);
+      showToast('Staff Access Updated', 'Staff permissions and schedule saved successfully.', 'success');
     } catch (err: any) {
-      showToast('Error', err.message || 'An error occurred while saving.', 'error');
+      setPasswordModalError(err?.message || 'Failed to authorize security changes.');
+    } finally {
       setIsSaving(false);
-      return false;
     }
   };
 
   const handleDiscardChanges = () => {
     if (!selectedStaff) return;
-    setDraftPermissions(getFixedPermissionsForRole(selectedStaff.role));
+    setDraftPermissions(selectedStaff.permissions || {});
     setDraftSchedule(selectedStaff.schedule || {});
     showToast('Changes Discarded', 'Your edits have been reverted.', 'info');
+  };
+
+  const handleToggleOptionalPermission = (key: keyof Permissions) => {
+    if (!canConfigureSelectedStaff) return;
+    setDraftPermissions((prev: any) => {
+      const current = Boolean(prev[key]);
+      return {
+        ...prev,
+        [key]: !current
+      };
+    });
   };
 
   // Wire handleSaveChanges to parent ref
@@ -232,7 +287,7 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
         onSaveChangesRef.current = null;
       }
     };
-  }, [onSaveChangesRef, draftPermissions, draftSchedule, selectedStaff]);
+  }, [onSaveChangesRef, draftPermissions, draftSchedule, selectedStaff, isOnline]);
 
   const handleTogglePermission = (field: string, value: boolean) => {
     setDraftPermissions((prev: any) => ({ ...prev, [field]: value }));
@@ -444,7 +499,7 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
 
   const handleSelectStaff = async (staff: ProfileRow) => {
     setSelectedStaff(staff);
-    setDraftPermissions(getFixedPermissionsForRole(staff.role));
+    setDraftPermissions(staff.permissions || {});
     setDraftSchedule(staff.schedule || {});
     await loadAuditLogs(staff.id);
   };
@@ -470,10 +525,13 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
   }
 
   if (selectedStaff) {
-    const perms = draftPermissions || {};
+    const targetRole = selectedStaff.role;
+    const baselineKeys = ROLE_BASELINE_PERMISSIONS[targetRole] || ['sales', 'inventory'];
+    const optionalKeys = ROLE_OPTIONAL_PERMISSIONS[targetRole] || [];
+    const effectivePerms = getEffectivePermissions(targetRole, draftPermissions);
     const schedule = draftSchedule || {};
 
-    const enabledPermsCount = Object.values(perms).filter(Boolean).length;
+    const enabledPermsCount = Object.values(effectivePerms).filter(Boolean).length;
 
     const daysMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const workingDays = schedule.workingDays || [];
@@ -545,13 +603,13 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
           {/* PERMISSIONS SECTION */}
           <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex items-center justify-between text-emerald-600">
+            <div className="flex items-center justify-between text-[#C85A32]">
               <div className="flex items-center gap-3">
                 <Shield className="w-5 h-5" />
                 <h3 className="text-sm font-bold uppercase tracking-widest">Access Control</h3>
               </div>
               <span className="text-[10px] font-bold px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-100 uppercase tracking-wider">
-                {enabledPermsCount} enabled
+                {enabledPermsCount} active
               </span>
             </div>
 
@@ -559,46 +617,94 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
             <div className="p-4 bg-stone-50 border border-stone-200 rounded-2xl text-xs text-stone-600 leading-relaxed flex items-start gap-3">
               <Shield className="w-4 h-4 text-stone-400 shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold text-stone-700">Permissions are fixed by role</p>
-                <p className="mt-0.5">Under system security policies, operator permissions are determined strictly by their role. Change the role dropdown above to adjust access.</p>
+                <p className="font-semibold text-stone-700">Permissions are fixed by role with optional authority</p>
+                <p className="mt-0.5">Role = guaranteed baseline authority. Permission switches provide optional additional authority. Baseline capabilities cannot be removed.</p>
               </div>
             </div>
-            
-            <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden divide-y divide-stone-100 shadow-xs">
-              {[
-                { id: 'sales', label: 'Sales & Register', desc: 'Process checkout, sales, and receipts' },
-                { id: 'inventory', label: 'Inventory Management', desc: 'Add, edit, or adjust shop stock' },
-                { id: 'pawn', label: 'Pawn Operations', desc: 'Create and manage pawn loan contracts' },
-                { id: 'sellerAcquisitions', label: 'Seller Intake', desc: 'Process outright second-hand buys' },
-                { id: 'refunds', label: 'Authorize Refunds', desc: 'Approve or reject customer refund requests' },
-                { id: 'pricing', label: 'Price Management', desc: 'Modify retail prices and markup rules' },
-                { id: 'reports', label: 'View Reports', desc: 'Access financial and performance analytics' },
-                ...(isOwner ? [{ id: 'staff', label: 'Staff Management', desc: 'Manage other staff accounts and access' }] : [])
-              ].map(item => {
-                const isGranted = Boolean(perms[item.id]);
-                return (
-                  <div key={item.id} className="p-5 flex items-center justify-between group hover:bg-stone-50 transition-colors">
-                    <div className="max-w-[70%]">
-                      <p className="text-sm font-bold text-stone-800">{item.label}</p>
-                      <p className="text-[11px] text-stone-500 mt-0.5 leading-relaxed">{item.desc}</p>
-                    </div>
-                    <div className="flex items-center">
-                      {isGranted ? (
+
+            {/* SECTION 1: REQUIRED ACCESS */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-widest text-stone-600 flex items-center gap-2">
+                  <Lock className="w-3.5 h-3.5 text-stone-400" />
+                  <span>Required access</span>
+                </h4>
+                <span className="text-[10px] text-stone-400 font-medium">Guaranteed by role</span>
+              </div>
+              <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden divide-y divide-stone-100 shadow-xs">
+                {baselineKeys.map(key => {
+                  const meta = PERMISSION_METADATA[key];
+                  return (
+                    <div key={key} className="p-4 flex items-center justify-between group hover:bg-stone-50 transition-colors">
+                      <div className="max-w-[70%]">
+                        <p className="text-sm font-bold text-stone-800">{meta.label}</p>
+                        <p className="text-[11px] text-stone-500 mt-0.5 leading-relaxed">{meta.desc}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold whitespace-nowrap">
                           <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Granted</span>
+                          <span>Always on</span>
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-stone-50 text-stone-400 border border-stone-200 rounded-lg text-xs font-semibold whitespace-nowrap">
-                          <Lock className="w-3.5 h-3.5 text-stone-300" />
-                          <span>Locked</span>
-                        </span>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
+
+            {/* SECTION 2: ADDITIONAL ACCESS */}
+            {optionalKeys.length > 0 && (
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-stone-600 flex items-center gap-2">
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#C85A32]" />
+                    <span>Additional access</span>
+                  </h4>
+                  <span className="text-[10px] text-stone-400 font-medium">Optional authority switches</span>
+                </div>
+                <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden divide-y divide-stone-100 shadow-xs">
+                  {optionalKeys.map(key => {
+                    const meta = PERMISSION_METADATA[key];
+                    const isGranted = Boolean(effectivePerms[key]);
+                    const canEditThisPerm = canConfigureSelectedStaff && (
+                      selectedStaff.role !== 'manager' || isOwner
+                    );
+                    return (
+                      <div key={key} className="p-4 flex items-center justify-between group hover:bg-stone-50 transition-colors">
+                        <div className="max-w-[65%]">
+                          <p className="text-sm font-bold text-stone-800">{meta.label}</p>
+                          <p className="text-[11px] text-stone-500 mt-0.5 leading-relaxed">{meta.desc}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={isGranted}
+                            disabled={isSaving || !canEditThisPerm}
+                            onClick={() => handleToggleOptionalPermission(key)}
+                            className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden disabled:opacity-50 ${
+                              isGranted ? 'bg-[#C85A32]' : 'bg-stone-200'
+                            }`}
+                          >
+                            <span className="sr-only">Toggle {meta.label}</span>
+                            <span
+                              className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out flex items-center justify-center text-[9px] font-bold ${
+                                isGranted ? 'translate-x-7 text-[#C85A32]' : 'translate-x-0 text-stone-400'
+                              }`}
+                            >
+                              {isGranted ? 'ON' : 'OFF'}
+                            </span>
+                          </button>
+                          <span className={`text-xs font-bold min-w-[50px] ${isGranted ? 'text-[#C85A32]' : 'text-stone-400'}`}>
+                            {isGranted ? 'Granted' : 'Off'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* SCHEDULE & CREDENTIALS SECTION */}
@@ -945,6 +1051,109 @@ export const StaffAccessManager: React.FC<StaffAccessManagerProps> = ({
                   <span>{isSaving ? 'Saving…' : confirmDialog.actionLabel}</span>
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* IN-MODAL PASSWORD VERIFICATION DIALOG */}
+        {isPasswordModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-md bg-white border border-stone-200 rounded-3xl p-8 shadow-2xl relative space-y-6 text-stone-900">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 text-[#C85A32]">
+                  <ShieldCheck className="w-6 h-6 text-[#C85A32]" />
+                  <div>
+                    <h3 className="font-bold text-lg text-stone-900">Confirm Security Changes</h3>
+                    <p className="text-[11px] text-stone-500">Re-enter your password to authorize changes</p>
+                  </div>
+                </div>
+                <button 
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => {
+                    setIsPasswordModalOpen(false);
+                    setPasswordInputValue('');
+                    setPasswordModalError(null);
+                  }}
+                  className="p-1 text-stone-400 hover:text-stone-700 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 text-xs text-stone-600 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Authorizing Actor</span>
+                  <span className="font-bold text-stone-900">{profile?.full_name} ({profile?.role === 'owner' ? 'Owner' : 'Manager'})</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Target Staff</span>
+                  <span className="font-semibold text-stone-800">{selectedStaff.full_name}</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-stone-600 leading-relaxed">
+                Modifying staff permissions or scheduling boundaries requires server-verified password authentication of the logged-in administrator.
+              </p>
+
+              <form onSubmit={handleConfirmSaveWithPassword} className="space-y-5">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-500">
+                    Your Account Password
+                  </label>
+                  <div className="relative">
+                    <input 
+                      type={showPasswordInput ? 'text' : 'password'}
+                      autoFocus
+                      required
+                      disabled={isSaving}
+                      value={passwordInputValue}
+                      onChange={(e) => {
+                        setPasswordInputValue(e.target.value);
+                        if (passwordModalError) setPasswordModalError(null);
+                      }}
+                      placeholder="Enter your password"
+                      className="w-full h-12 bg-stone-50 border border-stone-200 rounded-xl px-4 pr-12 text-sm text-stone-900 focus:border-[#C85A32] outline-none transition-all placeholder:text-stone-400"
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => setShowPasswordInput(!showPasswordInput)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+                    >
+                      {showPasswordInput ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {passwordModalError && (
+                    <p className="text-xs text-red-600 flex items-center gap-1.5 mt-1 font-medium">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{passwordModalError}</span>
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-100">
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() => {
+                      setIsPasswordModalOpen(false);
+                      setPasswordInputValue('');
+                      setPasswordModalError(null);
+                    }}
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-stone-500 hover:text-stone-700 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSaving || !passwordInputValue.trim()}
+                    className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#C85A32] hover:bg-[#A94725] text-white transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-md shadow-[#C85A32]/10"
+                  >
+                    {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>{isSaving ? 'Verifying…' : 'Authorize & Save'}</span>
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

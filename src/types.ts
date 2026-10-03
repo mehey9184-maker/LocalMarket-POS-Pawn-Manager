@@ -366,3 +366,53 @@ export interface Permissions {
   reports: boolean;
   staff: boolean;
 }
+
+export const ROLE_BASELINE_PERMISSIONS: Record<string, (keyof Permissions)[]> = {
+  owner: ['sales', 'inventory', 'pawn', 'sellerAcquisitions', 'refunds', 'pricing', 'reports', 'staff'],
+  admin: ['sales', 'inventory', 'pawn', 'sellerAcquisitions', 'refunds', 'pricing', 'reports', 'staff'],
+  manager: ['sales', 'inventory', 'pawn', 'sellerAcquisitions', 'refunds', 'reports', 'staff'],
+  senior_cashier: ['sales', 'inventory', 'pawn', 'sellerAcquisitions'],
+  cashier: ['sales', 'inventory'],
+};
+
+export const ROLE_OPTIONAL_PERMISSIONS: Record<string, (keyof Permissions)[]> = {
+  owner: [],
+  admin: [],
+  manager: ['pricing'],
+  senior_cashier: ['refunds', 'pricing', 'reports'],
+  cashier: ['pawn'],
+};
+
+export function getEffectivePermissions(
+  role: string,
+  storedPermissions?: Partial<Permissions> | null
+): Permissions {
+  const isOwner = role === 'owner' || role === 'admin';
+  if (isOwner) {
+    return {
+      sales: true,
+      inventory: true,
+      pawn: true,
+      sellerAcquisitions: true,
+      refunds: true,
+      pricing: true,
+      reports: true,
+      staff: true,
+    };
+  }
+
+  const baseline = ROLE_BASELINE_PERMISSIONS[role] || ['sales', 'inventory'];
+  const allowedOptional = ROLE_OPTIONAL_PERMISSIONS[role] || [];
+  const stored = storedPermissions || {};
+
+  return {
+    sales: baseline.includes('sales') || (allowedOptional.includes('sales') && Boolean(stored.sales)),
+    inventory: baseline.includes('inventory') || (allowedOptional.includes('inventory') && Boolean(stored.inventory)),
+    pawn: baseline.includes('pawn') || (allowedOptional.includes('pawn') && Boolean(stored.pawn)),
+    sellerAcquisitions: baseline.includes('sellerAcquisitions') || (allowedOptional.includes('sellerAcquisitions') && Boolean(stored.sellerAcquisitions)),
+    refunds: baseline.includes('refunds') || (allowedOptional.includes('refunds') && Boolean(stored.refunds)),
+    pricing: baseline.includes('pricing') || (allowedOptional.includes('pricing') && Boolean(stored.pricing)),
+    reports: baseline.includes('reports') || (allowedOptional.includes('reports') && Boolean(stored.reports)),
+    staff: baseline.includes('staff') || (allowedOptional.includes('staff') && Boolean(stored.staff)),
+  };
+}

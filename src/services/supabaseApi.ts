@@ -7,6 +7,7 @@ import {
   withAuthRecovery 
 } from './supabase';
 import { apiPost } from '../utils/apiClient';
+import { Permissions } from '../types';
 export { 
   isSupabaseConfigured, 
   getValidSupabaseSession, 
@@ -222,6 +223,66 @@ export const authApi = {
       console.error('[Client PIN Login] Unexpected error during loginWithPin:', err);
       return { success: false, error: err.message || 'Connection error during PIN login' };
     }
+  },
+
+  async loginWithPassword(targetStaffId: string, password: string, shopId?: string): Promise<{ success: boolean; requirePasswordSetup?: boolean; error?: string }> {
+    try {
+      const result = await apiPost<{ success: boolean; requirePasswordSetup?: boolean; session?: any; error?: string }>(
+        '/api/auth/login-with-password',
+        { targetStaffId, password, shopId }
+      );
+
+      if (!result.ok || !result.data?.success) {
+        return {
+          success: false,
+          requirePasswordSetup: result.data?.requirePasswordSetup,
+          error: result.data?.error || result.error || 'Authentication failed'
+        };
+      }
+
+      const supabase = getSupabase();
+      if (!supabase) {
+        return { success: false, error: 'Supabase client is not initialized.' };
+      }
+
+      if (!result.data?.session) {
+        return { success: false, error: 'Session was not returned by the login endpoint.' };
+      }
+
+      const { error: sessionErr } = await supabase.auth.setSession(result.data.session);
+      if (sessionErr) {
+        return { success: false, error: `Failed to install session: ${sessionErr.message}` };
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Connection error during password login' };
+    }
+  },
+
+  async setupManagerPassword(params: { managerId: string; pin: string; newPassword: string; shopId?: string }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const result = await apiPost<{ success: boolean; session?: any; error?: string }>(
+        '/api/auth/setup-manager-password',
+        params
+      );
+
+      if (!result.ok || !result.data?.success) {
+        return {
+          success: false,
+          error: result.data?.error || result.error || 'Failed to setup manager password.'
+        };
+      }
+
+      const supabase = getSupabase();
+      if (supabase && result.data?.session) {
+        await supabase.auth.setSession(result.data.session);
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Connection error during password setup.' };
+    }
   }
 };
 
@@ -396,7 +457,7 @@ export const shopProfilesApi = {
 // ==========================================
 // 3. PROFILES (Staff & Cashier Management)
 // ==========================================
-const SAFE_PROFILE_COLUMNS = 'id, shop_id, email, full_name, role, cashier_code, phone, avatar_url, is_active, schedule, permissions, created_at, updated_at';
+const SAFE_PROFILE_COLUMNS = 'id, shop_id, email, full_name, role, cashier_code, phone, avatar_url, is_active, schedule, permissions, password_setup_required, created_at, updated_at';
 
 export const profilesApi = {
   async getProfiles(): Promise<ProfileRow[]> {
@@ -1782,6 +1843,49 @@ export const staffApi = {
         .limit(20);
 
       if (error) throw error;
+      return data || [];
+    });
+  },
+
+  async updateStaffAccess(params: {
+    targetId: string;
+    permissions: Partial<Permissions>;
+    schedule: any;
+    password: string;
+    reason?: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      const session = await authApi.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Authentication required');
+
+      const result = await apiPost<{ success: boolean; error?: string }>(
+        '/api/staff/update-access',
+        params,
+        token
+      );
+
+      if (!result.ok || !result.data?.success) {
+        return { success: false, error: result.error || result.data?.error || 'Failed to update staff access.' };
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error updating staff access.' };
+    }
+  },
+
+  async getShopSecurityAlerts(shopId: string): Promise<any[]> {
+    return await withAuthRecovery(async (supabase) => {
+      const { data, error } = await supabase
+        .from('staff_audit_logs')
+        .select('*')
+        .eq('shop_id', shopId)
+        .eq('event_type', 'PIN_CHANGED')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) return [];
       return data || [];
     });
   }

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { authApi, profilesApi, staffApi } from '../services/supabaseApi';
 import { apiPost } from '../utils/apiClient';
 import { ProfileRow, UserRole } from '../types/supabase';
-import { Permissions } from '../types';
+import { Permissions, getEffectivePermissions } from '../types';
 
 export type SwitchState = 'idle' | 'authenticating' | 'loading_profile' | 'acquiring_terminal' | 'ready' | 'error';
 
@@ -33,7 +33,20 @@ interface AuthContextType {
   logoutManager: () => void;
   refreshProfile: () => Promise<void>;
   updateStaffProfile: (id: string, updates: Partial<ProfileRow>, reason?: string) => Promise<{ success: boolean; error?: string }>;
+  updateStaffAccessWithPassword: (
+    targetId: string,
+    permissions: Partial<Permissions>,
+    schedule: any,
+    password: string,
+    reason?: string
+  ) => Promise<{ success: boolean; error?: string }>;
   resetStaffPin: (id: string, newPin: string, reason?: string) => Promise<{ success: boolean; error?: string }>;
+  setupManagerPassword: (params: {
+    managerId: string;
+    shopId: string;
+    pin: string;
+    newPassword: string;
+  }) => Promise<{ success: boolean; error?: string }>;
   users: ProfileRow[];
   isAccountPickerOpen: boolean;
   setIsAccountPickerOpen: (open: boolean) => void;
@@ -51,6 +64,12 @@ interface AuthContextType {
     pin: string;
     staffName: string;
   }) => Promise<{ success: boolean; locked?: boolean; remainingSeconds?: number; error?: string }>;
+  loginWithPassword: (params: {
+    targetStaffId: string;
+    targetShopId: string;
+    password: string;
+    staffName: string;
+  }) => Promise<{ success: boolean; requirePasswordSetup?: boolean; error?: string }>;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -249,24 +268,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 1. Owners and Admins have absolute business authority
     if (isOwner) return true;
     
-    // 2. Fixed System Roles are authoritative.
-    // Stored profile.permissions JSON cannot override fixed role boundaries.
-    if (isManager) {
-      // Manager default permissions: Sales, Inventory, Pawn, Seller Intake, Refunds, Reports.
-      // Manager does NOT gain Shop Settings, Owner rules, or full staff management authority.
-      const managerPerms: (keyof Permissions)[] = ['sales', 'inventory', 'pawn', 'sellerAcquisitions', 'refunds', 'reports'];
-      return managerPerms.includes(permission);
+    // 2. Critical privilege-escalation protection:
+    // Temporary managerElevation via Cashier PIN elevation MUST NOT grant staff management
+    if (permission === 'staff') {
+      return (rawRole as string) === 'owner' || (rawRole as string) === 'admin' || (rawRole as string) === 'manager';
     }
-    
-    if (isSeniorCashier) {
-      // Senior Cashier default permissions: Sales, Inventory, Pawn, Seller Intake.
-      const seniorDefaults: (keyof Permissions)[] = ['sales', 'inventory', 'pawn', 'sellerAcquisitions'];
-      return seniorDefaults.includes(permission);
+
+    // 3. Authoritative effective permissions (Role Baseline + Allowed Optional Grants)
+    const effective = getEffectivePermissions(rawRole, profile?.permissions as any);
+    if (effective[permission]) return true;
+
+    // 4. Temporary operational elevation on register (approvals for refunds, reports, etc.)
+    if (managerElevation) {
+      const operationalElevation: (keyof Permissions)[] = [
+        'sales', 'inventory', 'pawn', 'sellerAcquisitions', 'refunds', 'reports'
+      ];
+      return operationalElevation.includes(permission);
     }
-    
-    // 3. Standard Cashier default permissions: Sales, Inventory.
-    const cashierDefaults: (keyof Permissions)[] = ['sales', 'inventory'];
-    return cashierDefaults.includes(permission);
+
+    return false;
   };
 
   const verifyManagerPin = async (pin: string): Promise<{ success: boolean; error?: string }> => {
@@ -360,6 +380,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return res;
   };
 
+  const updateStaffAccessWithPassword = async (
+    targetId: string,
+    permissions: Partial<Permissions>,
+    schedule: any,
+    password: string,
+    reason?: string
+  ) => {
+    const res = await staffApi.updateStaffAccess({
+      targetId,
+      permissions,
+      schedule,
+      password,
+      reason
+    });
+    if (res.success) {
+      await refreshProfile();
+    }
+    return res;
+  };
+
   const resetStaffPin = async (id: string, newPin: string, reason?: string) => {
     const res = await staffApi.resetStaffPin(id, newPin, reason);
     if (res.success) {
@@ -397,7 +437,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           currentUser.id === targetStaffId && 
           p.id === targetStaffId && 
           p.shop_id === targetShopId && 
-          p.cashier_code === cashierCode
+          (!cashierCode || p.cashier_code === cashierCode)
         ) {
           if (p.is_active !== true) {
             throw new Error('This operator profile has been deactivated.');
@@ -577,6 +617,85 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginWithPassword = async (params: {
+    targetStaffId: string;
+    targetShopId: string;
+    password: string;
+    staffName: string;
+  }): Promise<{ success: boolean; requirePasswordSetup?: boolean; error?: string }> => {
+    if (switchOperationRef.current) {
+      return { success: false, error: 'A switch is already in progress' };
+    }
+
+    switchOperationRef.current = true;
+    setSwitchState('authenticating');
+    setSwitchTarget({
+      targetStaffId: params.targetStaffId,
+      targetShopId: params.targetShopId,
+      cashierCode: '',
+      staffName: params.staffName
+    });
+    setSwitchError(null);
+
+    try {
+      const res = await authApi.loginWithPassword(params.targetStaffId, params.password, params.targetShopId);
+
+      if (!res.success) {
+        setSwitchState('idle');
+        setSwitchTarget(null);
+        return res;
+      }
+
+      const currentUser = await authApi.getUser();
+      if (!currentUser || currentUser.id !== params.targetStaffId) {
+        const errMessage = 'Security mismatch: Authenticated identity does not match.';
+        setSwitchState('error');
+        setSwitchError(errMessage);
+        return { success: false, error: errMessage };
+      }
+
+      const stepRes = await completeSwitchSteps(params.targetStaffId, params.targetShopId, '');
+      if (!stepRes.success) {
+        return { success: false, error: stepRes.error };
+      }
+
+      setSwitchState('ready');
+      setIsAccountPickerOpen(false);
+      return { success: true };
+    } catch (err: any) {
+      const errMsg = err?.message || 'Authentication failed';
+      setSwitchState('error');
+      setSwitchError(errMsg);
+      return { success: false, error: errMsg };
+    } finally {
+      switchOperationRef.current = false;
+    }
+  };
+
+  const setupManagerPassword = async (params: {
+    managerId: string;
+    shopId: string;
+    pin: string;
+    newPassword: string;
+  }): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await authApi.setupManagerPassword(params);
+      if (!res.success) {
+        return res;
+      }
+      const stepRes = await completeSwitchSteps(params.managerId, params.shopId, '');
+      if (!stepRes.success) {
+        return stepRes;
+      }
+      setSwitchState('ready');
+      setIsAccountPickerOpen(false);
+      await refreshProfile();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Password setup failed' };
+    }
+  };
+
   const retrySwitchAccount = async (): Promise<{ success: boolean; error?: string }> => {
     if (!switchTarget) {
       return { success: false, error: 'No active switch target to retry' };
@@ -643,7 +762,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       logoutManager,
       refreshProfile,
       updateStaffProfile,
+      updateStaffAccessWithPassword,
       resetStaffPin,
+      setupManagerPassword,
       users,
       isAccountPickerOpen,
       setIsAccountPickerOpen,
@@ -654,7 +775,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       retrySwitchAccount,
       cancelSwitchAccount,
       resetSwitchState,
-      switchAccountWithPin
+      switchAccountWithPin,
+      loginWithPassword
     }}>
       {children}
     </AuthContext.Provider>
