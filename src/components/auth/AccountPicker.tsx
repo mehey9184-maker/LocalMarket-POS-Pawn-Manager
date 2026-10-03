@@ -47,6 +47,8 @@ export interface ShiftStatus {
   status: 'allowed' | 'too_early' | 'too_late' | 'non_working';
   title: string;
   subtitle: string;
+  nextLoginTime: Date | null;
+  reason: string;
 }
 
 export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftStatus {
@@ -55,7 +57,9 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
     return {
       status: 'allowed',
       title: "You're scheduled now",
-      subtitle: "Unrestricted Owner/Admin access"
+      subtitle: "Unrestricted Owner/Admin access",
+      nextLoginTime: null,
+      reason: ""
     };
   }
 
@@ -64,7 +68,9 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
     return {
       status: 'allowed',
       title: "You're scheduled now",
-      subtitle: "No schedule restriction"
+      subtitle: "No schedule restriction",
+      nextLoginTime: null,
+      reason: ""
     };
   }
 
@@ -94,6 +100,20 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
     }
   }
 
+  // Helper to get next login date/time
+  const getNextPermittedDate = (day: number, time: string): Date => {
+    const next = new Date(shopNow);
+    // Find next occurrence of the target day
+    let daysUntil = (day - next.getDay() + 7) % 7;
+    if (daysUntil === 0 && (next.getHours() * 60 + next.getMinutes() > (startH * 60 + startM))) {
+        daysUntil = 7;
+    }
+    next.setDate(next.getDate() + daysUntil);
+    const [h, m] = time.split(':').map(Number);
+    next.setHours(h, m, 0, 0);
+    return next;
+  };
+
   // 1. Is today a working day?
   const isWorkingToday = workingDays.includes(currentDay);
 
@@ -103,74 +123,104 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
         return {
           status: 'allowed',
           title: "You're scheduled now",
-          subtitle: `${startTime}–${endTime}`
+          subtitle: `${startTime}–${endTime}`,
+          nextLoginTime: null,
+          reason: ""
         };
       } else if (currentTotalMinutes < startWithEarlyTotalMinutes) {
+        const nextLoginTime = getNextPermittedDate(currentDay, startTime);
         const earlyH = Math.floor(startWithEarlyTotalMinutes / 60);
         const earlyM = startWithEarlyTotalMinutes % 60;
         const earlyTimeStr = `${String(earlyH).padStart(2, '0')}:${String(earlyM).padStart(2, '0')}`;
         return {
           status: 'too_early',
           title: `Your shift starts at ${startTime}`,
-          subtitle: `You can sign in from ${earlyTimeStr}.`
+          subtitle: `You can sign in from ${earlyTimeStr}.`,
+          nextLoginTime,
+          reason: "You can't sign in yet."
         };
       } else {
+        // Find next working day
+        let nextDay = (currentDay + 1) % 7;
+        while (!workingDays.includes(nextDay)) {
+            nextDay = (nextDay + 1) % 7;
+        }
+        const nextLoginTime = getNextPermittedDate(nextDay, startTime);
         const nextStr = getNextShiftInfo(workingDays, startTime, currentDay);
         return {
           status: 'too_late',
-          title: "Today's shift has ended",
-          subtitle: `Your scheduled hours were ${startTime}–${endTime}.` + (nextStr ? ` ${nextStr}` : '')
+          title: "Your shift has ended",
+          subtitle: `Your scheduled hours were ${startTime}–${endTime}.` + (nextStr ? ` ${nextStr}` : ''),
+          nextLoginTime,
+          reason: "Your shift has ended."
         };
       }
     } else {
-      // Overnight shift starting today
+      // Overnight shift
       if (currentTotalMinutes >= startWithEarlyTotalMinutes) {
         return {
           status: 'allowed',
           title: "You're scheduled now",
-          subtitle: `${startTime}–${endTime} (Overnight)`
+          subtitle: `${startTime}–${endTime} (Overnight)`,
+          nextLoginTime: null,
+          reason: ""
         };
       } else if (currentTotalMinutes < startWithEarlyTotalMinutes) {
         if (isActiveOvernightFromYesterday) {
           return {
             status: 'allowed',
             title: "You're scheduled now",
-            subtitle: `Active shift ends at ${endTime}`
+            subtitle: `Active shift ends at ${endTime}`,
+            nextLoginTime: null,
+            reason: ""
           };
         }
-        
+        const nextLoginTime = getNextPermittedDate(currentDay, startTime);
         const earlyH = Math.floor(startWithEarlyTotalMinutes / 60);
         const earlyM = startWithEarlyTotalMinutes % 60;
         const earlyTimeStr = `${String(earlyH).padStart(2, '0')}:${String(earlyM).padStart(2, '0')}`;
         return {
           status: 'too_early',
           title: `Your shift starts at ${startTime}`,
-          subtitle: `You can sign in from ${earlyTimeStr}.`
+          subtitle: `You can sign in from ${earlyTimeStr}.`,
+          nextLoginTime,
+          reason: "You can't sign in yet."
         };
       }
     }
   } else {
-    // Today is not a working day.
+    // Non-working day
     if (isActiveOvernightFromYesterday) {
       return {
         status: 'allowed',
         title: "You're scheduled now",
-        subtitle: `Active shift ends at ${endTime}`
+        subtitle: `Active shift ends at ${endTime}`,
+        nextLoginTime: null,
+        reason: ""
       };
     }
 
+    let nextDay = (currentDay + 1) % 7;
+    while (!workingDays.includes(nextDay)) {
+        nextDay = (nextDay + 1) % 7;
+    }
+    const nextLoginTime = getNextPermittedDate(nextDay, startTime);
     const nextStr = getNextShiftInfo(workingDays, startTime, currentDay);
     return {
       status: 'non_working',
       title: "You're not scheduled today",
-      subtitle: nextStr || "Please check your work schedule."
+      subtitle: nextStr || "Please check your work schedule.",
+      nextLoginTime,
+      reason: "You're off shift."
     };
   }
 
   return {
     status: 'too_late',
-    title: "Today's shift has ended",
-    subtitle: `Your scheduled hours were finished.`
+    title: "Your shift has ended",
+    subtitle: `Your scheduled hours are finished.`,
+    nextLoginTime: null,
+    reason: "Your shift has ended."
   };
 }
 
@@ -203,6 +253,68 @@ function translateServerError(serverError: string): React.ReactNode {
   }
   return serverError;
 }
+
+export // Helper to format duration for countdown
+function formatDuration(ms: number) {
+  const seconds = Math.floor((ms / 1000) % 60);
+  const minutes = Math.floor((ms / (1000 * 60)) % 60);
+  const hours = Math.floor((ms / (1000 * 60 * 60)) % 24);
+  const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+const ShiftLocked: React.FC<{
+  staff: ProfileRow;
+  shiftInfo: ShiftStatus;
+  onBack: () => void;
+}> = ({ staff, shiftInfo, onBack }) => {
+  const [timeRemaining, setTimeRemaining] = useState<number>(0);
+
+  useEffect(() => {
+    if (!shiftInfo.nextLoginTime) return;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const diff = Math.max(0, shiftInfo.nextLoginTime!.getTime() - now);
+      setTimeRemaining(diff);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [shiftInfo.nextLoginTime]);
+
+  return (
+    <div className="flex flex-col items-center justify-center p-4 space-y-6 animate-auth-fade">
+      <div className="relative">
+        <div className="absolute inset-0 bg-[#C85A32]/20 rounded-full animate-ping"></div>
+        <div className="w-24 h-24 rounded-full bg-stone-100 flex items-center justify-center relative shadow-inner">
+          <Lock className="w-10 h-10 text-[#C85A32] animate-pulse" />
+        </div>
+      </div>
+      
+      <div className="space-y-1 text-center">
+        <h2 className="font-headline font-bold text-2xl text-stone-900">{shiftInfo.reason}</h2>
+        <p className="text-stone-600 text-sm">{shiftInfo.title}</p>
+      </div>
+
+      <div className="bg-stone-100 p-6 rounded-2xl w-full text-center space-y-2 border border-stone-200">
+        <p className="text-xs font-bold uppercase tracking-widest text-stone-500">Starts in</p>
+        <div className="text-3xl font-mono font-bold text-stone-900 tabular-nums">
+          {formatDuration(timeRemaining)}
+        </div>
+        <p className="text-sm font-semibold text-stone-700">
+          {shiftInfo.nextLoginTime?.toLocaleTimeString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' })}
+        </p>
+      </div>
+
+      <button
+        onClick={onBack}
+        className="text-sm font-semibold text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
+      >
+        Back to staff list
+      </button>
+    </div>
+  );
+};
 
 export const AccountPicker: React.FC = () => {
   const { 
@@ -361,6 +473,7 @@ export const AccountPicker: React.FC = () => {
   };
 
   const isLocked = remainingSeconds > 0;
+  const isShiftLocked = shiftInfo && shiftInfo.status !== 'allowed';
 
   const getRoleLabel = (role: string | null | undefined) => {
     if (!role) return 'Staff';
@@ -375,6 +488,11 @@ export const AccountPicker: React.FC = () => {
 
   const handleLogin = async () => {
     if (!selectedStaff || isLocked || isAuthenticating || pin.length !== 6) return;
+    
+    // Security check again before calling switchAccountWithPin
+    const timezone = (shopProfile as any)?.timezone || 'Africa/Johannesburg';
+    const shiftInfoNow = evaluateShiftStatus(selectedStaff, timezone);
+    if (shiftInfoNow.status !== 'allowed') return;
 
     setIsAuthenticating(true);
     setError(null);
@@ -443,6 +561,8 @@ export const AccountPicker: React.FC = () => {
       onClick={() => !isSwitchingAccount && setIsAccountPickerOpen(false)}
     >
       {isSwitchingAccount ? (
+        // ... (existing isSwitchingAccount rendering block)
+        // [Existing block]
         switchState === 'error' ? (
           <div className="text-center space-y-6 flex flex-col items-center max-w-md w-full animate-auth-fade" onClick={(e) => e.stopPropagation()}>
             <div className="w-20 h-20 rounded-full bg-red-50 border border-red-100 flex items-center justify-center shrink-0 text-[#C85A32] shadow-sm">
@@ -619,6 +739,8 @@ export const AccountPicker: React.FC = () => {
               </button>
             </div>
           </div>
+        ) : isShiftLocked ? (
+          <ShiftLocked staff={selectedStaff} shiftInfo={shiftInfo} onBack={handleBack} />
         ) : (
           <div className="max-w-md mx-auto">
             <button
@@ -640,33 +762,6 @@ export const AccountPicker: React.FC = () => {
               <h2 className="font-headline font-bold text-2xl text-stone-900 tracking-tight">Welcome back, {selectedStaff.full_name}</h2>
               <p className="text-xs text-stone-500 mt-1">Enter your 6-digit PIN</p>
             </div>
-
-            {/* EMPLOYEE SHIFT AWARENESS UX */}
-            {shiftInfo && (
-              <div className={`w-full max-w-sm mx-auto p-4 rounded-2xl border mb-6 flex items-start gap-3 text-left ${
-                shiftInfo.status === 'allowed'
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
-                  : shiftInfo.status === 'too_early'
-                  ? 'bg-amber-50 border-amber-200 text-amber-950'
-                  : shiftInfo.status === 'non_working'
-                  ? 'bg-amber-50/70 border-amber-200/70 text-amber-900'
-                  : 'bg-stone-50 border-stone-200 text-stone-800'
-              }`}>
-                <div className={`p-2 rounded-xl shrink-0 ${
-                  shiftInfo.status === 'allowed'
-                    ? 'bg-emerald-100 text-emerald-600'
-                    : shiftInfo.status === 'too_early' || shiftInfo.status === 'non_working'
-                    ? 'bg-amber-100 text-amber-600'
-                    : 'bg-stone-100 text-stone-500'
-                }`}>
-                  <Calendar className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-xs">{shiftInfo.title}</h4>
-                  <p className="text-[11px] opacity-80 mt-0.5 leading-relaxed">{shiftInfo.subtitle}</p>
-                </div>
-              </div>
-            )}
 
             <div className="space-y-5">
               {/* LOCKOUT DISPLAY BANNER */}
