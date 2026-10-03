@@ -79,49 +79,199 @@ export const Header: React.FC<HeaderProps> = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
+  // Shared result-action dispatcher
+  const activateSearchResult = (type: 'inventory' | 'loan' | 'customer' | 'seller' | 'sale', data: any) => {
+    if (type === 'inventory') {
+      const item = data as InventoryItem;
+      const statusInfo = getSearchItemStatus(item, pawnLoans);
+      
+      if (statusInfo.type === 'retail' && hasPermission('sales')) {
+        addToCart(item);
+        setActiveTab('sell');
+      } else if (statusInfo.type === 'vault') {
+        if (statusInfo.linkedLoan) {
+          setSelectedVaultLoan(statusInfo.linkedLoan);
+        } else {
+          setSelectedInventoryItem(item);
+        }
+        setActiveTab('vault');
+      } else if (statusInfo.type === 'reserved') {
+        setSelectedInventoryItem(item);
+        setActiveTab('inventory');
+      } else if (statusInfo.type === 'pawned' && statusInfo.linkedLoan) {
+        setSelectedVaultLoan(statusInfo.linkedLoan);
+        setActiveTab('vault');
+      } else if (statusInfo.type === 'sold') {
+        const saleByItemId = salesHistory.find(s =>
+          s.items.some(si => si.item.id === item.id)
+        );
+        let matchingSale = saleByItemId;
+        if (!matchingSale && item.serialOrImei) {
+          const serialMatches = salesHistory.filter(s =>
+            s.items.some(si =>
+              Boolean(si.item.serialOrImei) &&
+              si.item.serialOrImei!.toLowerCase() === item.serialOrImei!.toLowerCase()
+            )
+          );
+          if (serialMatches.length === 1) matchingSale = serialMatches[0];
+        }
+
+        if (matchingSale) {
+          setActiveReceiptModal(matchingSale);
+        } else {
+          setSelectedInventoryItem(item);
+          setActiveTab('inventory');
+        }
+      } else {
+        setSelectedInventoryItem(item);
+        setActiveTab('inventory');
+      }
+    } else if (type === 'loan') {
+      if (hasPermission('pawn')) {
+        setSelectedVaultLoan(data);
+        setActiveTab('vault');
+      }
+    } else if (type === 'seller') {
+      setActiveCustomer(data);
+      setActiveTab('buy-pawn');
+    } else if (type === 'customer') {
+      handleSelectCustomer(data, 'buy-pawn');
+    } else if (type === 'sale') {
+      setActiveReceiptModal(data);
+    }
+
+    setSearchQuery('');
+    setIsSearchFocused(false);
+  };
+
   // Universal Search across domains
   const searchResults = useMemo(() => {
     const q = normalizeScannerInput(searchQuery).toLowerCase();
     if (q.length < 2) return null;
 
-    const matchedInventory = inventory.filter(i => 
+    const inventoryMatches = inventory.filter(i => 
       i.title.toLowerCase().includes(q) ||
       i.sku.toLowerCase().includes(q) ||
       (i.serialOrImei && i.serialOrImei.toLowerCase().includes(q))
-    ).slice(0, 3);
+    ).sort((a, b) => {
+      const aTitle = a.title.toLowerCase();
+      const aSku = a.sku.toLowerCase();
+      const aSerial = a.serialOrImei?.toLowerCase() || '';
+      const bTitle = b.title.toLowerCase();
+      const bSku = b.sku.toLowerCase();
+      const bSerial = b.serialOrImei?.toLowerCase() || '';
 
-    const matchedLoans = pawnLoans.filter(l =>
+      const getScore = (sku: string, serial: string, title: string) => {
+        if (sku === q) return 1;
+        if (serial === q) return 2;
+        if (title === q) return 3;
+        if (sku.startsWith(q) || serial.startsWith(q) || title.startsWith(q)) return 4;
+        return 5;
+      };
+      return getScore(aSku, aSerial, aTitle) - getScore(bSku, bSerial, bTitle);
+    }).slice(0, 3);
+
+    const loanMatches = pawnLoans.filter(l =>
       l.ticketNumber.toLowerCase().includes(q) ||
       l.customerName.toLowerCase().includes(q) ||
       l.customerIdNumber.includes(q) ||
       l.itemTitle.toLowerCase().includes(q)
-    ).slice(0, 3);
+    ).sort((a, b) => {
+      const aTicket = a.ticketNumber.toLowerCase();
+      const aId = a.customerIdNumber.toLowerCase();
+      const aMobile = a.customerMobile.toLowerCase();
+      const aTitle = a.itemTitle.toLowerCase();
+      const bTicket = b.ticketNumber.toLowerCase();
+      const bId = b.customerIdNumber.toLowerCase();
+      const bMobile = b.customerMobile.toLowerCase();
+      const bTitle = b.itemTitle.toLowerCase();
 
-    const matchedCustomers = customers.filter(c =>
+      const getScore = (ticket: string, id: string, mobile: string, title: string) => {
+        if (ticket === q) return 1;
+        if (id === q) return 2;
+        if (mobile === q) return 3;
+        if (title === q) return 4;
+        return 5;
+      };
+      return getScore(aTicket, aId, aMobile, aTitle) - getScore(bTicket, bId, bMobile, bTitle);
+    }).slice(0, 3);
+
+    const customerMatches = customers.filter(c =>
       c.fullName.toLowerCase().includes(q) ||
       c.idNumber.includes(q) ||
       c.mobile.includes(q)
-    ).slice(0, 3);
+    ).sort((a, b) => {
+      const aId = a.idNumber.toLowerCase();
+      const aMobile = a.mobile.toLowerCase();
+      const aName = a.fullName.toLowerCase();
+      const bId = b.idNumber.toLowerCase();
+      const bMobile = b.mobile.toLowerCase();
+      const bName = b.fullName.toLowerCase();
 
-    const matchedSellers = sellers.filter(s =>
+      const getScore = (id: string, mobile: string, name: string) => {
+        if (id === q) return 1;
+        if (mobile === q) return 2;
+        if (name === q) return 3;
+        if (id.startsWith(q) || mobile.startsWith(q) || name.startsWith(q)) return 4;
+        return 5;
+      };
+      return getScore(aId, aMobile, aName) - getScore(bId, bMobile, bName);
+    }).slice(0, 3);
+
+    const sellerMatches = sellers.filter(s =>
       s.fullName.toLowerCase().includes(q) ||
       s.idNumber.includes(q) ||
       s.mobile.includes(q)
-    ).slice(0, 3);
+    ).sort((a, b) => {
+      const aId = a.idNumber.toLowerCase();
+      const aMobile = a.mobile.toLowerCase();
+      const aName = a.fullName.toLowerCase();
+      const bId = b.idNumber.toLowerCase();
+      const bMobile = b.mobile.toLowerCase();
+      const bName = b.fullName.toLowerCase();
 
-    const matchedSales = salesHistory.filter(s =>
+      const getScore = (id: string, mobile: string, name: string) => {
+        if (id === q) return 1;
+        if (mobile === q) return 2;
+        if (name === q) return 3;
+        if (id.startsWith(q) || mobile.startsWith(q) || name.startsWith(q)) return 4;
+        return 5;
+      };
+      return getScore(aId, aMobile, aName) - getScore(bId, bMobile, bName);
+    }).slice(0, 3);
+
+    const saleMatches = salesHistory.filter(s =>
       s.receiptNumber.toLowerCase().includes(q)
-    ).slice(0, 2);
+    ).sort((a, b) => {
+      const aRec = a.receiptNumber.toLowerCase();
+      const bRec = b.receiptNumber.toLowerCase();
+      if (aRec === q) return -1;
+      if (bRec === q) return 1;
+      if (aRec.startsWith(q)) return -1;
+      if (bRec.startsWith(q)) return 1;
+      return 0;
+    }).slice(0, 2);
 
-    const totalCount = matchedInventory.length + matchedLoans.length + matchedCustomers.length + matchedSellers.length + matchedSales.length;
+    const totalCount = inventoryMatches.length + loanMatches.length + customerMatches.length + sellerMatches.length + saleMatches.length;
+
+    // Determine the "best" result for Enter behavior
+    let bestMatch: { type: 'inventory' | 'loan' | 'customer' | 'seller' | 'sale'; data: any } | null = null;
+    
+    // Priority order for categories if multiple matches exist with same relative rank
+    if (inventoryMatches.length > 0) bestMatch = { type: 'inventory', data: inventoryMatches[0] };
+    else if (loanMatches.length > 0) bestMatch = { type: 'loan', data: loanMatches[0] };
+    else if (saleMatches.length > 0) bestMatch = { type: 'sale', data: saleMatches[0] };
+    else if (customerMatches.length > 0) bestMatch = { type: 'customer', data: customerMatches[0] };
+    else if (sellerMatches.length > 0) bestMatch = { type: 'seller', data: sellerMatches[0] };
 
     return {
-      inventory: matchedInventory,
-      loans: matchedLoans,
-      customers: matchedCustomers,
-      sellers: matchedSellers,
-      sales: matchedSales,
-      totalCount
+      inventory: inventoryMatches,
+      loans: loanMatches,
+      customers: customerMatches,
+      sellers: sellerMatches,
+      sales: saleMatches,
+      totalCount,
+      bestMatch
     };
   }, [searchQuery, inventory, pawnLoans, customers, sellers, salesHistory]);
 
@@ -195,6 +345,13 @@ export const Header: React.FC<HeaderProps> = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => setIsSearchFocused(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && searchResults?.bestMatch) {
+                activateSearchResult(searchResults.bestMatch.type, searchResults.bestMatch.data);
+              } else if (e.key === 'Escape') {
+                setIsSearchFocused(false);
+              }
+            }}
             className="w-full bg-[#F8F9FA] border border-gray-200 rounded-xl py-2 pl-10 pr-4 text-[13px] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-[#C85A32] focus:bg-white focus:ring-2 focus:ring-[#C85A32]/10 transition-all"
           />
 
@@ -205,7 +362,14 @@ export const Header: React.FC<HeaderProps> = () => {
                 className="fixed inset-0 z-40" 
                 onClick={() => setIsSearchFocused(false)} 
               />
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl z-50 overflow-hidden max-h-[460px] overflow-y-auto divide-y divide-gray-100">
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl z-50 overflow-hidden max-h-[460px] overflow-y-auto divide-y divide-gray-100 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="bg-gray-50/50 px-4 py-1.5 border-b border-gray-100 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{searchResults.totalCount} Results Found</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-bold text-gray-400 bg-white border border-gray-200 px-1 rounded shadow-3xs italic">Enter to open best match</span>
+                  </div>
+                </div>
+
                 {/* 1. INVENTORY MATCHES */}
                 {searchResults.inventory.length > 0 && (
                   <div className="p-2">
@@ -217,11 +381,16 @@ export const Header: React.FC<HeaderProps> = () => {
                       const statusInfo = getSearchItemStatus(item, pawnLoans);
 
                       return (
-                        <div key={item.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
-                          <div className="min-w-0">
+                        <div key={item.id} className={`p-2 rounded-xl flex items-center justify-between gap-3 transition ${searchResults.bestMatch?.type === 'inventory' && searchResults.bestMatch?.data.id === item.id ? 'bg-orange-50/80 border border-orange-200 shadow-sm' : 'hover:bg-gray-50'}`}>
+                          <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-semibold text-gray-900 truncate">{item.title}</span>
                               <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">{item.sku}</span>
+                              {searchResults.bestMatch?.type === 'inventory' && searchResults.bestMatch?.data.id === item.id && (
+                                <span className="flex items-center gap-1 text-[9px] font-bold text-[#C85A32] bg-white border border-orange-200 px-1.5 py-0.5 rounded shadow-3xs">
+                                  ENTER ↲
+                                </span>
+                              )}
                             </div>
                             <div className="text-[11px] text-gray-500 flex items-center gap-2 mt-0.5">
                               <span className="font-mono font-bold text-gray-800">R {item.retailPrice.toLocaleString()}</span>
@@ -232,52 +401,23 @@ export const Header: React.FC<HeaderProps> = () => {
                           <div className="flex items-center gap-1.5">
                             {statusInfo.type === 'retail' && hasPermission('sales') && (
                               <button
-                                onClick={() => {
-                                  addToCart(item);
-                                  setActiveTab('sell');
-                                  setIsSearchFocused(false);
-                                  setSearchQuery('');
-                                }}
+                                onClick={() => activateSearchResult('inventory', item)}
                                 className="px-2.5 py-1 rounded-lg bg-[#FDF0EA] text-[#C85A32] hover:bg-[#C85A32] hover:text-white text-xs font-semibold transition cursor-pointer"
                               >
                                 Sell
                               </button>
                             )}
                             {statusInfo.type === 'vault' && (
-                              statusInfo.linkedLoan ? (
-                                <button
-                                  onClick={() => {
-                                    setSelectedVaultLoan(statusInfo.linkedLoan!);
-                                    setActiveTab('vault');
-                                    setIsSearchFocused(false);
-                                    setSearchQuery('');
-                                  }}
-                                  className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-semibold transition cursor-pointer"
-                                >
-                                  Open Loan
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => {
-                                    setSelectedInventoryItem(item);
-                                    setActiveTab('vault');
-                                    setIsSearchFocused(false);
-                                    setSearchQuery('');
-                                  }}
-                                  className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-semibold transition cursor-pointer"
-                                >
-                                  Open in Vault
-                                </button>
-                              )
+                              <button
+                                onClick={() => activateSearchResult('inventory', item)}
+                                className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 text-xs font-semibold transition cursor-pointer"
+                              >
+                                {statusInfo.linkedLoan ? 'Open Loan' : 'Open in Vault'}
+                              </button>
                             )}
                             {statusInfo.type === 'reserved' && (
                               <button
-                                onClick={() => {
-                                  setSelectedInventoryItem(item);
-                                  setActiveTab('inventory');
-                                  setIsSearchFocused(false);
-                                  setSearchQuery('');
-                                }}
+                                onClick={() => activateSearchResult('inventory', item)}
                                 className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 hover:bg-amber-100 text-xs font-semibold transition cursor-pointer"
                               >
                                 Open Item
@@ -285,74 +425,23 @@ export const Header: React.FC<HeaderProps> = () => {
                             )}
                             {statusInfo.type === 'pawned' && statusInfo.linkedLoan && (
                               <button
-                                onClick={() => {
-                                  setSelectedVaultLoan(statusInfo.linkedLoan!);
-                                  setActiveTab('vault');
-                                  setIsSearchFocused(false);
-                                  setSearchQuery('');
-                                }}
+                                onClick={() => activateSearchResult('inventory', item)}
                                 className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition cursor-pointer"
                               >
                                 Open Loan
                               </button>
                             )}
-                            {statusInfo.type === 'sold' && (() => {
-                              const saleByItemId = salesHistory.find(s =>
-                                s.items.some(si => si.item.id === item.id)
-                              );
-
-                              let matchingSale = saleByItemId;
-
-                              if (!matchingSale && item.serialOrImei) {
-                                const serialMatches = salesHistory.filter(s =>
-                                  s.items.some(si =>
-                                    Boolean(si.item.serialOrImei) &&
-                                    si.item.serialOrImei!.toLowerCase() === item.serialOrImei!.toLowerCase()
-                                  )
-                                );
-
-                                if (serialMatches.length === 1) {
-                                  matchingSale = serialMatches[0];
-                                }
-                              }
-
-                              if (matchingSale) {
-                                return (
-                                  <button
-                                    onClick={() => {
-                                      setActiveReceiptModal(matchingSale);
-                                      setIsSearchFocused(false);
-                                      setSearchQuery('');
-                                    }}
-                                    className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold transition cursor-pointer"
-                                  >
-                                    Open Receipt
-                                  </button>
-                                );
-                              } else {
-                                return (
-                                  <button
-                                    onClick={() => {
-                                      setSelectedInventoryItem(item);
-                                      setActiveTab('inventory');
-                                      setIsSearchFocused(false);
-                                      setSearchQuery('');
-                                    }}
-                                    className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold transition cursor-pointer"
-                                  >
-                                    View Item
-                                  </button>
-                                );
-                              }
-                            })()}
+                            {statusInfo.type === 'sold' && (
+                              <button
+                                onClick={() => activateSearchResult('inventory', item)}
+                                className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold transition cursor-pointer"
+                              >
+                                Receipt
+                              </button>
+                            )}
                             {statusInfo.type === 'other' && (
                               <button
-                                onClick={() => {
-                                  setSelectedInventoryItem(item);
-                                  setActiveTab('inventory');
-                                  setIsSearchFocused(false);
-                                  setSearchQuery('');
-                                }}
+                                onClick={() => activateSearchResult('inventory', item)}
                                 className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold transition cursor-pointer"
                               >
                                 View
@@ -373,22 +462,22 @@ export const Header: React.FC<HeaderProps> = () => {
                       <span>Pawn Loans</span>
                     </div>
                     {searchResults.loans.map(loan => (
-                      <div key={loan.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
-                        <div className="min-w-0">
+                      <div key={loan.id} className={`p-2 rounded-xl flex items-center justify-between gap-3 transition ${searchResults.bestMatch?.type === 'loan' && searchResults.bestMatch?.data.id === loan.id ? 'bg-blue-50/80 border border-blue-200 shadow-sm' : 'hover:bg-gray-50'}`}>
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-semibold text-gray-900">{loan.customerName}</span>
                             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">{loan.ticketNumber}</span>
+                            {searchResults.bestMatch?.type === 'loan' && searchResults.bestMatch?.data.id === loan.id && (
+                              <span className="flex items-center gap-1 text-[9px] font-bold text-blue-600 bg-white border border-blue-200 px-1.5 py-0.5 rounded shadow-3xs">
+                                ENTER ↲
+                              </span>
+                            )}
                           </div>
                           <p className="text-[11px] text-gray-500 truncate">{loan.itemTitle} · Principal: R {loan.principal}</p>
                         </div>
                         {hasPermission('pawn') && (
                           <button
-                            onClick={() => {
-                              setSelectedVaultLoan(loan);
-                              setActiveTab('vault');
-                              setIsSearchFocused(false);
-                              setSearchQuery('');
-                            }}
+                            onClick={() => activateSearchResult('loan', loan)}
                             className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white text-xs font-semibold transition cursor-pointer"
                           >
                             Open Loan
@@ -407,19 +496,21 @@ export const Header: React.FC<HeaderProps> = () => {
                       <span>Outright Sellers</span>
                     </div>
                     {searchResults.sellers.map(seller => (
-                      <div key={seller.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
-                        <div>
-                          <p className="text-xs font-semibold text-gray-900">{seller.fullName}</p>
+                      <div key={seller.id} className={`p-2 rounded-xl flex items-center justify-between gap-3 transition ${searchResults.bestMatch?.type === 'seller' && searchResults.bestMatch?.data.id === seller.id ? 'bg-orange-50/80 border border-orange-200 shadow-sm' : 'hover:bg-gray-50'}`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-semibold text-gray-900 truncate">{seller.fullName}</p>
+                            {searchResults.bestMatch?.type === 'seller' && searchResults.bestMatch?.data.id === seller.id && (
+                              <span className="flex items-center gap-1 text-[9px] font-bold text-[#C85A32] bg-white border border-orange-200 px-1.5 py-0.5 rounded shadow-3xs">
+                                ENTER ↲
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-gray-500 font-mono">ID: {seller.idNumber} · {seller.mobile}</p>
                         </div>
                         <button
-                          onClick={() => {
-                            setActiveCustomer(seller as any);
-                            setActiveTab('buy-pawn');
-                            setIsSearchFocused(false);
-                            setSearchQuery('');
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-orange-50 text-[#C85A32] hover:bg-[#C85A32] hover:text-white text-xs font-semibold transition"
+                          onClick={() => activateSearchResult('seller', seller)}
+                          className="px-2.5 py-1 rounded-lg bg-orange-50 text-[#C85A32] hover:bg-[#C85A32] hover:text-white text-xs font-semibold transition shrink-0"
                         >
                           Buy Intake
                         </button>
@@ -436,14 +527,21 @@ export const Header: React.FC<HeaderProps> = () => {
                       <span>Pawn Customers</span>
                     </div>
                     {searchResults.customers.map(customer => (
-                      <div key={customer.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
-                        <div>
-                          <p className="text-xs font-semibold text-gray-900">{customer.fullName}</p>
+                      <div key={customer.id} className={`p-2 rounded-xl flex items-center justify-between gap-3 transition ${searchResults.bestMatch?.type === 'customer' && searchResults.bestMatch?.data.id === customer.id ? 'bg-emerald-50/80 border border-emerald-200 shadow-sm' : 'hover:bg-gray-50'}`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-semibold text-gray-900 truncate">{customer.fullName}</p>
+                            {searchResults.bestMatch?.type === 'customer' && searchResults.bestMatch?.data.id === customer.id && (
+                              <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-white border border-emerald-200 px-1.5 py-0.5 rounded shadow-3xs">
+                                ENTER ↲
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-gray-500 font-mono">ID: {customer.idNumber} · {customer.mobile}</p>
                         </div>
                         <button
-                          onClick={() => handleSelectCustomer(customer, 'buy-pawn')}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white text-xs font-semibold transition"
+                          onClick={() => activateSearchResult('customer', customer)}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white text-xs font-semibold transition shrink-0"
                         >
                           Pawn Intake
                         </button>
@@ -460,18 +558,21 @@ export const Header: React.FC<HeaderProps> = () => {
                       <span>Sales Receipts</span>
                     </div>
                     {searchResults.sales.map(sale => (
-                      <div key={sale.id} className="p-2 hover:bg-gray-50 rounded-xl flex items-center justify-between gap-3 transition">
-                        <div>
-                          <p className="text-xs font-bold font-mono text-gray-900">{sale.receiptNumber}</p>
+                      <div key={sale.id} className={`p-2 rounded-xl flex items-center justify-between gap-3 transition ${searchResults.bestMatch?.type === 'sale' && searchResults.bestMatch?.data.id === sale.id ? 'bg-purple-50/80 border border-purple-200 shadow-sm' : 'hover:bg-gray-50'}`}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-bold font-mono text-gray-900 truncate">{sale.receiptNumber}</p>
+                            {searchResults.bestMatch?.type === 'sale' && searchResults.bestMatch?.data.id === sale.id && (
+                              <span className="flex items-center gap-1 text-[9px] font-bold text-purple-600 bg-white border border-purple-200 px-1.5 py-0.5 rounded shadow-3xs">
+                                ENTER ↲
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-gray-500">R {sale.total.toLocaleString()} · {sale.tenderMethod.toUpperCase()}</p>
                         </div>
                         <button
-                          onClick={() => {
-                            setActiveReceiptModal(sale);
-                            setIsSearchFocused(false);
-                            setSearchQuery('');
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white text-xs font-semibold transition"
+                          onClick={() => activateSearchResult('sale', sale)}
+                          className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white text-xs font-semibold transition shrink-0"
                         >
                           Receipt
                         </button>
