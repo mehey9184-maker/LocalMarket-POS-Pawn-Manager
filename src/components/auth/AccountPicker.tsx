@@ -49,29 +49,17 @@ export interface ShiftStatus {
   subtitle: string;
   nextLoginTime: Date | null;
   reason: string;
+  countdownLabel: string;
 }
 
 export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftStatus {
-  // Owners and Admins are always allowed
   if (staff.role === 'owner' || staff.role === 'admin') {
-    return {
-      status: 'allowed',
-      title: "You're scheduled now",
-      subtitle: "Unrestricted Owner/Admin access",
-      nextLoginTime: null,
-      reason: ""
-    };
+    return { status: 'allowed', title: "You're scheduled now", subtitle: "Unrestricted Owner/Admin access", nextLoginTime: null, reason: "", countdownLabel: "" };
   }
 
   const schedule = (staff.schedule as any);
   if (!schedule) {
-    return {
-      status: 'allowed',
-      title: "You're scheduled now",
-      subtitle: "No schedule restriction",
-      nextLoginTime: null,
-      reason: ""
-    };
+    return { status: 'allowed', title: "You're scheduled now", subtitle: "No schedule restriction", nextLoginTime: null, reason: "", countdownLabel: "" };
   }
 
   const workingDays = schedule.workingDays || [1, 2, 3, 4, 5];
@@ -91,137 +79,79 @@ export function evaluateShiftStatus(staff: ProfileRow, timezone: string): ShiftS
   const startWithEarlyTotalMinutes = startTotalMinutes - earlyMins;
   const endTotalMinutes = endH * 60 + endM;
 
-  // Check overnight transition from yesterday
   const yesterdayDay = (currentDay + 6) % 7;
   let isActiveOvernightFromYesterday = false;
   if (workingDays.includes(yesterdayDay) && overnight) {
-    if (currentTotalMinutes <= endTotalMinutes) {
-      isActiveOvernightFromYesterday = true;
-    }
+    if (currentTotalMinutes <= endTotalMinutes) isActiveOvernightFromYesterday = true;
   }
 
-  // Helper to get next login date/time
-  const getNextPermittedDate = (day: number, time: string): Date => {
+  const getNextPermittedDate = (day: number, time: string, earlyMins: number): Date => {
     const next = new Date(shopNow);
-    // Find next occurrence of the target day
     let daysUntil = (day - next.getDay() + 7) % 7;
-    if (daysUntil === 0 && (next.getHours() * 60 + next.getMinutes() > (startH * 60 + startM))) {
-        daysUntil = 7;
-    }
+    if (daysUntil === 0 && (currentTotalMinutes > (startH * 60 + startM - earlyMins))) daysUntil = 7;
     next.setDate(next.getDate() + daysUntil);
     const [h, m] = time.split(':').map(Number);
-    next.setHours(h, m, 0, 0);
+    let totalM = h * 60 + m - earlyMins;
+    next.setHours(Math.floor(totalM / 60), totalM % 60, 0, 0);
     return next;
   };
 
-  // 1. Is today a working day?
   const isWorkingToday = workingDays.includes(currentDay);
-
   if (isWorkingToday) {
     if (!overnight) {
       if (currentTotalMinutes >= startWithEarlyTotalMinutes && currentTotalMinutes <= endTotalMinutes) {
-        return {
-          status: 'allowed',
-          title: "You're scheduled now",
-          subtitle: `${startTime}–${endTime}`,
-          nextLoginTime: null,
-          reason: ""
-        };
+        return { status: 'allowed', title: "You're scheduled now", subtitle: `${startTime}–${endTime}`, nextLoginTime: null, reason: "", countdownLabel: "" };
       } else if (currentTotalMinutes < startWithEarlyTotalMinutes) {
-        const nextLoginTime = getNextPermittedDate(currentDay, startTime);
-        const earlyH = Math.floor(startWithEarlyTotalMinutes / 60);
-        const earlyM = startWithEarlyTotalMinutes % 60;
-        const earlyTimeStr = `${String(earlyH).padStart(2, '0')}:${String(earlyM).padStart(2, '0')}`;
         return {
           status: 'too_early',
           title: `Your shift starts at ${startTime}`,
-          subtitle: `You can sign in from ${earlyTimeStr}.`,
-          nextLoginTime,
-          reason: "You can't sign in yet."
+          subtitle: `You can sign in from ${startTime.split(':').map((v, i) => i === 0 ? String(Math.floor((startH * 60 + startM - earlyMins) / 60)).padStart(2, '0') : String((startH * 60 + startM - earlyMins) % 60).padStart(2, '0')).join(':')}.`,
+          nextLoginTime: getNextPermittedDate(currentDay, startTime, earlyMins),
+          reason: "You're a little early",
+          countdownLabel: "Your shift starts in"
         };
       } else {
-        // Find next working day
         let nextDay = (currentDay + 1) % 7;
-        while (!workingDays.includes(nextDay)) {
-            nextDay = (nextDay + 1) % 7;
-        }
-        const nextLoginTime = getNextPermittedDate(nextDay, startTime);
-        const nextStr = getNextShiftInfo(workingDays, startTime, currentDay);
+        while (!workingDays.includes(nextDay)) nextDay = (nextDay + 1) % 7;
         return {
           status: 'too_late',
           title: "Your shift has ended",
-          subtitle: `Your scheduled hours were ${startTime}–${endTime}.` + (nextStr ? ` ${nextStr}` : ''),
-          nextLoginTime,
-          reason: "Your shift has ended."
+          subtitle: `Your scheduled hours were ${startTime}–${endTime}.`,
+          nextLoginTime: getNextPermittedDate(nextDay, startTime, earlyMins),
+          reason: "Your shift has ended",
+          countdownLabel: "Next access in"
         };
       }
     } else {
-      // Overnight shift
-      if (currentTotalMinutes >= startWithEarlyTotalMinutes) {
-        return {
-          status: 'allowed',
-          title: "You're scheduled now",
-          subtitle: `${startTime}–${endTime} (Overnight)`,
-          nextLoginTime: null,
-          reason: ""
-        };
-      } else if (currentTotalMinutes < startWithEarlyTotalMinutes) {
-        if (isActiveOvernightFromYesterday) {
+        if (currentTotalMinutes >= startWithEarlyTotalMinutes) {
+          return { status: 'allowed', title: "You're scheduled now", subtitle: `${startTime}–${endTime} (Overnight)`, nextLoginTime: null, reason: "", countdownLabel: "" };
+        } else if (currentTotalMinutes < startWithEarlyTotalMinutes) {
+          if (isActiveOvernightFromYesterday) return { status: 'allowed', title: "You're scheduled now", subtitle: `Active shift ends at ${endTime}`, nextLoginTime: null, reason: "", countdownLabel: "" };
           return {
-            status: 'allowed',
-            title: "You're scheduled now",
-            subtitle: `Active shift ends at ${endTime}`,
-            nextLoginTime: null,
-            reason: ""
+            status: 'too_early',
+            title: `Your shift starts at ${startTime}`,
+            subtitle: `You can sign in from ${startTime.split(':').map((v, i) => i === 0 ? String(Math.floor((startH * 60 + startM - earlyMins) / 60)).padStart(2, '0') : String((startH * 60 + startM - earlyMins) % 60).padStart(2, '0')).join(':')}.`,
+            nextLoginTime: getNextPermittedDate(currentDay, startTime, earlyMins),
+            reason: "You're a little early",
+            countdownLabel: "Your shift starts in"
           };
         }
-        const nextLoginTime = getNextPermittedDate(currentDay, startTime);
-        const earlyH = Math.floor(startWithEarlyTotalMinutes / 60);
-        const earlyM = startWithEarlyTotalMinutes % 60;
-        const earlyTimeStr = `${String(earlyH).padStart(2, '0')}:${String(earlyM).padStart(2, '0')}`;
-        return {
-          status: 'too_early',
-          title: `Your shift starts at ${startTime}`,
-          subtitle: `You can sign in from ${earlyTimeStr}.`,
-          nextLoginTime,
-          reason: "You can't sign in yet."
-        };
-      }
     }
   } else {
-    // Non-working day
-    if (isActiveOvernightFromYesterday) {
-      return {
-        status: 'allowed',
-        title: "You're scheduled now",
-        subtitle: `Active shift ends at ${endTime}`,
-        nextLoginTime: null,
-        reason: ""
-      };
-    }
+    if (isActiveOvernightFromYesterday) return { status: 'allowed', title: "You're scheduled now", subtitle: `Active shift ends at ${endTime}`, nextLoginTime: null, reason: "", countdownLabel: "" };
 
     let nextDay = (currentDay + 1) % 7;
-    while (!workingDays.includes(nextDay)) {
-        nextDay = (nextDay + 1) % 7;
-    }
-    const nextLoginTime = getNextPermittedDate(nextDay, startTime);
-    const nextStr = getNextShiftInfo(workingDays, startTime, currentDay);
+    while (!workingDays.includes(nextDay)) nextDay = (nextDay + 1) % 7;
     return {
       status: 'non_working',
-      title: "You're not scheduled today",
-      subtitle: nextStr || "Please check your work schedule.",
-      nextLoginTime,
-      reason: "You're off shift."
+      title: "You're off today",
+      subtitle: "You're not scheduled to work today.",
+      nextLoginTime: getNextPermittedDate(nextDay, startTime, earlyMins),
+      reason: "You're off today",
+      countdownLabel: "Next access in"
     };
   }
-
-  return {
-    status: 'too_late',
-    title: "Your shift has ended",
-    subtitle: `Your scheduled hours are finished.`,
-    nextLoginTime: null,
-    reason: "Your shift has ended."
-  };
+  return { status: 'too_late', title: "Your shift has ended", subtitle: `Your scheduled hours are finished.`, nextLoginTime: null, reason: "Your shift has ended", countdownLabel: "" };
 }
 
 // Map server schedule rejection error messages to descriptive, user-friendly copy
@@ -270,7 +200,7 @@ const ShiftLocked: React.FC<{
   shiftInfo: ShiftStatus;
   onBack: () => void;
 }> = ({ staff, shiftInfo, onBack }) => {
-  const [timeRemaining, setTimeRemaining] = useState<number>(0);
+  const [timeRemaining, setTimeRemaining] = useState<number>(() => Math.max(0, shiftInfo.nextLoginTime!.getTime() - Date.now()));
 
   useEffect(() => {
     if (!shiftInfo.nextLoginTime) return;
@@ -282,36 +212,50 @@ const ShiftLocked: React.FC<{
     return () => clearInterval(timer);
   }, [shiftInfo.nextLoginTime]);
 
+  const shopProfile = useApp().shopProfile;
+  const timezone = (shopProfile as any)?.timezone || 'Africa/Johannesburg';
+
   return (
-    <div className="flex flex-col items-center justify-center p-4 space-y-6 animate-auth-fade">
-      <div className="relative">
-        <div className="absolute inset-0 bg-[#C85A32]/20 rounded-full animate-ping"></div>
-        <div className="w-24 h-24 rounded-full bg-stone-100 flex items-center justify-center relative shadow-inner">
-          <Lock className="w-10 h-10 text-[#C85A32] animate-pulse" />
-        </div>
-      </div>
+    <div className="fixed inset-0 z-[10000] bg-stone-50 flex flex-col items-center justify-center p-8 animate-auth-fade">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-stone-100 via-stone-50 to-stone-50"></div>
       
-      <div className="space-y-1 text-center">
-        <h2 className="font-headline font-bold text-2xl text-stone-900">{shiftInfo.reason}</h2>
-        <p className="text-stone-600 text-sm">{shiftInfo.title}</p>
-      </div>
-
-      <div className="bg-stone-100 p-6 rounded-2xl w-full text-center space-y-2 border border-stone-200">
-        <p className="text-xs font-bold uppercase tracking-widest text-stone-500">Starts in</p>
-        <div className="text-3xl font-mono font-bold text-stone-900 tabular-nums">
-          {formatDuration(timeRemaining)}
+      <div className="relative z-10 flex flex-col items-center max-w-lg w-full text-center space-y-8">
+        <div className="space-y-4">
+          <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center shadow-lg mx-auto mb-4 overflow-hidden border border-stone-200">
+             {staff.avatar_url ? <img src={staff.avatar_url} alt="" className="w-full h-full object-cover" /> : <span className="text-2xl font-bold text-stone-600">{getInitials(staff.full_name)}</span>}
+          </div>
+          <h1 className="font-headline font-bold text-3xl text-stone-900">{staff.full_name}</h1>
+          <p className="text-stone-500 uppercase tracking-widest text-xs font-mono">{getRoleLabel(staff.role)}</p>
         </div>
-        <p className="text-sm font-semibold text-stone-700">
-          {shiftInfo.nextLoginTime?.toLocaleTimeString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' })}
-        </p>
-      </div>
 
-      <button
-        onClick={onBack}
-        className="text-sm font-semibold text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
-      >
-        Back to staff list
-      </button>
+        <div className="relative py-8">
+          <div className="absolute inset-0 bg-[#C85A32]/5 rounded-full blur-3xl animate-pulse"></div>
+          <Lock className="w-20 h-20 text-[#C85A32] relative z-10" />
+        </div>
+        
+        <div className="space-y-2">
+          <h2 className="font-headline font-bold text-4xl text-stone-900">{shiftInfo.reason}</h2>
+          <p className="text-stone-600 text-lg">{shiftInfo.title}</p>
+        </div>
+
+        <div className="w-full bg-white/50 backdrop-blur-sm border border-stone-200 p-8 rounded-3xl space-y-4 shadow-sm">
+          <p className="text-sm font-bold uppercase tracking-widest text-stone-500">{shiftInfo.countdownLabel}</p>
+          <div className="text-6xl font-mono font-bold text-stone-900 tabular-nums tracking-tighter">
+            {formatDuration(timeRemaining)}
+          </div>
+          <p className="text-base font-semibold text-stone-700">
+             {shiftInfo.nextLoginTime?.toLocaleDateString([], { weekday: 'long' })} · {shiftInfo.nextLoginTime?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </p>
+        </div>
+
+        <button
+          onClick={onBack}
+          className="text-base font-semibold text-stone-500 hover:text-stone-900 transition-colors cursor-pointer flex items-center gap-2"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          Back to staff list
+        </button>
+      </div>
     </div>
   );
 };
@@ -472,9 +416,6 @@ export const AccountPicker: React.FC = () => {
     setRemainingSeconds(0);
   };
 
-  const isLocked = remainingSeconds > 0;
-  const isShiftLocked = shiftInfo && shiftInfo.status !== 'allowed';
-
   const getRoleLabel = (role: string | null | undefined) => {
     if (!role) return 'Staff';
     switch (role) {
@@ -485,6 +426,20 @@ export const AccountPicker: React.FC = () => {
       default: return role.replace(/_/g, ' ');
     }
   };
+
+  const getInitials = (name: string | null | undefined) => {
+    if (!name) return 'ST';
+    return name
+      .split(' ')
+      .filter(Boolean)
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2);
+  };
+
+  const isLocked = remainingSeconds > 0;
+  const isShiftLocked = shiftInfo && shiftInfo.status !== 'allowed';
 
   const handleLogin = async () => {
     if (!selectedStaff || isLocked || isAuthenticating || pin.length !== 6) return;
@@ -537,17 +492,6 @@ export const AccountPicker: React.FC = () => {
     } finally {
       setIsAuthenticating(false);
     }
-  };
-
-  const getInitials = (name: string | null | undefined) => {
-    if (!name) return 'ST';
-    return name
-      .split(' ')
-      .filter(Boolean)
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .substring(0, 2);
   };
 
   const activeStaff = users.filter(u => u.is_active && u.role !== 'admin');
