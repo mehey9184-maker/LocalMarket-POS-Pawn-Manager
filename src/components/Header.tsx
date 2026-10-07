@@ -220,7 +220,9 @@ export const Header: React.FC<HeaderProps> = () => {
       
       if (statusInfo.type === 'retail' && hasPermission('sales')) {
         addToCart(item);
-        setActiveTab('sell');
+        if (item.retailPrice > 0) {
+          setActiveTab('sell');
+        }
       } else if (statusInfo.type === 'vault') {
         if (statusInfo.linkedLoan) {
           setSelectedVaultLoan(statusInfo.linkedLoan);

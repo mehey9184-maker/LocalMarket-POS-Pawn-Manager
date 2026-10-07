@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useInventory } from '../../context/InventoryContext';
+import { displaySerial } from '../../utils/serialFormatter';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Package, 
@@ -391,7 +392,7 @@ export const Inventory: React.FC = () => {
                   <div className="space-y-1">
                     <h3 className="text-base font-bold text-gray-900 leading-snug">{selectedItem.title}</h3>
                     <p className="text-xs text-gray-500">{selectedItem.category} · {selectedItem.condition} condition</p>
-                    <p className="text-xs font-mono text-gray-600 mt-1">Serial / IMEI: {selectedItem.serialOrImei || 'N/A'}</p>
+                    <p className="text-xs font-mono text-gray-600 mt-1">Serial / IMEI: {displaySerial(selectedItem.serialOrImei)}</p>
                   </div>
                 </div>
 

@@ -68,6 +68,13 @@ export const BuyPawnLocationStep: React.FC<BuyPawnLocationStepProps> = ({
               <option value="Vault Hold">Vault Hold (Storage / High Value)</option>
               <option value="InStock">InStock (Backroom Inventory)</option>
             </select>
+            <p className="text-[11px] text-gray-500">
+              {existingStockStatus === 'Vault Hold'
+                ? 'Goes in the vault, not on sale.'
+                : existingStockStatus === 'InStock'
+                ? 'Goes to the backroom, not on the shop floor.'
+                : 'Goes on the shop floor.'}
+            </p>
           </div>
 
           <div className="md:col-span-2 space-y-2">

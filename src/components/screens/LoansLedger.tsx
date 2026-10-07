@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useLoans } from '../../context/LoanContext';
 import { useCustomers } from '../../context/CustomerContext';
 import { PawnLoan } from '../../types';
+import { displaySerial } from '../../utils/serialFormatter';
 import { AutoSizer as AutoSizerComponent } from 'react-virtualized-auto-sizer';
 import { VirtualList } from '../common/VirtualList';
 
@@ -111,7 +112,7 @@ const LoanCard: React.FC<{
               {loan.itemTitle}
             </h4>
             <p className="text-[10px] text-gray-400 font-mono truncate mt-0.5">
-              SN: {loan.serialOrImei}
+              SN: {displaySerial(loan.serialOrImei)}
             </p>
           </div>
         </div>
@@ -384,7 +385,7 @@ export const LoansLedger: React.FC = () => {
                   </div>
                   <div className="pt-2 border-t border-gray-200 flex items-center justify-between text-xs font-mono">
                     <span className="text-gray-600 truncate max-w-[220px]">{selectedLoanForDrawer.itemTitle}</span>
-                    <span className="text-gray-500">SN: {selectedLoanForDrawer.serialOrImei}</span>
+                    <span className="text-gray-500">SN: {displaySerial(selectedLoanForDrawer.serialOrImei)}</span>
                   </div>
                 </div>
 

@@ -4,6 +4,7 @@ import { useInventory } from '../../context/InventoryContext';
 import { useSaps } from '../../context/SapsContext';
 import { InventoryItem, ITEM_CATEGORIES } from '../../types';
 import { ProfileRow } from '../../types/supabase';
+import { displaySerial } from '../../utils/serialFormatter';
 import { AutoSizer as AutoSizerComponent } from 'react-virtualized-auto-sizer';
 import { VirtualList } from '../common/VirtualList';
 
@@ -55,7 +56,7 @@ const InventoryRow: React.FC<{
           <div className="flex items-center gap-2 text-[10px] text-gray-500 font-mono mt-0.5 truncate">
             <span className="text-[#C85A32] font-bold">{item.sku}</span>
             <span>•</span>
-            <span>SN: {item.serialOrImei}</span>
+            <span>SN: {displaySerial(item.serialOrImei)}</span>
           </div>
         </div>
       </div>

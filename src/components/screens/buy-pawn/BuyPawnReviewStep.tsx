@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { ShoppingBag, Lock, FileText, Plus, Loader2 } from 'lucide-react';
 import { Customer, Seller } from '../../../types';
 import { TxType, ItemDraft, PawnCalculations } from './buyPawnTypes';
+import { displaySerial } from '../../../utils/serialFormatter';
 
 interface BuyPawnReviewStepProps {
   txType: TxType;
@@ -89,7 +90,7 @@ export const BuyPawnReviewStep: React.FC<BuyPawnReviewStepProps> = ({
                   <div>
                     <p className="text-xs font-semibold text-gray-900">{item.title}</p>
                     <p className="text-[10px] text-gray-500 font-mono">
-                      {item.serialOrImei || 'No Serial'}
+                      {displaySerial(item.serialOrImei)}
                     </p>
                   </div>
                 </div>

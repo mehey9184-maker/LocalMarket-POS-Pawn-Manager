@@ -4,6 +4,7 @@ import path from 'node:path';
 import { shouldRecalculateShelfPrice, getNextItemShelfState } from '../components/screens/buy-pawn/useBuyPawnWorkflow';
 import { formatShelfPrice, canAddItemToCart } from '../components/screens/Sell';
 import { canAddToCartGuard, hasUnpricedLine } from '../context/AppContext';
+import { displaySerial } from '../utils/serialFormatter';
 
 /**
  * Verification Test Suite: Market Check Origin, Pawn Terminology & Photo UI Consistency
@@ -11,7 +12,7 @@ import { canAddToCartGuard, hasUnpricedLine } from '../context/AppContext';
 export async function runMarketCheckAndPawnReviewTests() {
   console.log('=== RUNNING MARKET CHECK & PAWN REVIEW TERMINOLOGY TESTS ===');
 
-  // Test 1: Shelf price decision pure function, survival test & batch reset
+  // Test 1: Shelf price decision pure function & batch reset
   console.log('[Test 1] Verifying shouldRecalculateShelfPrice & getNextItemShelfState pure functions...');
   assert.strictEqual(shouldRecalculateShelfPrice(false), true, 'Unedited shelf price must recalculate on payout change');
   assert.strictEqual(shouldRecalculateShelfPrice(true), false, 'Edited shelf price must NOT recalculate on payout change');
@@ -19,23 +20,6 @@ export async function runMarketCheckAndPawnReviewTests() {
   const batchReset = getNextItemShelfState();
   assert.strictEqual(batchReset.suggestedRetail, 0, 'getNextItemShelfState must reset suggestedRetail to 0');
   assert.strictEqual(batchReset.isShelfPriceEdited, false, 'getNextItemShelfState must reset isShelfPriceEdited to false');
-
-  // Simulate worker editing shelf price then changing payout
-  let agreedOffer = 1000;
-  let suggestedRetail = 2000; // Calculated initially
-  let isShelfPriceEdited = false;
-
-  // Worker edits shelf price
-  suggestedRetail = 2500;
-  isShelfPriceEdited = true;
-
-  // Payout changes to R1200
-  agreedOffer = 1200;
-  if (shouldRecalculateShelfPrice(isShelfPriceEdited)) {
-    suggestedRetail = 2400; // Recalculate only if unedited
-  }
-
-  assert.strictEqual(suggestedRetail, 2500, 'Worker-edited shelf price of R2500 must survive payout change');
   console.log('[PASS] Test 1: Pure functions shouldRecalculateShelfPrice and getNextItemShelfState verified');
 
   // Test 2: Pawn review terminology verification
@@ -258,6 +242,20 @@ export async function runMarketCheckAndPawnReviewTests() {
   );
 
   console.log('[PASS] Test 10: canAddToCartGuard and hasUnpricedLine pure functions verified');
+
+  // Test 11: Pure function displaySerial checks
+  console.log('[Test 11] Verifying displaySerial pure function...');
+  assert.strictEqual(displaySerial(), 'No serial', 'Undefined serial must return "No serial"');
+  assert.strictEqual(displaySerial(undefined), 'No serial', 'Undefined serial must return "No serial"');
+  assert.strictEqual(displaySerial(null), 'No serial', 'Null serial must return "No serial"');
+  assert.strictEqual(displaySerial(''), 'No serial', 'Empty serial must return "No serial"');
+  assert.strictEqual(displaySerial('   '), 'No serial', 'Whitespace-only serial must return "No serial"');
+  assert.strictEqual(displaySerial('N/A'), 'No serial', '"N/A" serial must return "No serial"');
+  assert.strictEqual(displaySerial('n/a'), 'No serial', '"n/a" serial must return "No serial"');
+  assert.strictEqual(displaySerial('  N/a  '), 'No serial', 'Trimmed and case-insensitive "N/A" must return "No serial"');
+  assert.strictEqual(displaySerial('SN-12345'), 'SN-12345', 'Valid serial must return trimmed serial');
+  assert.strictEqual(displaySerial('  358900112233445  '), '358900112233445', 'Valid serial with whitespace must return trimmed serial');
+  console.log('[PASS] Test 11: displaySerial pure function verified');
 
   console.log('=== ALL MARKET CHECK & PAWN REVIEW TERMINOLOGY TESTS PASSED ===');
 }

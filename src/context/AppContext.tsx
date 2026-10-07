@@ -233,7 +233,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Consume Auth Context (Single Source of Truth)
-  const { user: supabaseUser, profile: currentUserProfile } = useAuth();
+  const { user: supabaseUser, profile: currentUserProfile, hasPermission, isOwner, isManager } = useAuth();
+  const canEditPrice = hasPermission('pricing') || isOwner || isManager;
 
   // Supabase API Integration State
   const [supabaseLogs, setSupabaseLogs] = useState<SystemLogRow[]>([]);
@@ -521,7 +522,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addToCart = (item: InventoryItem, overridePrice?: number) => {
     if (!canAddToCartGuard(item.retailPrice, overridePrice)) {
-      showToast('Price needed', `${item.title} has no price set. Please enter a price before adding to basket.`, 'amber');
+      showToast(
+        'Price needed',
+        canEditPrice
+          ? `${item.title} has no price set. Please enter a price before adding to basket.`
+          : `${item.title} has no price set - ask a manager.`,
+        'amber'
+      );
       return;
     }
     setCart(prev => {

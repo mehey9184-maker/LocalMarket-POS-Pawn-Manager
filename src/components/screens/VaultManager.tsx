@@ -4,6 +4,7 @@ import { useInventory } from '../../context/InventoryContext';
 import { useLoans } from '../../context/LoanContext';
 import { useAuth } from '../../context/AuthContext';
 import { PawnLoan } from '../../types';
+import { displaySerial } from '../../utils/serialFormatter';
 import { List } from 'react-window';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import {
@@ -282,12 +283,8 @@ export const VaultManager: React.FC = () => {
               </div>
               <div className="flex items-center gap-3 text-xs text-stone-500 font-mono mt-1 flex-wrap">
                 <span>Pledgor: <strong className="text-stone-700 font-sans font-semibold">{loan.customerName}</strong></span>
-                {loan.serialOrImei && loan.serialOrImei !== 'N/A' && (
-                  <>
-                    <span className="text-stone-300">•</span>
-                    <span>SN: <span className="text-stone-600">{loan.serialOrImei}</span></span>
-                  </>
-                )}
+                <span className="text-stone-300">•</span>
+                <span>SN: <span className="text-stone-600">{displaySerial(loan.serialOrImei)}</span></span>
               </div>
             </div>
           </div>
@@ -709,7 +706,7 @@ export const VaultManager: React.FC = () => {
                         </p>
                       )}
                       <p className="text-[11px] font-mono text-stone-500">
-                        Serial / IMEI: <strong className="text-stone-700">{selectedLoanForDetail.serialOrImei || 'N/A'}</strong>
+                        Serial / IMEI: <strong className="text-stone-700">{displaySerial(selectedLoanForDetail.serialOrImei)}</strong>
                       </p>
                     </div>
                   </div>

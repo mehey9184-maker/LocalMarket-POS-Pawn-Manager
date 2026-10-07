@@ -60,7 +60,7 @@ const SapsEntryRow: React.FC<{
 
       <div className="flex-[1.5] py-2 px-4 min-w-0">
         <span className="text-gray-800 font-medium block truncate text-xs">{entry.itemDescription}</span>
-        <span className={`text-[10px] font-mono block mt-0.5 truncate ${isCancelled ? 'text-gray-400' : 'text-gray-500'}`}>SN/IMEI: {entry.serialOrImei}</span>
+        <span className={`text-[10px] font-mono block mt-0.5 truncate ${isCancelled ? 'text-gray-400' : 'text-gray-500'}`}>SN/IMEI: {entry.serialOrImei || 'N/A'}</span>
       </div>
 
       <div className="w-32 py-2 px-4 whitespace-nowrap">
@@ -327,7 +327,7 @@ export const SapsRegister: React.FC = () => {
                 <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-gray-200 pb-2">Asset Details</p>
                 <div className="grid grid-cols-2 gap-4 text-xs font-mono">
                   <div className="col-span-2"><span className="text-gray-500 block text-[9px] uppercase">Description</span><span className="text-gray-900 font-bold">{selectedEntry.itemDescription}</span></div>
-                  <div><span className="text-gray-500 block text-[9px] uppercase">Serial / IMEI</span><span className="text-[#C85A32] font-bold">{selectedEntry.serialOrImei}</span></div>
+                  <div><span className="text-gray-500 block text-[9px] uppercase">Serial / IMEI</span><span className="text-[#C85A32] font-bold">{selectedEntry.serialOrImei || 'N/A'}</span></div>
                   <div><span className="text-gray-500 block text-[9px] uppercase">Condition</span><span className="text-emerald-700 font-bold">{selectedEntry.condition}</span></div>
                 </div>
               </div>

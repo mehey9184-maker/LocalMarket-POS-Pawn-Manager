@@ -153,10 +153,10 @@ export const CashierProfile: React.FC = () => {
     { id: 'system', label: 'Device & Backup', icon: HardDrive, show: true },
   ];
 
-  const handleLogout = async () => {
-    if (window.confirm('Are you sure you want to log out of the terminal?')) {
-      await logout();
-    }
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  const handleLogout = () => {
+    setShowLogoutConfirm(true);
   };
 
   const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -849,6 +849,42 @@ export const CashierProfile: React.FC = () => {
                 className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[#C85A32] hover:bg-[#A94725] text-white transition-all cursor-pointer shadow-md shadow-[#C85A32]/10"
               >
                 Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3D: LOGOUT CONFIRMATION MODAL */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white border border-stone-200 rounded-3xl p-8 shadow-2xl relative space-y-6 text-stone-900 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-red-600">
+              <LogOut className="w-5 h-5" />
+              <h3 className="font-bold text-lg text-stone-900">Logout Terminal</h3>
+            </div>
+
+            <p className="text-xs text-stone-500 leading-relaxed">
+              Log out of this terminal? Anything not yet synced stays saved on this device.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-stone-500 hover:text-stone-700 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setShowLogoutConfirm(false);
+                  await logout();
+                }}
+                className="px-6 py-2.5 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-500 text-white transition-all cursor-pointer shadow-md shadow-red-100"
+              >
+                Logout
               </button>
             </div>
           </div>

@@ -245,13 +245,24 @@ export const Sell: React.FC = () => {
     setIsBusy
   } = useApp();
 
-  const { hasPermission, isOwner, isManager, role } = useAuth();
+  const { hasPermission, isOwner, isManager, role, isAccountPickerOpen, profile } = useAuth();
   const { isOnline, syncStatus } = useSync();
   const canEditPrice = hasPermission('pricing') || isOwner || isManager;
   const canSellReserved = role !== 'cashier';
 
   const [searchQuery, setSearchQuery] = useState('');
   const [itemPrices, setItemPrices] = useState<Record<string, string>>({});
+
+  // 3C: Clear leftover typed prices when account picker opens or active profile id changes
+  useEffect(() => {
+    if (isAccountPickerOpen) {
+      setItemPrices({});
+    }
+  }, [isAccountPickerOpen]);
+
+  useEffect(() => {
+    setItemPrices({});
+  }, [profile?.id]);
   const [selectedTender, setSelectedTender] = useState<PaymentMethod>('cash');
   const [cashTendered, setCashTendered] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
