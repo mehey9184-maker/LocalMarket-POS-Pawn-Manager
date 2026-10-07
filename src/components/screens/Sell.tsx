@@ -227,7 +227,8 @@ export const Sell: React.FC = () => {
     completeCheckout,
     showToast,
     setIsScannerModalOpen,
-    shopProfile
+    shopProfile,
+    setIsBusy
   } = useApp();
 
   const { hasPermission, isOwner, isManager, role } = useAuth();
@@ -242,6 +243,10 @@ export const Sell: React.FC = () => {
   const [receiptType, setReceiptType] = useState<ReceiptDelivery>('thermal');
   const [customerMobile, setCustomerMobile] = useState<string>('');
   const [mobileError, setMobileError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsBusy(isProcessing);
+  }, [isProcessing, setIsBusy]);
 
   // Undo Recovery State for "Clear Basket"
   const [undoSnapshot, setUndoSnapshot] = useState<CartSnapshot | null>(null);

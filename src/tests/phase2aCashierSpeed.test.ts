@@ -75,12 +75,12 @@ export function runPhase2aCashierSpeedTests() {
   );
   console.log('[PASS] App.tsx routes standard Cashier to Sell register on initial login');
 
-  // Verify AccountPicker.tsx routes standard cashier to 'sell' on terminal switch
+  // Verify AccountPicker.tsx preserves worker screen state on unlock/switch without forcing 'sell' tab
   assert(
-    accountPickerSrc.includes("if (selectedStaff.role === 'cashier') {\n        setActiveTab('sell');\n      }"),
-    'AccountPicker.tsx must route standard Cashier to sell register on terminal account switch'
+    !accountPickerSrc.includes("if (selectedStaff.role === 'cashier') {\n        setActiveTab('sell');\n      }"),
+    'AccountPicker.tsx must preserve active screen state on account switch/unlock rather than forcing cashier to sell tab'
   );
-  console.log('[PASS] AccountPicker.tsx routes standard Cashier to Sell register on terminal account switch');
+  console.log('[PASS] AccountPicker.tsx preserves worker screen state on unlock/switch');
 
   // Test routing logic for all roles
   function resolveLoginDestination(role: UserRole): 'sell' | 'home' {

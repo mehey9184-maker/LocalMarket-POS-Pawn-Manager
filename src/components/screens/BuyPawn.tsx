@@ -14,12 +14,18 @@ import { BuyPawnLocationStep } from './buy-pawn/BuyPawnLocationStep';
 import { BuyPawnReviewStep } from './buy-pawn/BuyPawnReviewStep';
 import { BuyPawnCompletion } from './buy-pawn/BuyPawnCompletion';
 import { OperationProgressScreen } from '../common/OperationProgressScreen';
+import { useApp } from '../../context/AppContext';
 
 export type { WorkflowStep, TxType } from './buy-pawn/buyPawnTypes';
 
 export const BuyPawn: React.FC = () => {
+  const { setIsBusy } = useApp();
   const [isChangeTypeOpen, setIsChangeTypeOpen] = useState(false);
   const workflow = useBuyPawnWorkflow();
+
+  React.useEffect(() => {
+    setIsBusy(workflow.isFinalizing);
+  }, [workflow.isFinalizing, setIsBusy]);
   const {
     step,
     txType,
@@ -52,6 +58,8 @@ export const BuyPawn: React.FC = () => {
     setIsAgreedOfferFromMarketCheck,
     suggestedRetail,
     setSuggestedRetail,
+    isShelfPriceEdited,
+    setIsShelfPriceEdited,
     existingStockStatus,
     setExistingStockStatus,
     basketItems,
@@ -241,6 +249,9 @@ export const BuyPawn: React.FC = () => {
                 setIsAgreedOfferFromMarketCheck={setIsAgreedOfferFromMarketCheck}
                 suggestedRetail={suggestedRetail}
                 setSuggestedRetail={setSuggestedRetail}
+                isShelfPriceEdited={isShelfPriceEdited}
+                setIsShelfPriceEdited={setIsShelfPriceEdited}
+                pawnCalculations={pawnCalculations}
                 businessRules={businessRules}
                 marketCheckData={marketCheck.marketCheckData}
                 isMarketLoading={marketCheck.isMarketLoading}
@@ -273,6 +284,8 @@ export const BuyPawn: React.FC = () => {
                 basketItems={basketItems}
                 agreedOffer={agreedOffer}
                 isAgreedOfferFromMarketCheck={isAgreedOfferFromMarketCheck}
+                suggestedRetail={suggestedRetail}
+                isShelfPriceEdited={isShelfPriceEdited}
                 pawnCalculations={pawnCalculations}
                 businessRules={businessRules}
                 isFinalizing={isFinalizing}

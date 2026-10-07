@@ -51,6 +51,9 @@ interface AuthContextType {
   users: ProfileRow[];
   isAccountPickerOpen: boolean;
   setIsAccountPickerOpen: (open: boolean) => void;
+  isIdleLocked: boolean;
+  setIsIdleLocked: (locked: boolean) => void;
+  lockedProfileId: string | null;
   isSwitchingAccount: boolean;
   switchState: SwitchState;
   switchError: string | null;
@@ -84,6 +87,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [managerElevation, setManagerElevation] = useState(false);
   const [isAccountPickerOpen, setIsAccountPickerOpen] = useState(false);
+  const [isIdleLocked, setIsIdleLockedState] = useState(false);
+  const [lockedProfileId, setLockedProfileId] = useState<string | null>(null);
+
+  const setIsIdleLocked = React.useCallback((locked: boolean) => {
+    if (locked) {
+      setLockedProfileId(profile?.id || null);
+    } else {
+      setLockedProfileId(null);
+    }
+    setIsIdleLockedState(locked);
+  }, [profile?.id]);
 
   // Switching State Machine variables
   const [switchState, setSwitchState] = useState<SwitchState>('idle');
@@ -364,6 +378,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfile(null);
     setIsProfileLoading(false);
     setManagerElevation(false);
+    setIsIdleLocked(false);
+    setIsAccountPickerOpen(false);
     setSwitchState('idle');
     setSwitchTarget(null);
     setSwitchError(null);
@@ -790,6 +806,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       users,
       isAccountPickerOpen,
       setIsAccountPickerOpen,
+      isIdleLocked,
+      setIsIdleLocked,
+      lockedProfileId,
       isSwitchingAccount,
       switchState,
       switchError,

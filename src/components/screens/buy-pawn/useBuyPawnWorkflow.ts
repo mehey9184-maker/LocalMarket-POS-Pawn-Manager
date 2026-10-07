@@ -68,6 +68,14 @@ export function isIgnoredSerialNumber(val: string): boolean {
   return !clean || clean.length < 4 || ignored.includes(clean);
 }
 
+export function shouldRecalculateShelfPrice(isEdited: boolean): boolean {
+  return !isEdited;
+}
+
+export function getNextItemShelfState(): { suggestedRetail: number; isShelfPriceEdited: boolean } {
+  return { suggestedRetail: 0, isShelfPriceEdited: false };
+}
+
 export function useBuyPawnWorkflow() {
   const { showToast, businessRules, shopProfile, setActiveContractModal, capturedRsaIdScan, isOnline } =
     useApp();
@@ -107,6 +115,7 @@ export function useBuyPawnWorkflow() {
   const [retailPriceInput, setRetailPriceInput] = useState<string>('');
   const [isRetailPriceFromMarketCheck, setIsRetailPriceFromMarketCheck] = useState<boolean>(false);
   const [suggestedRetail, setSuggestedRetail] = useState<number>(0);
+  const [isShelfPriceEdited, setIsShelfPriceEdited] = useState<boolean>(false);
   const [existingStockStatus, setExistingStockStatus] = useState<ItemStatus>('Retail Floor');
 
   // Completion Result State
@@ -135,6 +144,7 @@ export function useBuyPawnWorkflow() {
     pawnAgreedOffer,
     isAgreedOfferFromMarketCheck,
     suggestedRetail,
+    isShelfPriceEdited,
     retailPriceInput,
     isRetailPriceFromMarketCheck,
     costBasisInput,
@@ -150,6 +160,7 @@ export function useBuyPawnWorkflow() {
     setPawnAgreedOffer,
     setIsAgreedOfferFromMarketCheck,
     setSuggestedRetail,
+    setIsShelfPriceEdited,
     setRetailPriceInput,
     setIsRetailPriceFromMarketCheck,
     setCostBasisInput,
@@ -710,6 +721,9 @@ export function useBuyPawnWorkflow() {
     setIsAgreedOfferFromMarketCheck(false);
     setRetailPriceInput('0');
     setIsRetailPriceFromMarketCheck(false);
+    const nextShelfState = getNextItemShelfState();
+    setSuggestedRetail(nextShelfState.suggestedRetail);
+    setIsShelfPriceEdited(nextShelfState.isShelfPriceEdited);
 
     showToast(
       'Item Added to Batch',
@@ -835,7 +849,7 @@ export function useBuyPawnWorkflow() {
               condition: bItem.condition,
               acquisitionType: 'Buy',
               costBasis: bItem.agreedOffer,
-              retailPrice: bItem.suggestedRetail,
+              retailPrice: bItem.suggestedRetail > 0 ? bItem.suggestedRetail : (undefined as any),
               status: 'Retail Floor',
               stockLocation: 'Retail Floor',
               imageUrl: bItem.imageUrl,
@@ -856,7 +870,7 @@ export function useBuyPawnWorkflow() {
               itemSku: sku,
               itemTitle: bItem.title,
               amountPaid: bItem.agreedOffer,
-              retailPrice: bItem.suggestedRetail,
+              retailPrice: bItem.suggestedRetail > 0 ? bItem.suggestedRetail : (undefined as any),
               serialOrImei: bItem.serialOrImei?.trim() || 'N/A',
               condition: bItem.condition,
               createdAt: nowIso,
@@ -894,7 +908,7 @@ export function useBuyPawnWorkflow() {
               serial_or_imei: bItem.serialOrImei?.trim() || 'N/A',
               condition: bItem.condition,
               amount_paid: bItem.agreedOffer,
-              retail_price: bItem.suggestedRetail,
+              retail_price: bItem.suggestedRetail > 0 ? bItem.suggestedRetail : null,
               image_url: bItem.imageUrl,
               specs: [bItem.brand, bItem.model].filter(Boolean).join(' • ') || null,
               stock_location: 'Retail Floor',
@@ -1555,6 +1569,8 @@ export function useBuyPawnWorkflow() {
     setCostBasisInput('');
     setRetailPriceInput('0');
     setIsRetailPriceFromMarketCheck(false);
+    setSuggestedRetail(0);
+    setIsShelfPriceEdited(false);
     setExistingStockStatus('Retail Floor');
     setResult(null);
     setBasketItems([]);
@@ -1596,6 +1612,8 @@ export function useBuyPawnWorkflow() {
     setIsRetailPriceFromMarketCheck,
     suggestedRetail,
     setSuggestedRetail,
+    isShelfPriceEdited,
+    setIsShelfPriceEdited,
     existingStockStatus,
     setExistingStockStatus,
     result,

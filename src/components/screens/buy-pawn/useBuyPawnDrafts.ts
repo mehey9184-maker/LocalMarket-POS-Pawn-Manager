@@ -25,6 +25,7 @@ interface UseBuyPawnDraftsProps {
   pawnAgreedOffer?: number;
   isAgreedOfferFromMarketCheck?: boolean;
   suggestedRetail: number;
+  isShelfPriceEdited?: boolean;
   retailPriceInput: string;
   isRetailPriceFromMarketCheck?: boolean;
   costBasisInput: string;
@@ -40,6 +41,7 @@ interface UseBuyPawnDraftsProps {
   setPawnAgreedOffer?: (val: number) => void;
   setIsAgreedOfferFromMarketCheck?: (val: boolean) => void;
   setSuggestedRetail: (val: number) => void;
+  setIsShelfPriceEdited?: (val: boolean) => void;
   setRetailPriceInput: (val: string) => void;
   setIsRetailPriceFromMarketCheck?: (val: boolean) => void;
   setCostBasisInput: (val: string) => void;
@@ -66,6 +68,7 @@ export function useBuyPawnDrafts({
   pawnAgreedOffer,
   isAgreedOfferFromMarketCheck = false,
   suggestedRetail,
+  isShelfPriceEdited = false,
   retailPriceInput,
   isRetailPriceFromMarketCheck = false,
   costBasisInput,
@@ -81,6 +84,7 @@ export function useBuyPawnDrafts({
   setPawnAgreedOffer,
   setIsAgreedOfferFromMarketCheck,
   setSuggestedRetail,
+  setIsShelfPriceEdited,
   setRetailPriceInput,
   setIsRetailPriceFromMarketCheck,
   setCostBasisInput,
@@ -127,6 +131,7 @@ export function useBuyPawnDrafts({
             pawnAgreedOffer,
             isAgreedOfferFromMarketCheck: Boolean(isAgreedOfferFromMarketCheck),
             suggestedRetail,
+            isShelfPriceEdited: Boolean(isShelfPriceEdited),
             retailPriceInput,
             isRetailPriceFromMarketCheck: Boolean(isRetailPriceFromMarketCheck),
             costBasisInput,
@@ -146,6 +151,7 @@ export function useBuyPawnDrafts({
     agreedOffer,
     isAgreedOfferFromMarketCheck,
     suggestedRetail,
+    isShelfPriceEdited,
     retailPriceInput,
     isRetailPriceFromMarketCheck,
     costBasisInput,
@@ -188,6 +194,7 @@ export function useBuyPawnDrafts({
       if (draft.payload?.pawnAgreedOffer !== undefined) setPawnAgreedOffer?.(draft.payload.pawnAgreedOffer);
       setIsAgreedOfferFromMarketCheck?.(Boolean(draft.payload?.isAgreedOfferFromMarketCheck));
       if (draft.payload?.suggestedRetail !== undefined) setSuggestedRetail(draft.payload.suggestedRetail);
+      setIsShelfPriceEdited?.(Boolean(draft.payload?.isShelfPriceEdited));
       if (draft.payload?.retailPriceInput !== undefined) setRetailPriceInput(draft.payload.retailPriceInput);
       setIsRetailPriceFromMarketCheck?.(Boolean(draft.payload?.isRetailPriceFromMarketCheck));
       if (draft.payload?.costBasisInput !== undefined) setCostBasisInput(draft.payload.costBasisInput);

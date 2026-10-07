@@ -4,7 +4,9 @@ import { Scale, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import { MarketCheckCard } from '../../common/MarketCheckCard';
 import { MarketCheckResult } from '../../../types/marketIntelligence';
 import { roundRetailPrice } from '../../../utils/pricingRules';
-import { TxType, ItemDraft } from './buyPawnTypes';
+import { TxType, ItemDraft, PawnCalculations } from './buyPawnTypes';
+import { useAuth } from '../../../context/AuthContext';
+import { shouldRecalculateShelfPrice } from './useBuyPawnWorkflow';
 
 interface BuyPawnValuationStepProps {
   txType: TxType;
@@ -21,6 +23,9 @@ interface BuyPawnValuationStepProps {
   setIsAgreedOfferFromMarketCheck?: (val: boolean) => void;
   suggestedRetail: number;
   setSuggestedRetail: (val: number) => void;
+  isShelfPriceEdited?: boolean;
+  setIsShelfPriceEdited?: (val: boolean) => void;
+  pawnCalculations?: PawnCalculations | null;
   businessRules: any;
   marketCheckData: MarketCheckResult | null;
   isMarketLoading: boolean;
@@ -46,6 +51,9 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
   setIsAgreedOfferFromMarketCheck,
   suggestedRetail,
   setSuggestedRetail,
+  isShelfPriceEdited = false,
+  setIsShelfPriceEdited,
+  pawnCalculations,
   businessRules,
   marketCheckData,
   isMarketLoading,
@@ -55,6 +63,9 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
   onNext,
   onAbandon,
 }) => {
+  const { isOwner, isManager, isAtLeastSeniorCashier, hasPermission } = useAuth();
+  const canViewCostBasis = isOwner || isManager || isAtLeastSeniorCashier || hasPermission('reports') || hasPermission('pricing');
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 15 }}
@@ -68,7 +79,7 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
         </div>
         <div>
           <h3 className="text-lg font-bold text-gray-900">
-            {txType === 'existing' ? 'Retail Price & Cost Basis' : 'Fair Market Valuation'}
+            {txType === 'existing' ? 'Shelf price & what it cost you' : 'Fair Market Valuation'}
           </h3>
           <p className="text-xs text-gray-500">
             {txType === 'existing'
@@ -106,7 +117,7 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
               const midBuy = Math.round((buyLow + buyHigh) / 2);
               setAgreedOffer(midBuy);
               setIsAgreedOfferFromMarketCheck?.(true);
-              if (txType === 'buy') {
+              if (txType === 'buy' && shouldRecalculateShelfPrice(Boolean(isShelfPriceEdited))) {
                 setSuggestedRetail(
                   roundRetailPrice(
                     midBuy * businessRules.defaultRetailMarkupMultiplier,
@@ -127,7 +138,7 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                  Retail Floor Price (ZAR) *
+                  Shelf price (ZAR) *
                 </label>
                 {isRetailPriceFromMarketCheck && parseFloat(retailPriceInput) > 0 && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-200">
@@ -159,7 +170,7 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
             {/* OPTIONAL COST BASIS */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                Cost Basis (Optional)
+                What it cost you (optional)
               </label>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-gray-400">
@@ -178,7 +189,7 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
           </div>
 
           {/* MARGIN CALCULATION BANNER */}
-          {parseFloat(retailPriceInput) > 0 && parseFloat(costBasisInput) > 0 && (
+          {canViewCostBasis && parseFloat(retailPriceInput) > 0 && parseFloat(costBasisInput) > 0 && (
             <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <TrendingUp className="w-5 h-5 text-emerald-600" />
@@ -263,16 +274,30 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
               {txType === 'buy' && (
                 <div className="p-4 rounded-xl bg-[#FDF0EA] border border-[#C85A32]/20 flex items-center justify-between">
                   <div>
-                    <span className="text-xs font-semibold text-gray-700">Projected Retail Selling Price</span>
+                    <span className="text-xs font-semibold text-gray-700">Suggested shelf price</span>
                     <p className="text-xs text-gray-500">
-                      {agreedOffer > 0
-                        ? `Calculated with standard ${(businessRules.defaultRetailMarkupMultiplier * 100 - 100).toFixed(0)}% markup`
+                      {isShelfPriceEdited
+                        ? 'set by you'
+                        : agreedOffer > 0
+                        ? `Calculated with standard ${(businessRules.defaultRetailMarkupMultiplier * 100 - 100).toFixed(0)}% markup (suggestion)`
                         : 'Calculates automatically from negotiated payout'}
                     </p>
                   </div>
-                  <span className="text-lg font-bold text-[#C85A32] font-mono">
-                    R {suggestedRetail > 0 ? suggestedRetail.toLocaleString() : '0'}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-base font-bold text-[#C85A32] font-mono">R</span>
+                    <input
+                      type="number"
+                      value={suggestedRetail === 0 ? '' : suggestedRetail}
+                      onChange={(e) => {
+                        setIsShelfPriceEdited?.(true);
+                        const raw = e.target.value;
+                        const val = raw === '' ? 0 : Math.max(0, Number(raw));
+                        setSuggestedRetail(val);
+                      }}
+                      placeholder="0.00"
+                      className="w-28 bg-white border border-stone-300 focus:border-[#C85A32] rounded-lg px-2 py-1 text-base font-bold text-[#C85A32] font-mono outline-none text-right"
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -302,7 +327,7 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
                     const raw = e.target.value;
                     const val = raw === '' ? 0 : Math.max(0, Number(raw));
                     setAgreedOffer(val);
-                    if (txType === 'buy') {
+                    if (txType === 'buy' && shouldRecalculateShelfPrice(Boolean(isShelfPriceEdited))) {
                       setSuggestedRetail(
                         val > 0
                           ? roundRetailPrice(
@@ -334,6 +359,36 @@ export const BuyPawnValuationStep: React.FC<BuyPawnValuationStepProps> = ({
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-0.5">
                   <p className="font-bold">Below shop minimum loan amount</p>
                   <p className="font-mono">Minimum pawn amount: R {(businessRules.minLoanPrincipal || 100).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}</p>
+                </div>
+              )}
+
+              {/* LIVE PAWN TERMS READ-ONLY PANEL (Calculated from agreed principal) */}
+              {txType === 'pawn' && agreedOffer > 0 && pawnCalculations && (
+                <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200/80 space-y-2 text-xs">
+                  <div className="flex items-center justify-between pb-2 border-b border-blue-100">
+                    <span className="font-bold text-blue-900">Live Pawn Terms</span>
+                    <span className="text-[10px] font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                      Calculated from your amount
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 pt-0.5">
+                    <div className="flex justify-between text-stone-600">
+                      <span>Monthly interest ({Math.round((businessRules?.pawnMonthlyInterestRate ?? 0) * 100)}%)</span>
+                      <span className="font-mono font-medium text-stone-900">R {pawnCalculations.interest.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-stone-600">
+                      <span>Storage fee ({Math.round((businessRules?.pawnStorageAdminFeeRate ?? 0) * 100)}%)</span>
+                      <span className="font-mono font-medium text-stone-900">R {pawnCalculations.adminFee.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-blue-800 pt-1 border-t border-blue-100/80">
+                      <span>Total to redeem</span>
+                      <span className="font-mono text-sm">R {pawnCalculations.totalRedemption.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-stone-500 text-[11px]">
+                      <span>Last day to redeem</span>
+                      <span className="font-mono">{pawnCalculations.expiryDate}</span>
+                    </div>
+                  </div>
                 </div>
               )}
 

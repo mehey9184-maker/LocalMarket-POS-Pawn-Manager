@@ -25,6 +25,48 @@ export interface ScoredResult {
   score: number;
 }
 
+export function getSyncChipState(isOnline: boolean, pendingCount: number, failedCount: number): {
+  text: string;
+  dotColor: string;
+  badgeClass: string;
+  dotPulse: boolean;
+} {
+  if (failedCount > 0) {
+    return {
+      text: `${failedCount} failed — tap to review`,
+      dotColor: 'bg-rose-500',
+      badgeClass: 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100',
+      dotPulse: true,
+    };
+  }
+
+  if (!isOnline) {
+    const totalQueued = pendingCount + failedCount;
+    return {
+      text: totalQueued > 0 ? `Offline (${totalQueued} queued)` : 'Offline',
+      dotColor: 'bg-amber-500',
+      badgeClass: 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100',
+      dotPulse: false,
+    };
+  }
+
+  if (pendingCount > 0) {
+    return {
+      text: `${pendingCount} waiting to sync`,
+      dotColor: 'bg-sky-500',
+      badgeClass: 'bg-sky-50 text-sky-800 border border-sky-200 hover:bg-sky-100',
+      dotPulse: true,
+    };
+  }
+
+  return {
+    text: 'All saved',
+    dotColor: 'bg-emerald-500',
+    badgeClass: 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100',
+    dotPulse: false,
+  };
+}
+
 export function getSearchMatchScore(
   type: SearchResultType,
   item: any,
@@ -159,6 +201,9 @@ export const Header: React.FC<HeaderProps> = () => {
     setSelectedInventoryItem,
     showToast,
     shopProfile,
+    isOnline,
+    pendingSyncCount = 0,
+    failedSyncCount = 0,
   } = useApp();
 
   const { profile, setIsAccountPickerOpen, hasPermission, isAtLeastSeniorCashier } = useAuth();
@@ -638,9 +683,27 @@ export const Header: React.FC<HeaderProps> = () => {
       {/* ============================================================
           RIGHT: PROFILE / SESSION
          ============================================================ */}
-      <div className="flex items-center gap-4 shrink-0">
+      <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+        {/* Sync Status Chip */}
+        {(() => {
+          const chip = getSyncChipState(isOnline, pendingSyncCount, failedSyncCount);
+          return (
+            <button
+              type="button"
+              onClick={() => setActiveTab('profile')}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all shrink-0 cursor-pointer ${chip.badgeClass}`}
+              title="Click to view Device & Backup / Offline Hub"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${chip.dotColor} ${chip.dotPulse ? 'animate-pulse' : ''}`} />
+              <span className="whitespace-nowrap">{chip.text}</span>
+            </button>
+          );
+        })()}
+
         <button
-          onClick={() => setIsAccountPickerOpen(true)}
+          onClick={() => {
+            setIsAccountPickerOpen(true);
+          }}
           className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-600 hover:bg-[#FDF0EA] hover:border-[#C85A32] hover:text-[#C85A32] transition-all group"
           title="Switch Account"
         >

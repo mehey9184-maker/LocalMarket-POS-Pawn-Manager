@@ -25,12 +25,15 @@ import { ContractModal } from './components/modals/ContractModal';
 import { HelpAndInfoFAB } from './components/HelpAndInfoFAB';
 
 import { CompositeProvider } from './context/CompositeProvider';
-
 import { useAuth } from './context/AuthContext';
+import { useIdleLock } from './hooks/useIdleLock';
 
 const MainLayout: React.FC = () => {
   const { activeTab, setActiveTab } = useApp();
-  const { user, profile, isLoading: authLoading, isProfileLoading, isSwitchingAccount } = useAuth();
+  const { user, profile, isLoading: authLoading, isProfileLoading, isSwitchingAccount, isIdleLocked } = useAuth();
+
+  // Inactivity lock timer (returns till to PIN/account picker on idle while preserving all worker drafts and work)
+  useIdleLock();
 
   // Session-based navigation enforcement
   React.useEffect(() => {
@@ -73,36 +76,42 @@ const MainLayout: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#F5F6F8] text-[#1F2937] font-sans selection:bg-[#FDF0EA] selection:text-[#C85A32]">
-      <Header />
+      <div 
+        className="flex flex-col flex-1 h-full w-full overflow-hidden"
+        aria-hidden={isIdleLocked || undefined}
+        inert={isIdleLocked || undefined}
+      >
+        <Header />
 
-      <main id="app-viewport" className="flex-1 flex overflow-hidden bg-[#F5F6F8]">
-        <div className={`flex-1 h-full w-full ${activeTab === 'home' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><Home /></div>
-        <div className={`flex-1 h-full w-full ${activeTab === 'sell' ? 'flex flex-col lg:flex-row overflow-hidden' : 'hidden'}`}><Sell /></div>
-        <div className={`flex-1 h-full w-full ${activeTab === 'buy-pawn' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><BuyPawn /></div>
-        <div className={`flex-1 h-full w-full ${activeTab === 'inventory' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><Inventory /></div>
-        <div className={`flex-1 h-full w-full ${activeTab === 'vault' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><VaultManager /></div>
-        <div className={`flex-1 h-full w-full ${activeTab === 'saps' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><SapsRegister /></div>
-        <div className={`flex-1 h-full w-full ${activeTab === 'customers' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><Customers /></div>
-        <div className={`flex-1 h-full w-full ${activeTab === 'profile' ? 'flex flex-col md:flex-row overflow-hidden' : 'hidden'}`}><CashierProfile /></div>
-      </main>
+        <main id="app-viewport" className="flex-1 flex overflow-hidden bg-[#F5F6F8]">
+          <div className={`flex-1 h-full w-full ${activeTab === 'home' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><Home /></div>
+          <div className={`flex-1 h-full w-full ${activeTab === 'sell' ? 'flex flex-col lg:flex-row overflow-hidden' : 'hidden'}`}><Sell /></div>
+          <div className={`flex-1 h-full w-full ${activeTab === 'buy-pawn' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><BuyPawn /></div>
+          <div className={`flex-1 h-full w-full ${activeTab === 'inventory' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><Inventory /></div>
+          <div className={`flex-1 h-full w-full ${activeTab === 'vault' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><VaultManager /></div>
+          <div className={`flex-1 h-full w-full ${activeTab === 'saps' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><SapsRegister /></div>
+          <div className={`flex-1 h-full w-full ${activeTab === 'customers' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><Customers /></div>
+          <div className={`flex-1 h-full w-full ${activeTab === 'profile' ? 'flex flex-col md:flex-row overflow-hidden' : 'hidden'}`}><CashierProfile /></div>
+        </main>
 
-      {/* Hardware Scanner Camera Modal */}
-      <ScannerModal />
+        {/* Hardware Scanner Camera Modal */}
+        <ScannerModal />
 
-      {/* Thermal POS Receipt Modal */}
-      <ReceiptModal />
+        {/* Thermal POS Receipt Modal */}
+        <ReceiptModal />
 
-      {/* Statutory 30-Day NCR Pledge Contract Modal */}
-      <ContractModal />
+        {/* Statutory 30-Day NCR Pledge Contract Modal */}
+        <ContractModal />
+
+        {/* Operational Feedback Toast */}
+        <Toast />
+
+        {/* Global Help & Info Button */}
+        <HelpAndInfoFAB />
+      </div>
 
       {/* Account Switcher Picker */}
       <AccountPicker />
-
-      {/* Operational Feedback Toast */}
-      <Toast />
-
-      {/* Global Help & Info Button */}
-      <HelpAndInfoFAB />
     </div>
   );
 };

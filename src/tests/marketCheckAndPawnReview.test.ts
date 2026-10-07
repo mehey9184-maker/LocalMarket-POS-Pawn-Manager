@@ -1,6 +1,7 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
+import { shouldRecalculateShelfPrice, getNextItemShelfState } from '../components/screens/buy-pawn/useBuyPawnWorkflow';
 
 /**
  * Verification Test Suite: Market Check Origin, Pawn Terminology & Photo UI Consistency
@@ -8,38 +9,41 @@ import path from 'node:path';
 export async function runMarketCheckAndPawnReviewTests() {
   console.log('=== RUNNING MARKET CHECK & PAWN REVIEW TERMINOLOGY TESTS ===');
 
-  // Test 1: Market Check origin tracking logic
-  console.log('[Test 1] Verifying Market Check amount application and edit clearance...');
-  let agreedOffer = 0;
-  let isAgreedOfferFromMarketCheck = false;
+  // Test 1: Shelf price decision pure function, survival test & batch reset
+  console.log('[Test 1] Verifying shouldRecalculateShelfPrice & getNextItemShelfState pure functions...');
+  assert.strictEqual(shouldRecalculateShelfPrice(false), true, 'Unedited shelf price must recalculate on payout change');
+  assert.strictEqual(shouldRecalculateShelfPrice(true), false, 'Edited shelf price must NOT recalculate on payout change');
 
-  // Simulate applying market check
-  const suggestedMid = Math.round((1200 + 1600) / 2);
-  agreedOffer = suggestedMid;
-  isAgreedOfferFromMarketCheck = true;
+  const batchReset = getNextItemShelfState();
+  assert.strictEqual(batchReset.suggestedRetail, 0, 'getNextItemShelfState must reset suggestedRetail to 0');
+  assert.strictEqual(batchReset.isShelfPriceEdited, false, 'getNextItemShelfState must reset isShelfPriceEdited to false');
 
-  assert.strictEqual(agreedOffer, 1400, 'Applied mid amount must match suggested range');
-  assert.strictEqual(isAgreedOfferFromMarketCheck, true, 'Amount must be marked as From Market Check when applied');
+  // Simulate worker editing shelf price then changing payout
+  let agreedOffer = 1000;
+  let suggestedRetail = 2000; // Calculated initially
+  let isShelfPriceEdited = false;
 
-  // Simulate worker editing amount
-  agreedOffer = 1350;
-  isAgreedOfferFromMarketCheck = false;
-  assert.strictEqual(isAgreedOfferFromMarketCheck, false, 'Amount must lose From Market Check mark once edited by worker');
-  console.log('[PASS] Test 1: Market Check origin correctly tracked and cleared on worker edit');
+  // Worker edits shelf price
+  suggestedRetail = 2500;
+  isShelfPriceEdited = true;
+
+  // Payout changes to R1200
+  agreedOffer = 1200;
+  if (shouldRecalculateShelfPrice(isShelfPriceEdited)) {
+    suggestedRetail = 2400; // Recalculate only if unedited
+  }
+
+  assert.strictEqual(suggestedRetail, 2500, 'Worker-edited shelf price of R2500 must survive payout change');
+  console.log('[PASS] Test 1: Pure functions shouldRecalculateShelfPrice and getNextItemShelfState verified');
 
   // Test 2: Pawn review terminology verification
-  console.log('[Test 2] Verifying Pawn review terminology...');
-  const businessRulesDefault = { defaultLoanTermDays: 30 };
-  const businessRulesCustom = { defaultLoanTermDays: 60 };
+  console.log('[Test 2] Verifying Pawn review terminology in BuyPawnReviewStep source code...');
+  const reviewStepPath = path.resolve('src/components/screens/buy-pawn/BuyPawnReviewStep.tsx');
+  const reviewStepContent = fs.readFileSync(reviewStepPath, 'utf8');
 
-  const getPawnTxLabel = (rules: { defaultLoanTermDays: number }) => `${rules.defaultLoanTermDays}-Day Pawn Loan`;
-  const getAmountLabel = (txType: 'buy' | 'pawn') => (txType === 'pawn' ? 'Agreed Loan Amount' : 'Negotiated Payout');
-
-  assert.strictEqual(getPawnTxLabel(businessRulesDefault), '30-Day Pawn Loan');
-  assert.strictEqual(getPawnTxLabel(businessRulesCustom), '60-Day Pawn Loan');
-  assert.strictEqual(getAmountLabel('pawn'), 'Agreed Loan Amount', 'Pawn must use Agreed Loan Amount');
-  assert.strictEqual(getAmountLabel('buy'), 'Negotiated Payout', 'Buy must use Negotiated Payout');
-  console.log('[PASS] Test 2: Pawn review terminology reflects Agreed Loan Amount and dynamic term days');
+  assert(reviewStepContent.includes('businessRules?.defaultLoanTermDays'), 'Review step must use businessRules.defaultLoanTermDays');
+  assert(reviewStepContent.includes('Shelf price'), 'Review step must display Shelf price row');
+  console.log('[PASS] Test 2: Pawn review terminology and shelf price row confirmed in BuyPawnReviewStep source code');
 
   // Test 3: Photo UI local-only consistency (no B2, no Cloud Asset, no compression stats)
   console.log('[Test 3] Verifying Photo UI local-only storage consistency in source code...');
@@ -76,65 +80,9 @@ export async function runMarketCheckAndPawnReviewTests() {
   console.log('[PASS] Test 5: Duplicate Market Check refresh control confirmed removed');
 
   // Test 6: Draft Save and Restore Preserving Market Check Origin
-  console.log('[Test 6] Verifying Market Check origin preservation through drafts...');
+  console.log('[Test 6] Verifying Market Check origin preservation through drafts via source code checks...');
   
-  // 6.1 Market Check payout applied: amount restored + isAgreedOfferFromMarketCheck=true
-  const draftWithMarketPayout = {
-    id: 'draft-payout-1',
-    payload: {
-      agreedOffer: 1500,
-      isAgreedOfferFromMarketCheck: true,
-      suggestedRetail: 2500,
-      retailPriceInput: '2500',
-      isRetailPriceFromMarketCheck: false,
-    },
-  };
-  let restoredAgreedOffer = draftWithMarketPayout.payload.agreedOffer;
-  let restoredIsAgreedOfferFromMarketCheck = Boolean(draftWithMarketPayout.payload?.isAgreedOfferFromMarketCheck);
-  assert.strictEqual(restoredAgreedOffer, 1500, 'Restored payout amount must match draft payload');
-  assert.strictEqual(restoredIsAgreedOfferFromMarketCheck, true, 'Restored payout must preserve isAgreedOfferFromMarketCheck=true');
-
-  // 6.2 Market Check retail applied: value restored + isRetailPriceFromMarketCheck=true
-  const draftWithMarketRetail = {
-    id: 'draft-retail-1',
-    payload: {
-      agreedOffer: 800,
-      isAgreedOfferFromMarketCheck: false,
-      retailPriceInput: '3200',
-      isRetailPriceFromMarketCheck: true,
-    },
-  };
-  let restoredRetailPriceInput = draftWithMarketRetail.payload.retailPriceInput;
-  let restoredIsRetailPriceFromMarketCheck = Boolean(draftWithMarketRetail.payload?.isRetailPriceFromMarketCheck);
-  assert.strictEqual(restoredRetailPriceInput, '3200', 'Restored retail price must match draft payload');
-  assert.strictEqual(restoredIsRetailPriceFromMarketCheck, true, 'Restored retail price must preserve isRetailPriceFromMarketCheck=true');
-
-  // 6.3 Legacy draft without flags: both default to false
-  const legacyDraft = {
-    id: 'legacy-draft-1',
-    payload: {
-      agreedOffer: 1200,
-      retailPriceInput: '2400',
-      // flags omitted/undefined in legacy drafts
-    },
-  };
-  const legacyIsAgreedOfferMC = Boolean((legacyDraft.payload as any)?.isAgreedOfferFromMarketCheck);
-  const legacyIsRetailPriceMC = Boolean((legacyDraft.payload as any)?.isRetailPriceFromMarketCheck);
-  assert.strictEqual(legacyIsAgreedOfferMC, false, 'Legacy draft without isAgreedOfferFromMarketCheck must default to false');
-  assert.strictEqual(legacyIsRetailPriceMC, false, 'Legacy draft without isRetailPriceFromMarketCheck must default to false');
-
-  // 6.4 Worker edits restored amount: corresponding flag becomes false
-  // Worker edits restored payout:
-  restoredAgreedOffer = 1450;
-  restoredIsAgreedOfferFromMarketCheck = false; // simulates valuation step onChange
-  assert.strictEqual(restoredIsAgreedOfferFromMarketCheck, false, 'Editing restored payout must immediately clear isAgreedOfferFromMarketCheck');
-
-  // Worker edits restored retail price:
-  restoredRetailPriceInput = '3100';
-  restoredIsRetailPriceFromMarketCheck = false; // simulates valuation step onChange
-  assert.strictEqual(restoredIsRetailPriceFromMarketCheck, false, 'Editing restored retail price must immediately clear isRetailPriceFromMarketCheck');
-
-  // 6.5 Source code wiring check for useBuyPawnDrafts and useBuyPawnWorkflow
+  // 6.1 Source code wiring check for useBuyPawnDrafts and useBuyPawnWorkflow
   const draftsFilePath = path.resolve('src/components/screens/buy-pawn/useBuyPawnDrafts.ts');
   const draftsFileContent = fs.readFileSync(draftsFilePath, 'utf8');
   assert(

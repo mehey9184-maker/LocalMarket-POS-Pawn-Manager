@@ -11,6 +11,8 @@ interface BuyPawnReviewStepProps {
   basketItems: any[];
   agreedOffer: number;
   isAgreedOfferFromMarketCheck?: boolean;
+  suggestedRetail?: number;
+  isShelfPriceEdited?: boolean;
   pawnCalculations: PawnCalculations | null;
   businessRules: any;
   isFinalizing: boolean;
@@ -26,6 +28,8 @@ export const BuyPawnReviewStep: React.FC<BuyPawnReviewStepProps> = ({
   basketItems,
   agreedOffer,
   isAgreedOfferFromMarketCheck = false,
+  suggestedRetail = 0,
+  isShelfPriceEdited = false,
   pawnCalculations,
   businessRules,
   isFinalizing,
@@ -89,9 +93,14 @@ export const BuyPawnReviewStep: React.FC<BuyPawnReviewStepProps> = ({
                     </p>
                   </div>
                 </div>
-                <span className="text-xs font-bold text-gray-900">
-                  R {item.agreedOffer.toLocaleString()}
-                </span>
+                <div className="text-right">
+                  <span className="text-xs font-bold text-gray-900 block">
+                    R {item.agreedOffer.toLocaleString()}
+                  </span>
+                  <span className={`text-[10px] block ${item.suggestedRetail > 0 ? 'text-gray-500 font-mono' : 'text-amber-600 font-medium'}`}>
+                    {item.suggestedRetail > 0 ? `Shelf: R${item.suggestedRetail.toLocaleString()}` : 'no price yet'}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
@@ -149,6 +158,28 @@ export const BuyPawnReviewStep: React.FC<BuyPawnReviewStepProps> = ({
               </div>
             </div>
 
+            {txType === 'buy' && (
+              <div className="flex justify-between items-baseline pt-2 border-t border-gray-100">
+                <div>
+                  <span className="text-xs font-semibold text-gray-700">Shelf price</span>
+                  {suggestedRetail > 0 && (
+                    <span className="ml-1.5 text-[10px] text-gray-500 font-medium">
+                      {isShelfPriceEdited ? '(set by you)' : '(suggested)'}
+                    </span>
+                  )}
+                </div>
+                {suggestedRetail > 0 ? (
+                  <span className="text-sm font-bold text-gray-900 font-mono">
+                    R {suggestedRetail.toLocaleString()}
+                  </span>
+                ) : (
+                  <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                    No shelf price yet
+                  </span>
+                )}
+              </div>
+            )}
+
             {txType === 'pawn' && pawnCalculations && (
               <div className="space-y-1.5 pt-2 border-t border-gray-100 text-xs">
                 <div className="flex justify-between text-gray-500">
@@ -159,7 +190,7 @@ export const BuyPawnReviewStep: React.FC<BuyPawnReviewStepProps> = ({
                 </div>
                 <div className="flex justify-between text-gray-500">
                   <span>
-                    Vault Storage & Admin Fee (
+                    Storage fee (
                     {Math.round(businessRules.pawnStorageAdminFeeRate * 100)}%)
                   </span>
                   <span className="font-mono">R {pawnCalculations.adminFee.toFixed(2)}</span>
@@ -186,7 +217,7 @@ export const BuyPawnReviewStep: React.FC<BuyPawnReviewStepProps> = ({
             </div>
             <div>
               <h4 className="text-xs font-bold text-gray-900">
-                {txType === 'buy' ? 'Statutory Register Intake' : 'Regulated Pledge Record'}
+                {txType === 'buy' ? 'Goes in the police register' : 'Pawn record'}
               </h4>
               <p className="text-xs text-gray-500 mt-0.5">
                 {txType === 'buy'

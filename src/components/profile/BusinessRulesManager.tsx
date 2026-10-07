@@ -193,7 +193,7 @@ export const BusinessRulesManager: React.FC<BusinessRulesManagerProps> = ({ onSu
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-stone-400 uppercase tracking-widest flex items-center gap-1.5">
                   <Lock className="w-3 h-3" />
-                  Vault Storage & Admin Fee (%)
+                  Storage fee (%)
                 </label>
                 <div className="relative">
                   <input

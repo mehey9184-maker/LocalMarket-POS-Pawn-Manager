@@ -114,6 +114,8 @@ interface AppContextType {
   setCapturedRsaIdScan: (scan: RsaIdScanResult | null) => void;
   zenMode: boolean;
   setZenMode: React.Dispatch<React.SetStateAction<boolean>>;
+  isBusy: boolean;
+  setIsBusy: (busy: boolean) => void;
   
   // Shop Profile (Branch & Second Hand Dealer License)
   shopProfile: ShopProfile;
@@ -207,6 +209,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
   const [capturedRsaIdScan, setCapturedRsaIdScan] = useState<RsaIdScanResult | null>(null);
   const [zenMode, setZenMode] = useState<boolean>(false);
+  const [isBusy, setIsBusy] = useState<boolean>(false);
 
   const showToast = useCallback((title: string, desc: string, type: 'success' | 'amber' | 'info' | 'error' = 'success') => {
     setToastMessage({ title, desc, type });
@@ -626,6 +629,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCapturedRsaIdScan,
         zenMode,
         setZenMode,
+        isBusy,
+        setIsBusy,
         shopProfile,
         updateShopProfile,
         businessRules,

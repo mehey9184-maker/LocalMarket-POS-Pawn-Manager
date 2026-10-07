@@ -369,12 +369,62 @@ const ShiftLocked: React.FC<{
   );
 };
 
+export interface CanDismissAccountPickerParams {
+  isIdleLocked: boolean;
+  isSwitchingAccount: boolean;
+}
+
+export function canDismissAccountPicker(params: CanDismissAccountPickerParams): boolean {
+  return !params.isIdleLocked && !params.isSwitchingAccount;
+}
+
+export function getPermittedTabsForUser(
+  hasPermission: (p: any) => boolean,
+  isAtLeastSeniorCashier: boolean
+): any[] {
+  const tabs: any[] = ['home'];
+  if (hasPermission('sales')) tabs.push('sell');
+  if (hasPermission('pawn') || hasPermission('sellerAcquisitions') || hasPermission('inventory')) {
+    tabs.push('buy-pawn');
+  }
+  if (hasPermission('inventory')) tabs.push('inventory');
+  if (hasPermission('pawn')) tabs.push('vault');
+  if (isAtLeastSeniorCashier) {
+    tabs.push('saps');
+    tabs.push('customers');
+  }
+  tabs.push('profile');
+  return tabs;
+}
+
+export function resolvePostUnlockTab(params: {
+  lockedProfileId: string | null;
+  unlockedProfileId: string;
+  unlockedRole: string;
+  currentTab: any;
+  permittedTabs: any[];
+}): any {
+  const isSameUser = Boolean(params.lockedProfileId) && params.lockedProfileId === params.unlockedProfileId;
+  const isTabPermitted = params.permittedTabs.includes(params.currentTab);
+
+  if (isSameUser && isTabPermitted) {
+    return params.currentTab;
+  }
+
+  return params.unlockedRole === 'cashier' ? 'sell' : 'home';
+}
+
 export const AccountPicker: React.FC = () => {
   const { 
     users, 
     profile: currentProfile, 
     isAccountPickerOpen, 
     setIsAccountPickerOpen,
+    isIdleLocked,
+    setIsIdleLocked,
+    lockedProfileId,
+    hasPermission,
+    isAtLeastSeniorCashier,
     logout,
     isSwitchingAccount,
     resetSwitchState,
@@ -388,7 +438,7 @@ export const AccountPicker: React.FC = () => {
     cancelSwitchAccount
   } = useAuth();
 
-  const { showToast, setActiveTab, shopProfile } = useApp();
+  const { showToast, activeTab, setActiveTab, shopProfile } = useApp();
   
   const [selectedStaff, setSelectedStaff] = useState<ProfileRow | null>(null);
   const [offShiftStaff, setOffShiftStaff] = useState<ProfileRow | null>(null);
@@ -441,19 +491,40 @@ export const AccountPicker: React.FC = () => {
     }
   }, [offShiftStaff, timeTick, shopProfile]);
 
-  // Close modal on Escape key press
+  // Close modal on Escape key press (unless idle-locked)
   useEffect(() => {
-    if (!isAccountPickerOpen || isSwitchingAccount) return;
+    if (!isAccountPickerOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (!canDismissAccountPicker({ isIdleLocked, isSwitchingAccount })) return;
         setIsAccountPickerOpen(false);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isAccountPickerOpen, setIsAccountPickerOpen, isSwitchingAccount]);
+  }, [isAccountPickerOpen, setIsAccountPickerOpen, isSwitchingAccount, isIdleLocked]);
+
+  const completeUnlockAndRouting = (staffProfile: ProfileRow) => {
+    const permittedTabs = getPermittedTabsForUser(hasPermission, isAtLeastSeniorCashier);
+    const destTab = resolvePostUnlockTab({
+      lockedProfileId,
+      unlockedProfileId: staffProfile.id,
+      unlockedRole: staffProfile.role,
+      currentTab: activeTab,
+      permittedTabs
+    });
+
+    if (destTab !== activeTab) {
+      setActiveTab(destTab);
+    }
+
+    setIsIdleLocked(false);
+    setIsAccountPickerOpen(false);
+    handleBack();
+    resetSwitchState();
+  };
 
   const handleBack = () => {
     setSelectedStaff(null);
@@ -521,11 +592,6 @@ export const AccountPicker: React.FC = () => {
   };
 
   const handleSelectStaff = (staff: ProfileRow) => {
-    if (staff.id === currentProfile?.id) {
-      setIsAccountPickerOpen(false);
-      return;
-    }
-
     const timezone = (shopProfile as any)?.timezone || 'Africa/Johannesburg';
     const status = evaluateShiftStatus(staff, timezone);
 
@@ -611,12 +677,7 @@ export const AccountPicker: React.FC = () => {
       }
 
       showToast('Welcome Back', `Logged in as ${selectedStaff.full_name}`, 'success');
-      if (selectedStaff.role === 'cashier') {
-        setActiveTab('sell');
-      }
-      setIsAccountPickerOpen(false);
-      handleBack();
-      resetSwitchState();
+      completeUnlockAndRouting(selectedStaff);
     } catch (err: any) {
       setPin('');
       setError(translateServerError(err.message || 'Connection error during authentication'));
@@ -658,9 +719,7 @@ export const AccountPicker: React.FC = () => {
       }
 
       showToast('Welcome Back', `Logged in as ${selectedStaff.full_name}`, 'success');
-      setIsAccountPickerOpen(false);
-      handleBack();
-      resetSwitchState();
+      completeUnlockAndRouting(selectedStaff);
     } catch (err: any) {
       setPassword('');
       setError(translateServerError(err.message || 'Connection error during authentication'));
@@ -724,9 +783,7 @@ export const AccountPicker: React.FC = () => {
       }
 
       showToast('Password Created', `Welcome to your Manager account, ${selectedStaff.full_name}`, 'success');
-      setIsAccountPickerOpen(false);
-      handleBack();
-      resetSwitchState();
+      completeUnlockAndRouting(selectedStaff);
     } catch (err: any) {
       setPin('');
       setError(translateServerError(err.message || 'Connection error during password setup'));
@@ -744,7 +801,7 @@ export const AccountPicker: React.FC = () => {
         ? "fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-stone-50 p-6 animate-auth-fade"
         : "fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-stone-50/95 backdrop-blur-md p-6 overflow-y-auto animate-auth-fade"
       }
-      onClick={() => !isSwitchingAccount && setIsAccountPickerOpen(false)}
+      onClick={() => canDismissAccountPicker({ isIdleLocked, isSwitchingAccount }) && setIsAccountPickerOpen(false)}
     >
       {isSwitchingAccount ? (
         switchState === 'error' ? (
@@ -777,6 +834,7 @@ export const AccountPicker: React.FC = () => {
                     const res = await retrySwitchAccount();
                     if (res && res.success) {
                       showToast('Welcome Back', `Logged in as ${switchTarget?.staffName || selectedStaff?.full_name || 'Staff'}`, 'success');
+                      setIsIdleLocked(false);
                       setIsAccountPickerOpen(false);
                       handleBack();
                       resetSwitchState();
@@ -852,13 +910,15 @@ export const AccountPicker: React.FC = () => {
           className="w-full max-w-2xl bg-white text-gray-900 border border-stone-200 rounded-3xl p-6 sm:p-8 shadow-2xl relative my-auto max-h-[90vh] overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            onClick={() => setIsAccountPickerOpen(false)}
-            className="absolute top-5 right-5 p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
-            aria-label="Close Staff Switcher"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {!isIdleLocked && (
+            <button
+              onClick={() => setIsAccountPickerOpen(false)}
+              className="absolute top-5 right-5 p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+              aria-label="Close Staff Switcher"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
 
           {!selectedStaff && !offShiftStaff ? (
           <div className="text-center">
@@ -903,20 +963,23 @@ export const AccountPicker: React.FC = () => {
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4 border-t border-stone-200">
               <button
-                onClick={() => { setIsAccountPickerOpen(false); logout(); }}
+                onClick={() => { setIsIdleLocked(false); setIsAccountPickerOpen(false); logout(); }}
                 className="text-xs text-red-600 hover:text-red-700 font-semibold uppercase tracking-wider transition-colors cursor-pointer"
               >
                 Sign Out
               </button>
 
-              <span className="hidden sm:inline text-stone-300">•</span>
-
-              <button
-                onClick={() => setIsAccountPickerOpen(false)}
-                className="text-xs text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
+              {!isIdleLocked && (
+                <>
+                  <span className="hidden sm:inline text-stone-300">•</span>
+                  <button
+                    onClick={() => setIsAccountPickerOpen(false)}
+                    className="text-xs text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </>
+              )}
             </div>
           </div>
         ) : isShiftLocked ? (
