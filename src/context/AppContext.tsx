@@ -155,7 +155,7 @@ interface AppContextType {
   logSystemEvent: (eventType: string, details?: any, severity?: 'info' | 'warning' | 'audit' | 'critical', sapsRef?: string) => Promise<void>;
   
   // Cart Actions
-  addToCart: (item: InventoryItem) => void;
+  addToCart: (item: InventoryItem, overridePrice?: number) => void;
   removeFromCart: (itemId: string) => void;
   updateCartQuantity: (itemId: string, qty: number) => void;
   updateCartItemPrice: (itemId: string, newPrice: number) => void;
@@ -505,7 +505,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [currentUserProfile]);
 
-  const addToCart = (item: InventoryItem) => {
+  const addToCart = (item: InventoryItem, overridePrice?: number) => {
     setCart(prev => {
       const existing = prev.find(ci => ci.item.id === item.id);
       if (existing) {
@@ -513,7 +513,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return prev;
       }
       showToast('Added to Cart', `${item.title} ready for checkout`, 'success');
-      return [...prev, { item, quantity: 1 }];
+      return [...prev, { item, quantity: 1, overridePrice }];
     });
   };
 

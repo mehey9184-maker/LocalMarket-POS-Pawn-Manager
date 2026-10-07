@@ -2,6 +2,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { shouldRecalculateShelfPrice, getNextItemShelfState } from '../components/screens/buy-pawn/useBuyPawnWorkflow';
+import { formatShelfPrice, canAddItemToCart } from '../components/screens/Sell';
 
 /**
  * Verification Test Suite: Market Check Origin, Pawn Terminology & Photo UI Consistency
@@ -174,6 +175,25 @@ export async function runMarketCheckAndPawnReviewTests() {
   );
 
   console.log('[PASS] Test 8: User role enum-safe comparison migration verified');
+
+  // Test 9: Zero-priced items format & override checks
+  console.log('[Test 9] Verifying formatShelfPrice and canAddItemToCart pure helper functions...');
+  
+  // Format check
+  assert.strictEqual(formatShelfPrice(0), 'Price needed', 'retailPrice 0 must display "Price needed"');
+  assert.strictEqual(formatShelfPrice(-5), 'Price needed', 'Negative retailPrice must display "Price needed"');
+  assert.strictEqual(formatShelfPrice(120), 'R 120.00', 'Positive price must format correctly');
+  assert.strictEqual(formatShelfPrice(1249.5), 'R 1,249.50', 'Large positive price must format correctly');
+
+  // Add to cart validation checks
+  assert.strictEqual(canAddItemToCart(150, ''), true, 'Non-zero priced item should add to cart without override');
+  assert.strictEqual(canAddItemToCart(0, ''), false, 'Zero priced item with missing override must NOT add to cart');
+  assert.strictEqual(canAddItemToCart(0, 'abc'), false, 'Zero priced item with non-numeric override must NOT add to cart');
+  assert.strictEqual(canAddItemToCart(0, '-50'), false, 'Zero priced item with negative override must NOT add to cart');
+  assert.strictEqual(canAddItemToCart(0, '120.50'), true, 'Zero priced item with valid override should add to cart');
+  assert.strictEqual(canAddItemToCart(-10, '150'), true, 'Negative priced item with valid override should add to cart');
+
+  console.log('[PASS] Test 9: formatShelfPrice and canAddItemToCart pure functions verified');
 
   console.log('=== ALL MARKET CHECK & PAWN REVIEW TERMINOLOGY TESTS PASSED ===');
 }

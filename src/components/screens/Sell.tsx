@@ -34,6 +34,18 @@ export interface CartSnapshot {
   clearedAt: number;
 }
 
+export function formatShelfPrice(price: number): string {
+  if (price <= 0) return 'Price needed';
+  return `R ${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+export function canAddItemToCart(price: number, overridePriceStr?: string): boolean {
+  if (price > 0) return true;
+  if (!overridePriceStr) return false;
+  const parsed = parseFloat(overridePriceStr);
+  return !isNaN(parsed) && parsed > 0;
+}
+
 export function createCartSnapshot(cart: CartItem[]): CartSnapshot {
   return {
     items: cart.map(ci => ({
@@ -237,6 +249,7 @@ export const Sell: React.FC = () => {
   const canSellReserved = role !== 'cashier';
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [itemPrices, setItemPrices] = useState<Record<string, string>>({});
   const [selectedTender, setSelectedTender] = useState<PaymentMethod>('cash');
   const [cashTendered, setCashTendered] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -358,7 +371,13 @@ export const Sell: React.FC = () => {
   }, [floorItems, searchQuery]);
 
   const total = useMemo(() => {
-    return cart.reduce((sum, ci) => sum + (ci.overridePrice ?? ci.item.retailPrice) * ci.quantity, 0);
+    return cart.reduce((sum, ci) => {
+      const price = parseFloat((ci.overridePrice ?? ci.item.retailPrice ?? 0).toString());
+      const safePrice = isNaN(price) ? 0 : price;
+      const qty = parseInt((ci.quantity ?? 1).toString(), 10);
+      const safeQty = isNaN(qty) ? 1 : qty;
+      return sum + safePrice * safeQty;
+    }, 0);
   }, [cart]);
 
   const numTendered = parseFloat(cashTendered) || 0;
@@ -376,7 +395,16 @@ export const Sell: React.FC = () => {
       showToast('Reserved Stock', 'Reserved stock needs Manager or Owner approval.', 'amber');
       return;
     }
-    addToCart(item);
+    const typedPriceStr = itemPrices[item.id] ?? '';
+    if (!canAddItemToCart(item.retailPrice, typedPriceStr)) {
+      showToast('Price Needed', 'Please enter a retail price for this item first.', 'amber');
+      return;
+    }
+    if (item.retailPrice <= 0) {
+      addToCart(item, parseFloat(typedPriceStr));
+    } else {
+      addToCart(item);
+    }
     setSearchQuery('');
     searchInputRef.current?.focus();
   };
@@ -415,11 +443,31 @@ export const Sell: React.FC = () => {
         if (!canSellReserved) {
           showToast('Reserved Stock', 'Reserved stock needs Manager or Owner approval.', 'amber');
         } else {
-          addToCart(anyExactMatch);
+          const typedPriceStr = itemPrices[anyExactMatch.id] ?? '';
+          if (!canAddItemToCart(anyExactMatch.retailPrice, typedPriceStr)) {
+            showToast('Price Needed', `Please enter a retail price for ${anyExactMatch.title}.`, 'amber');
+            setSearchQuery(anyExactMatch.sku);
+            return;
+          }
+          if (anyExactMatch.retailPrice <= 0) {
+            addToCart(anyExactMatch, parseFloat(typedPriceStr));
+          } else {
+            addToCart(anyExactMatch);
+          }
           setSearchQuery('');
         }
       } else if (anyExactMatch.status === 'Retail Floor') {
-        addToCart(anyExactMatch);
+        const typedPriceStr = itemPrices[anyExactMatch.id] ?? '';
+        if (!canAddItemToCart(anyExactMatch.retailPrice, typedPriceStr)) {
+          showToast('Price Needed', `Please enter a retail price for ${anyExactMatch.title}.`, 'amber');
+          setSearchQuery(anyExactMatch.sku);
+          return;
+        }
+        if (anyExactMatch.retailPrice <= 0) {
+          addToCart(anyExactMatch, parseFloat(typedPriceStr));
+        } else {
+          addToCart(anyExactMatch);
+        }
         setSearchQuery('');
       } else {
         showToast('Item Unavailable', `Item found (${anyExactMatch.title}) — currently ${anyExactMatch.status}.`, 'amber');
@@ -429,7 +477,17 @@ export const Sell: React.FC = () => {
       if (item.status === 'Reserved' && !canSellReserved) {
         showToast('Reserved Stock', 'Reserved stock needs Manager or Owner approval.', 'amber');
       } else {
-        addToCart(item);
+        const typedPriceStr = itemPrices[item.id] ?? '';
+        if (!canAddItemToCart(item.retailPrice, typedPriceStr)) {
+          showToast('Price Needed', `Please enter a retail price for ${item.title}.`, 'amber');
+          setSearchQuery(item.sku);
+          return;
+        }
+        if (item.retailPrice <= 0) {
+          addToCart(item, parseFloat(typedPriceStr));
+        } else {
+          addToCart(item);
+        }
         setSearchQuery('');
       }
     } else if (filteredItems.length > 1) {
@@ -596,7 +654,7 @@ export const Sell: React.FC = () => {
                 const isReserved = item.status === 'Reserved';
                 const itemLocation = item.stockLocation || item.vaultLocation;
                 return (
-                  <button
+                  <div
                     key={item.id}
                     onClick={() => handleTileClick(item)}
                     className={`bg-white border rounded-xl p-3.5 flex flex-col text-left transition group shadow-xs hover:shadow-sm active:scale-98 cursor-pointer ${
@@ -624,12 +682,39 @@ export const Sell: React.FC = () => {
                       )}
                     </div>
                     <div className="pt-2 border-t border-gray-100 flex items-center justify-between mt-2">
-                      <span className="text-sm font-bold text-gray-900 font-mono">
-                        R {item.retailPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      <Plus className="w-4 h-4 text-[#C85A32]" />
+                      {item.retailPrice <= 0 ? (
+                        <div className="flex flex-col gap-2 w-full" onClick={(e) => e.stopPropagation()}>
+                          <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 self-start">
+                            {formatShelfPrice(item.retailPrice)}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-gray-500 font-mono">R</span>
+                            <input
+                              type="number"
+                              placeholder="0.00"
+                              value={itemPrices[item.id] ?? ''}
+                              onChange={(e) => setItemPrices(prev => ({ ...prev, [item.id]: e.target.value }))}
+                              className="w-full bg-white border border-[#C85A32] text-xs font-bold text-gray-900 px-1.5 py-1 rounded outline-none font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleTileClick(item)}
+                              className="p-1 bg-[#C85A32] text-white rounded hover:bg-[#A94725] transition cursor-pointer"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-sm font-bold text-gray-900 font-mono">
+                            {formatShelfPrice(item.retailPrice)}
+                          </span>
+                          <Plus className="w-4 h-4 text-[#C85A32]" />
+                        </>
+                      )}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
