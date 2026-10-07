@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useApp } from '../../context/AppContext';
+import { useApp, canAddToCartGuard, hasUnpricedLine } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSync } from '../../context/SyncContext';
 import { PaymentMethod, ReceiptDelivery, InventoryItem, CartItem } from '../../types';
@@ -28,6 +28,8 @@ import {
   MapPin,
   RotateCcw
 } from 'lucide-react';
+
+export { canAddToCartGuard, hasUnpricedLine };
 
 export interface CartSnapshot {
   items: CartItem[];
@@ -395,16 +397,22 @@ export const Sell: React.FC = () => {
       showToast('Reserved Stock', 'Reserved stock needs Manager or Owner approval.', 'amber');
       return;
     }
-    const typedPriceStr = itemPrices[item.id] ?? '';
-    if (!canAddItemToCart(item.retailPrice, typedPriceStr)) {
-      showToast('Price Needed', 'Please enter a retail price for this item first.', 'amber');
+    if (item.retailPrice <= 0) {
+      if (!canEditPrice) {
+        showToast('Unauthorized Override', 'Only managers or operators with pricing permission can adjust retail prices.', 'amber');
+        return;
+      }
+      const typedPriceStr = itemPrices[item.id] ?? '';
+      if (!canAddItemToCart(item.retailPrice, typedPriceStr)) {
+        showToast('Price needed', 'Please enter a retail price for this item first.', 'amber');
+        return;
+      }
+      addToCart(item, parseFloat(typedPriceStr));
+      setSearchQuery('');
+      searchInputRef.current?.focus();
       return;
     }
-    if (item.retailPrice <= 0) {
-      addToCart(item, parseFloat(typedPriceStr));
-    } else {
-      addToCart(item);
-    }
+    addToCart(item);
     setSearchQuery('');
     searchInputRef.current?.focus();
   };
@@ -443,32 +451,42 @@ export const Sell: React.FC = () => {
         if (!canSellReserved) {
           showToast('Reserved Stock', 'Reserved stock needs Manager or Owner approval.', 'amber');
         } else {
+          if (anyExactMatch.retailPrice <= 0) {
+            if (!canEditPrice) {
+              showToast('Unauthorized Override', 'Only managers or operators with pricing permission can adjust retail prices.', 'amber');
+              return;
+            }
+            const typedPriceStr = itemPrices[anyExactMatch.id] ?? '';
+            if (!canAddItemToCart(anyExactMatch.retailPrice, typedPriceStr)) {
+              showToast('Price needed', `Please enter a retail price for ${anyExactMatch.title}.`, 'amber');
+              setSearchQuery(anyExactMatch.sku);
+              return;
+            }
+            addToCart(anyExactMatch, parseFloat(typedPriceStr));
+            setSearchQuery('');
+          } else {
+            addToCart(anyExactMatch);
+            setSearchQuery('');
+          }
+        }
+      } else if (anyExactMatch.status === 'Retail Floor') {
+        if (anyExactMatch.retailPrice <= 0) {
+          if (!canEditPrice) {
+            showToast('Unauthorized Override', 'Only managers or operators with pricing permission can adjust retail prices.', 'amber');
+            return;
+          }
           const typedPriceStr = itemPrices[anyExactMatch.id] ?? '';
           if (!canAddItemToCart(anyExactMatch.retailPrice, typedPriceStr)) {
-            showToast('Price Needed', `Please enter a retail price for ${anyExactMatch.title}.`, 'amber');
+            showToast('Price needed', `Please enter a retail price for ${anyExactMatch.title}.`, 'amber');
             setSearchQuery(anyExactMatch.sku);
             return;
           }
-          if (anyExactMatch.retailPrice <= 0) {
-            addToCart(anyExactMatch, parseFloat(typedPriceStr));
-          } else {
-            addToCart(anyExactMatch);
-          }
-          setSearchQuery('');
-        }
-      } else if (anyExactMatch.status === 'Retail Floor') {
-        const typedPriceStr = itemPrices[anyExactMatch.id] ?? '';
-        if (!canAddItemToCart(anyExactMatch.retailPrice, typedPriceStr)) {
-          showToast('Price Needed', `Please enter a retail price for ${anyExactMatch.title}.`, 'amber');
-          setSearchQuery(anyExactMatch.sku);
-          return;
-        }
-        if (anyExactMatch.retailPrice <= 0) {
           addToCart(anyExactMatch, parseFloat(typedPriceStr));
+          setSearchQuery('');
         } else {
           addToCart(anyExactMatch);
+          setSearchQuery('');
         }
-        setSearchQuery('');
       } else {
         showToast('Item Unavailable', `Item found (${anyExactMatch.title}) — currently ${anyExactMatch.status}.`, 'amber');
       }
@@ -477,18 +495,23 @@ export const Sell: React.FC = () => {
       if (item.status === 'Reserved' && !canSellReserved) {
         showToast('Reserved Stock', 'Reserved stock needs Manager or Owner approval.', 'amber');
       } else {
-        const typedPriceStr = itemPrices[item.id] ?? '';
-        if (!canAddItemToCart(item.retailPrice, typedPriceStr)) {
-          showToast('Price Needed', `Please enter a retail price for ${item.title}.`, 'amber');
-          setSearchQuery(item.sku);
-          return;
-        }
         if (item.retailPrice <= 0) {
+          if (!canEditPrice) {
+            showToast('Unauthorized Override', 'Only managers or operators with pricing permission can adjust retail prices.', 'amber');
+            return;
+          }
+          const typedPriceStr = itemPrices[item.id] ?? '';
+          if (!canAddItemToCart(item.retailPrice, typedPriceStr)) {
+            showToast('Price needed', `Please enter a retail price for ${item.title}.`, 'amber');
+            setSearchQuery(item.sku);
+            return;
+          }
           addToCart(item, parseFloat(typedPriceStr));
+          setSearchQuery('');
         } else {
           addToCart(item);
+          setSearchQuery('');
         }
-        setSearchQuery('');
       }
     } else if (filteredItems.length > 1) {
       showToast('Multiple Matches', `${filteredItems.length} matches — choose one.`, 'info');
@@ -514,6 +537,11 @@ export const Sell: React.FC = () => {
 
   const handleCompleteSale = async () => {
     if (isCheckingOutRef.current || cart.length === 0 || isProcessing) return;
+    
+    if (hasUnpricedLine(cart)) {
+      showToast('Price needed', 'One or more items in the basket have no price set. Please set a price before checkout.', 'amber');
+      return;
+    }
     
     if (selectedTender === 'cash' && numTendered < total) {
       showToast('Payment Incomplete', `Cash tendered (R ${numTendered.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) is less than total R ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'amber');
@@ -656,7 +684,15 @@ export const Sell: React.FC = () => {
                 return (
                   <div
                     key={item.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handleTileClick(item)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleTileClick(item);
+                      }
+                    }}
                     className={`bg-white border rounded-xl p-3.5 flex flex-col text-left transition group shadow-xs hover:shadow-sm active:scale-98 cursor-pointer ${
                       isReserved ? 'border-amber-300 bg-amber-50/40 hover:border-amber-500' : 'border-gray-200 hover:border-[#C85A32]'
                     }`}
@@ -683,28 +719,47 @@ export const Sell: React.FC = () => {
                     </div>
                     <div className="pt-2 border-t border-gray-100 flex items-center justify-between mt-2">
                       {item.retailPrice <= 0 ? (
-                        <div className="flex flex-col gap-2 w-full" onClick={(e) => e.stopPropagation()}>
-                          <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 self-start">
-                            {formatShelfPrice(item.retailPrice)}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold text-gray-500 font-mono">R</span>
-                            <input
-                              type="number"
-                              placeholder="0.00"
-                              value={itemPrices[item.id] ?? ''}
-                              onChange={(e) => setItemPrices(prev => ({ ...prev, [item.id]: e.target.value }))}
-                              className="w-full bg-white border border-[#C85A32] text-xs font-bold text-gray-900 px-1.5 py-1 rounded outline-none font-mono"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleTileClick(item)}
-                              className="p-1 bg-[#C85A32] text-white rounded hover:bg-[#A94725] transition cursor-pointer"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </button>
+                        canEditPrice ? (
+                          <div
+                            className="flex flex-col gap-2 w-full"
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          >
+                            <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 self-start">
+                              Price needed
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-gray-500 font-mono">R</span>
+                              <input
+                                type="number"
+                                placeholder="0.00"
+                                value={itemPrices[item.id] ?? ''}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                                onChange={(e) => setItemPrices(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                className="w-full bg-white border border-[#C85A32] text-xs font-bold text-gray-900 px-1.5 py-1 rounded outline-none font-mono"
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleTileClick(item);
+                                }}
+                                onKeyDown={(e) => e.stopPropagation()}
+                                className="p-1 bg-[#C85A32] text-white rounded hover:bg-[#A94725] transition cursor-pointer"
+                                title="Add with price"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                              Price needed - ask a manager
+                            </span>
+                          </div>
+                        )
                       ) : (
                         <>
                           <span className="text-sm font-bold text-gray-900 font-mono">

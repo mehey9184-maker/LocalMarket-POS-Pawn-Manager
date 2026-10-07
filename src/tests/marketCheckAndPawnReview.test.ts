@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { shouldRecalculateShelfPrice, getNextItemShelfState } from '../components/screens/buy-pawn/useBuyPawnWorkflow';
 import { formatShelfPrice, canAddItemToCart } from '../components/screens/Sell';
+import { canAddToCartGuard, hasUnpricedLine } from '../context/AppContext';
 
 /**
  * Verification Test Suite: Market Check Origin, Pawn Terminology & Photo UI Consistency
@@ -194,6 +195,69 @@ export async function runMarketCheckAndPawnReviewTests() {
   assert.strictEqual(canAddItemToCart(-10, '150'), true, 'Negative priced item with valid override should add to cart');
 
   console.log('[PASS] Test 9: formatShelfPrice and canAddItemToCart pure functions verified');
+
+  // Test 10: Pure functions canAddToCartGuard and hasUnpricedLine checks
+  console.log('[Test 10] Verifying canAddToCartGuard and hasUnpricedLine pure functions...');
+
+  // canAddToCartGuard checks
+  assert.strictEqual(canAddToCartGuard(0), false, '0 price with no override cannot add to cart');
+  assert.strictEqual(canAddToCartGuard(0, undefined), false, '0 price with undefined override cannot add to cart');
+  assert.strictEqual(canAddToCartGuard(0, 0), false, '0 price with 0 override cannot add to cart');
+  assert.strictEqual(canAddToCartGuard(0, -10), false, '0 price with negative override cannot add to cart');
+  assert.strictEqual(canAddToCartGuard(-5, undefined), false, 'Negative price with no override cannot add to cart');
+  assert.strictEqual(canAddToCartGuard(0, 150), true, '0 price with positive override can add to cart');
+  assert.strictEqual(canAddToCartGuard(100), true, 'Positive price with no override can add to cart');
+  assert.strictEqual(canAddToCartGuard(100, undefined), true, 'Positive price with undefined override can add to cart');
+  assert.strictEqual(canAddToCartGuard(100, 200), true, 'Positive price with positive override can add to cart');
+
+  // hasUnpricedLine checks
+  assert.strictEqual(hasUnpricedLine([]), false, 'Empty cart has no unpriced lines');
+  assert.strictEqual(
+    hasUnpricedLine([{ item: { retailPrice: 100 } } as any]),
+    false,
+    'Cart with positive retailPrice has no unpriced lines'
+  );
+  assert.strictEqual(
+    hasUnpricedLine([{ item: { retailPrice: 0 } } as any]),
+    true,
+    'Cart with 0 retailPrice and no override has unpriced lines'
+  );
+  assert.strictEqual(
+    hasUnpricedLine([{ item: { retailPrice: -10 } } as any]),
+    true,
+    'Cart with negative retailPrice and no override has unpriced lines'
+  );
+  assert.strictEqual(
+    hasUnpricedLine([{ item: { retailPrice: 0 }, overridePrice: 150 } as any]),
+    false,
+    'Cart with 0 retailPrice but positive overridePrice has no unpriced lines'
+  );
+  assert.strictEqual(
+    hasUnpricedLine([
+      { item: { retailPrice: 100 } },
+      { item: { retailPrice: 0 } }
+    ] as any),
+    true,
+    'Mixed cart with unpriced item has unpriced lines'
+  );
+  assert.strictEqual(
+    hasUnpricedLine([
+      { item: { retailPrice: 100 } },
+      { item: { retailPrice: 0 }, overridePrice: 50 }
+    ] as any),
+    false,
+    'Mixed cart with valid override on 0 price has no unpriced lines'
+  );
+  assert.strictEqual(
+    hasUnpricedLine([
+      { item: { retailPrice: 100 } },
+      { item: { retailPrice: 200 }, overridePrice: 0 }
+    ] as any),
+    true,
+    'Cart with 0 overridePrice has unpriced lines'
+  );
+
+  console.log('[PASS] Test 10: canAddToCartGuard and hasUnpricedLine pure functions verified');
 
   console.log('=== ALL MARKET CHECK & PAWN REVIEW TERMINOLOGY TESTS PASSED ===');
 }

@@ -88,6 +88,20 @@ export interface ToastInfo {
   type?: 'success' | 'amber' | 'info' | 'error';
 }
 
+export function canAddToCartGuard(price: number, overridePrice?: number): boolean {
+  if (typeof overridePrice === 'number' && !isNaN(overridePrice) && overridePrice > 0) {
+    return true;
+  }
+  return typeof price === 'number' && !isNaN(price) && price > 0;
+}
+
+export function hasUnpricedLine(cart: CartItem[]): boolean {
+  return cart.some(ci => {
+    const effectivePrice = ci.overridePrice ?? ci.item?.retailPrice;
+    return typeof effectivePrice !== 'number' || isNaN(effectivePrice) || effectivePrice <= 0;
+  });
+}
+
 interface AppContextType {
   activeTab: NavTab;
   setActiveTab: (tab: NavTab) => void;
@@ -506,6 +520,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [currentUserProfile]);
 
   const addToCart = (item: InventoryItem, overridePrice?: number) => {
+    if (!canAddToCartGuard(item.retailPrice, overridePrice)) {
+      showToast('Price needed', `${item.title} has no price set. Please enter a price before adding to basket.`, 'amber');
+      return;
+    }
     setCart(prev => {
       const existing = prev.find(ci => ci.item.id === item.id);
       if (existing) {
@@ -541,6 +559,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     receiptType: ReceiptDelivery,
     customerMobile?: string
   ): Promise<SaleTransaction> => {
+    if (hasUnpricedLine(cart)) {
+      showToast('Price needed', 'Cannot complete sale: basket contains items without a valid retail price.', 'amber');
+      throw new Error('Basket contains unpriced items');
+    }
+
     const isVatRegistered = Boolean(shopProfile?.vat_number && shopProfile.vat_number.trim().length > 0);
     const vatRate = isVatRegistered ? 0.15 : 0;
     const vatAmount = isVatRegistered ? (total - (total / (1 + vatRate))) : 0;
