@@ -29,6 +29,34 @@ var mainWindow = null;
 var embeddedServer = null;
 var serverPort = 3e3;
 var isDev = process.env.NODE_ENV === "development" || !import_electron.app.isPackaged;
+var gotTheLock = import_electron.app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  console.log("[Electron Main] Another instance is already running. Quitting duplicate instance.");
+  import_electron.app.quit();
+} else {
+  import_electron.app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+function resolveAppIcon() {
+  const candidateIconPaths = [
+    import_path.default.join(__dirname, "../public/icon.ico"),
+    import_path.default.join(__dirname, "../public/icon.png"),
+    import_path.default.join(import_electron.app.getAppPath(), "public/icon.ico"),
+    import_path.default.join(import_electron.app.getAppPath(), "public/icon.png"),
+    import_path.default.join(process.cwd(), "public/icon.ico"),
+    import_path.default.join(process.cwd(), "public/icon.png")
+  ];
+  for (const iconPath of candidateIconPaths) {
+    if (import_fs.default.existsSync(iconPath)) {
+      return iconPath;
+    }
+  }
+  return import_path.default.join(__dirname, "../public/icon.png");
+}
 async function startEmbeddedBackend() {
   process.env.IS_ELECTRON_MAIN = "true";
   process.env.ELECTRON_APP = "true";
@@ -69,7 +97,7 @@ async function createWindow() {
     minHeight: 600,
     title: "LocalMarket POS & Pawn Manager",
     backgroundColor: "#121212",
-    icon: import_path.default.join(__dirname, "../public/icon.png"),
+    icon: resolveAppIcon(),
     webPreferences: {
       preload: import_path.default.join(__dirname, "preload.cjs"),
       nodeIntegration: false,
@@ -103,26 +131,28 @@ async function createWindow() {
     mainWindow = null;
   });
 }
-import_electron.app.whenReady().then(async () => {
-  await createWindow();
-  import_electron.app.on("activate", async () => {
-    if (import_electron.BrowserWindow.getAllWindows().length === 0) {
-      await createWindow();
+if (gotTheLock) {
+  import_electron.app.whenReady().then(async () => {
+    await createWindow();
+    import_electron.app.on("activate", async () => {
+      if (import_electron.BrowserWindow.getAllWindows().length === 0) {
+        await createWindow();
+      }
+    });
+  });
+  import_electron.app.on("window-all-closed", () => {
+    if (embeddedServer) {
+      try {
+        embeddedServer.close();
+      } catch (e) {
+        console.warn("Server shutdown note:", e);
+      }
+    }
+    if (process.platform !== "darwin") {
+      import_electron.app.quit();
     }
   });
-});
-import_electron.app.on("window-all-closed", () => {
-  if (embeddedServer) {
-    try {
-      embeddedServer.close();
-    } catch (e) {
-      console.warn("Server shutdown note:", e);
-    }
-  }
-  if (process.platform !== "darwin") {
-    import_electron.app.quit();
-  }
-});
+}
 import_electron.ipcMain.handle("app:version", () => import_electron.app.getVersion());
 import_electron.ipcMain.handle("app:is-desktop", () => true);
 import_electron.ipcMain.handle("app:toggle-fullscreen", () => {

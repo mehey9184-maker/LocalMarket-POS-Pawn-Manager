@@ -112,7 +112,7 @@ export async function runApiRoutingAndResilienceTests() {
     assert(typeof healthRes.data?.uptime === 'number', '/api/health uptime must be a number');
     console.log('  ✔ Health check endpoint response verified (status, service, mode, uptime)');
 
-    // Test 6: API URL Resolution (Relative vs LAN Base URL)
+    // Test 6: API URL Resolution (Relative vs LAN Base URL in Web Mode)
     const relativeUrl = resolveApiUrl('/api/staff/provision');
     assert(relativeUrl === '/api/staff/provision', `Expected relative URL '/api/staff/provision', got: ${relativeUrl}`);
 
@@ -125,6 +125,45 @@ export async function runApiRoutingAndResilienceTests() {
     );
     delete (globalThis as any).__LOCALMARKET_API_BASE_URL__;
     console.log('  ✔ API Base URL resolution and trailing slash normalization verified');
+
+    // Test 7: Desktop Route-Aware Cloud vs Local Routing
+    (globalThis as any).electronAPI = { isDesktop: true };
+    try {
+      // Cloud-required routes MUST resolve to Vercel production origin
+      const desktopLoginPinUrl = resolveApiUrl('/api/auth/login-with-pin');
+      assert(
+        desktopLoginPinUrl === 'https://local-market-nine.vercel.app/api/auth/login-with-pin',
+        `Expected cloud-routed pin login url, got: ${desktopLoginPinUrl}`
+      );
+
+      const desktopProvisionUrl = resolveApiUrl('/api/staff/provision');
+      assert(
+        desktopProvisionUrl === 'https://local-market-nine.vercel.app/api/staff/provision',
+        `Expected cloud-routed staff provision url, got: ${desktopProvisionUrl}`
+      );
+
+      const desktopStorageUrl = resolveApiUrl('/api/storage/upload');
+      assert(
+        desktopStorageUrl === 'https://local-market-nine.vercel.app/api/storage/upload',
+        `Expected cloud-routed storage upload url, got: ${desktopStorageUrl}`
+      );
+
+      // Local endpoints MUST remain local (relative to embedded Express server)
+      const desktopHealthUrl = resolveApiUrl('/api/health');
+      assert(
+        desktopHealthUrl === '/api/health',
+        `Expected local /api/health route, got: ${desktopHealthUrl}`
+      );
+
+      const desktopMarketIntelUrl = resolveApiUrl('/api/market-intelligence/check');
+      assert(
+        desktopMarketIntelUrl === '/api/market-intelligence/check',
+        `Expected local market intelligence check route, got: ${desktopMarketIntelUrl}`
+      );
+      console.log('  ✔ Desktop route-aware routing verified: Cloud-required routes -> Vercel, Local routes -> Express');
+    } finally {
+      delete (globalThis as any).electronAPI;
+    }
 
   } finally {
     globalThis.fetch = originalFetch;

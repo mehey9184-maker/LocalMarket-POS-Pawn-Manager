@@ -11,8 +11,29 @@ import { LocalMarketSalesStats, MarketCheckResult, MarketObservation } from "./s
 
 dotenv.config();
 
-// Ensure public upload directories exist for local development fallback
-const UPLOAD_ROOT = path.join(process.cwd(), "public", "uploads");
+// Compute safe upload storage directory:
+// In Electron desktop environments, use writable per-user application data directory (e.g. %APPDATA%\LocalMarket POS\uploads on Windows).
+// In web server / LAN mode, use process.cwd()/public/uploads.
+export function resolveUploadRoot(): string {
+  if (process.env.LOCALMARKET_STORAGE_PATH && process.env.LOCALMARKET_STORAGE_PATH.trim()) {
+    return process.env.LOCALMARKET_STORAGE_PATH.trim();
+  }
+  const isElectron = Boolean(process.env.IS_ELECTRON_MAIN || process.env.ELECTRON_APP);
+  if (isElectron) {
+    if (process.platform === "win32") {
+      const appData = process.env.APPDATA || (process.env.USERPROFILE ? path.win32.join(process.env.USERPROFILE, "AppData", "Roaming") : os.homedir());
+      return path.win32.join(appData, "LocalMarket POS", "uploads");
+    } else if (process.platform === "darwin") {
+      return path.join(os.homedir(), "Library", "Application Support", "LocalMarket POS", "uploads");
+    } else {
+      const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
+      return path.join(dataHome, "localmarket-pos", "uploads");
+    }
+  }
+  return path.join(process.cwd(), "public", "uploads");
+}
+
+const UPLOAD_ROOT = resolveUploadRoot();
 try {
   if (!fs.existsSync(UPLOAD_ROOT)) {
     fs.mkdirSync(UPLOAD_ROOT, { recursive: true });

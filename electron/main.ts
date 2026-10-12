@@ -8,6 +8,39 @@ let serverPort: number = 3000;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
+// Single-instance lock to prevent concurrent database access or duplicate POS instances
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  console.log('[Electron Main] Another instance is already running. Quitting duplicate instance.');
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
+function resolveAppIcon(): string {
+  const candidateIconPaths = [
+    path.join(__dirname, '../public/icon.ico'),
+    path.join(__dirname, '../public/icon.png'),
+    path.join(app.getAppPath(), 'public/icon.ico'),
+    path.join(app.getAppPath(), 'public/icon.png'),
+    path.join(process.cwd(), 'public/icon.ico'),
+    path.join(process.cwd(), 'public/icon.png')
+  ];
+
+  for (const iconPath of candidateIconPaths) {
+    if (fs.existsSync(iconPath)) {
+      return iconPath;
+    }
+  }
+  return path.join(__dirname, '../public/icon.png');
+}
+
 async function startEmbeddedBackend(): Promise<number> {
   process.env.IS_ELECTRON_MAIN = 'true';
   process.env.ELECTRON_APP = 'true';
@@ -29,6 +62,8 @@ async function startEmbeddedBackend(): Promise<number> {
     }
 
     if (serverModule && typeof serverModule.startServer === 'function') {
+      // In production packaged desktop, always bind strictly to 3000 to keep the IndexedDB origin constant.
+      // If 3000 is occupied, startServer will bind to ephemeral port as fallback.
       const { server, port } = await serverModule.startServer(3000);
       embeddedServer = server;
       serverPort = port;
@@ -53,7 +88,7 @@ async function createWindow() {
     minHeight: 600,
     title: 'LocalMarket POS & Pawn Manager',
     backgroundColor: '#121212',
-    icon: path.join(__dirname, '../public/icon.png'),
+    icon: resolveAppIcon(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -96,28 +131,30 @@ async function createWindow() {
   });
 }
 
-app.whenReady().then(async () => {
-  await createWindow();
+if (gotTheLock) {
+  app.whenReady().then(async () => {
+    await createWindow();
 
-  app.on('activate', async () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      await createWindow();
+    app.on('activate', async () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        await createWindow();
+      }
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    if (embeddedServer) {
+      try {
+        embeddedServer.close();
+      } catch (e) {
+        console.warn('Server shutdown note:', e);
+      }
+    }
+    if (process.platform !== 'darwin') {
+      app.quit();
     }
   });
-});
-
-app.on('window-all-closed', () => {
-  if (embeddedServer) {
-    try {
-      embeddedServer.close();
-    } catch (e) {
-      console.warn('Server shutdown note:', e);
-    }
-  }
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+}
 
 // Native POS hardware & app IPC handlers
 ipcMain.handle('app:version', () => app.getVersion());

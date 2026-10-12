@@ -19,6 +19,52 @@ export interface ApiResponse<T = any> {
 const BACKEND_UNAVAILABLE_MESSAGE =
   "LocalMarket backend is not reachable. The app interface is running, but the API server is unavailable.";
 
+export const DEFAULT_PRODUCTION_CLOUD_ORIGIN = "https://local-market-nine.vercel.app";
+
+/**
+ * List of privileged routes that require server-side administrative credentials
+ * (Supabase service-role, Backblaze B2 application keys).
+ * In Electron desktop environments, these must route to the authenticated Cloud backend.
+ */
+export const CLOUD_REQUIRED_ROUTES = [
+  '/api/auth/login-with-pin',
+  '/api/auth/login-with-password',
+  '/api/auth/setup-manager-password',
+  '/api/verify-pin',
+  '/api/staff/provision',
+  '/api/staff/update-profile',
+  '/api/staff/reset-pin',
+  '/api/staff/update-access',
+  '/api/storage/upload',
+  '/api/storage/delete',
+] as const;
+
+/**
+ * Checks whether an API path requires the privileged cloud backend in desktop mode.
+ */
+export function isCloudRequiredRoute(pathOrUrl: string): boolean {
+  const cleanPath = pathOrUrl.split('?')[0].replace(/^https?:\/\/[^/]+/, '');
+  const normalized = cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
+  return (CLOUD_REQUIRED_ROUTES as readonly string[]).includes(normalized);
+}
+
+/**
+ * Detects whether the current execution context is the Electron desktop application.
+ */
+export function isDesktopApp(): boolean {
+  const globalTarget = typeof window !== 'undefined' ? window : globalThis;
+  if (globalTarget && (globalTarget as any).electronAPI?.isDesktop) {
+    return true;
+  }
+  if (typeof navigator !== 'undefined' && /electron/i.test(navigator.userAgent || '')) {
+    return true;
+  }
+  if (typeof process !== 'undefined' && (process.versions?.electron || process.env?.IS_ELECTRON_MAIN || process.env?.ELECTRON_APP)) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Returns the configured API base URL, normalized without trailing slashes.
  */
@@ -42,14 +88,47 @@ export function getApiBaseUrl(): string {
 }
 
 /**
- * Resolves a relative or absolute API route against the configured API base URL.
+ * Returns the effective cloud origin for privileged cloud-required operations.
+ */
+export function getCloudApiOrigin(): string {
+  const globalTarget = typeof window !== 'undefined' ? window : globalThis;
+  if (globalTarget && (globalTarget as any).__LOCALMARKET_CLOUD_ORIGIN__) {
+    const customOrigin = (globalTarget as any).__LOCALMARKET_CLOUD_ORIGIN__;
+    if (typeof customOrigin === 'string' && customOrigin.trim() !== '') {
+      return customOrigin.trim().replace(/\/+$/, '');
+    }
+  }
+
+  const envCloudUrl = typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_CLOUD_API_URL;
+  if (envCloudUrl && typeof envCloudUrl === 'string' && envCloudUrl.trim() !== '') {
+    return envCloudUrl.trim().replace(/\/+$/, '');
+  }
+
+  return DEFAULT_PRODUCTION_CLOUD_ORIGIN;
+}
+
+/**
+ * Resolves an API route. In Electron desktop mode:
+ * - Privileged cloud routes (/api/auth/*, /api/verify-pin, /api/staff/*, /api/storage/*)
+ *   route to the production cloud origin (https://local-market-nine.vercel.app).
+ * - Local routes (/api/health, /api/market-intelligence/*) remain on the local Express server.
+ * In standard web browser mode:
+ * - Uses relative path or configured VITE_API_BASE_URL.
  */
 export function resolveApiUrl(pathOrUrl: string): string {
   if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
     return pathOrUrl;
   }
-  const baseUrl = getApiBaseUrl();
+
   const cleanPath = pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`;
+
+  // If in desktop environment and route is a cloud-required privileged route:
+  if (isDesktopApp() && isCloudRequiredRoute(cleanPath)) {
+    const cloudOrigin = getCloudApiOrigin();
+    return `${cloudOrigin}${cleanPath}`;
+  }
+
+  const baseUrl = getApiBaseUrl();
   return baseUrl ? `${baseUrl}${cleanPath}` : cleanPath;
 }
 
