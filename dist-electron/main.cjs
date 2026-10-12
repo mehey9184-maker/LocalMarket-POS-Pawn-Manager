@@ -60,35 +60,58 @@ function resolveAppIcon() {
 async function startEmbeddedBackend() {
   process.env.IS_ELECTRON_MAIN = "true";
   process.env.ELECTRON_APP = "true";
-  try {
-    const candidatePaths = [
-      import_path.default.join(__dirname, "../dist/server.cjs"),
-      import_path.default.join(import_electron.app.getAppPath(), "dist/server.cjs"),
-      import_path.default.join(process.cwd(), "dist/server.cjs"),
-      import_path.default.join(__dirname, "server.cjs")
-    ];
-    let serverModule = null;
-    for (const p of candidatePaths) {
-      if (import_fs.default.existsSync(p)) {
-        serverModule = require(p);
-        break;
-      }
+  const candidatePaths = [
+    import_path.default.join(__dirname, "../dist/server.cjs"),
+    import_path.default.join(import_electron.app.getAppPath(), "dist/server.cjs"),
+    import_path.default.join(process.cwd(), "dist/server.cjs"),
+    import_path.default.join(__dirname, "server.cjs")
+  ];
+  let serverModule = null;
+  for (const p of candidatePaths) {
+    if (import_fs.default.existsSync(p)) {
+      serverModule = require(p);
+      break;
     }
-    if (serverModule && typeof serverModule.startServer === "function") {
-      const { server, port } = await serverModule.startServer(3e3);
-      embeddedServer = server;
-      serverPort = port;
-      console.log(`[Electron Main] Embedded Express server running on http://127.0.0.1:${port}`);
-      return port;
-    }
-  } catch (err) {
-    console.error("[Electron Main] Embedded server startup error:", err);
   }
-  return 3e3;
+  if (!serverModule || typeof serverModule.startServer !== "function") {
+    throw new Error("LocalMarket server bundle (dist/server.cjs) was not found or is missing startServer export.");
+  }
+  const { server, port } = await serverModule.startServer(3e3, "127.0.0.1");
+  if (port !== 3e3) {
+    try {
+      server.close();
+    } catch {
+    }
+    throw new Error(`LocalMarket embedded server acquired port ${port} instead of required port 3000. IndexedDB origin safety violated.`);
+  }
+  embeddedServer = server;
+  serverPort = port;
+  console.log(`[Electron Main] Embedded Express server running on http://127.0.0.1:${port}`);
+  return port;
 }
 async function createWindow() {
   if (!isDev || !process.env.VITE_DEV_SERVER_URL) {
-    serverPort = await startEmbeddedBackend();
+    try {
+      serverPort = await startEmbeddedBackend();
+    } catch (startupErr) {
+      console.error("[Electron Main] Critical startup failure:", startupErr);
+      import_electron.dialog.showErrorBox(
+        "LocalMarket POS - Startup Failure",
+        `The application could not start the local background service.
+
+Error: ${startupErr.message || startupErr}
+
+Please verify that another POS instance or service is not occupying port 3000.`
+      );
+      if (embeddedServer) {
+        try {
+          embeddedServer.close();
+        } catch {
+        }
+      }
+      import_electron.app.quit();
+      return;
+    }
   }
   mainWindow = new import_electron.BrowserWindow({
     width: 1366,

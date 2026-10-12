@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, protocol, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
 
@@ -45,40 +45,55 @@ async function startEmbeddedBackend(): Promise<number> {
   process.env.IS_ELECTRON_MAIN = 'true';
   process.env.ELECTRON_APP = 'true';
 
-  try {
-    const candidatePaths = [
-      path.join(__dirname, '../dist/server.cjs'),
-      path.join(app.getAppPath(), 'dist/server.cjs'),
-      path.join(process.cwd(), 'dist/server.cjs'),
-      path.join(__dirname, 'server.cjs')
-    ];
+  const candidatePaths = [
+    path.join(__dirname, '../dist/server.cjs'),
+    path.join(app.getAppPath(), 'dist/server.cjs'),
+    path.join(process.cwd(), 'dist/server.cjs'),
+    path.join(__dirname, 'server.cjs')
+  ];
 
-    let serverModule: any = null;
-    for (const p of candidatePaths) {
-      if (fs.existsSync(p)) {
-        serverModule = require(p);
-        break;
-      }
+  let serverModule: any = null;
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      serverModule = require(p);
+      break;
     }
-
-    if (serverModule && typeof serverModule.startServer === 'function') {
-      // In production packaged desktop, always bind strictly to 3000 to keep the IndexedDB origin constant.
-      // If 3000 is occupied, startServer will bind to ephemeral port as fallback.
-      const { server, port } = await serverModule.startServer(3000);
-      embeddedServer = server;
-      serverPort = port;
-      console.log(`[Electron Main] Embedded Express server running on http://127.0.0.1:${port}`);
-      return port;
-    }
-  } catch (err) {
-    console.error('[Electron Main] Embedded server startup error:', err);
   }
-  return 3000;
+
+  if (!serverModule || typeof serverModule.startServer !== 'function') {
+    throw new Error('LocalMarket server bundle (dist/server.cjs) was not found or is missing startServer export.');
+  }
+
+  // In production packaged desktop, strictly bind to 3000 to keep the IndexedDB origin constant.
+  // If port 3000 cannot be acquired, startServer will reject and we must abort cleanly.
+  const { server, port } = await serverModule.startServer(3000, '127.0.0.1');
+  if (port !== 3000) {
+    try { server.close(); } catch {}
+    throw new Error(`LocalMarket embedded server acquired port ${port} instead of required port 3000. IndexedDB origin safety violated.`);
+  }
+
+  embeddedServer = server;
+  serverPort = port;
+  console.log(`[Electron Main] Embedded Express server running on http://127.0.0.1:${port}`);
+  return port;
 }
 
 async function createWindow() {
   if (!isDev || !process.env.VITE_DEV_SERVER_URL) {
-    serverPort = await startEmbeddedBackend();
+    try {
+      serverPort = await startEmbeddedBackend();
+    } catch (startupErr: any) {
+      console.error('[Electron Main] Critical startup failure:', startupErr);
+      dialog.showErrorBox(
+        'LocalMarket POS - Startup Failure',
+        `The application could not start the local background service.\n\nError: ${startupErr.message || startupErr}\n\nPlease verify that another POS instance or service is not occupying port 3000.`
+      );
+      if (embeddedServer) {
+        try { embeddedServer.close(); } catch {}
+      }
+      app.quit();
+      return;
+    }
   }
 
   mainWindow = new BrowserWindow({
@@ -122,7 +137,7 @@ async function createWindow() {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools();
   } else {
-    // In production, load via the embedded Express backend server so all /api/* routes work seamlessly
+    // Only load the URL once the server has genuinely started and bound to port 3000
     mainWindow.loadURL(`http://127.0.0.1:${serverPort}`);
   }
 

@@ -92,15 +92,24 @@ export function getApiBaseUrl(): string {
  */
 export function getCloudApiOrigin(): string {
   const globalTarget = typeof window !== 'undefined' ? window : globalThis;
+
+  // 1. Check preload bridge exposed via window.electronAPI.cloudOrigin
+  const electronCloudOrigin = (globalTarget as any)?.electronAPI?.cloudOrigin;
+  if (typeof electronCloudOrigin === 'string' && electronCloudOrigin.trim().startsWith('https://')) {
+    return electronCloudOrigin.trim().replace(/\/+$/, '');
+  }
+
+  // 2. Check runtime global config
   if (globalTarget && (globalTarget as any).__LOCALMARKET_CLOUD_ORIGIN__) {
     const customOrigin = (globalTarget as any).__LOCALMARKET_CLOUD_ORIGIN__;
-    if (typeof customOrigin === 'string' && customOrigin.trim() !== '') {
+    if (typeof customOrigin === 'string' && customOrigin.trim().startsWith('https://')) {
       return customOrigin.trim().replace(/\/+$/, '');
     }
   }
 
+  // 3. Check Vite build-time env var
   const envCloudUrl = typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_CLOUD_API_URL;
-  if (envCloudUrl && typeof envCloudUrl === 'string' && envCloudUrl.trim() !== '') {
+  if (envCloudUrl && typeof envCloudUrl === 'string' && envCloudUrl.trim().startsWith('https://')) {
     return envCloudUrl.trim().replace(/\/+$/, '');
   }
 

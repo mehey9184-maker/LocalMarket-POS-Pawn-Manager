@@ -118,7 +118,7 @@ export async function runWindowsDesktopReadinessTests() {
   assert(builderConfig.files.includes('dist/**/*'), 'electron-builder.json files must include dist/**/*');
   assert(builderConfig.files.includes('dist-electron/**/*'), 'electron-builder.json files must include dist-electron/**/*');
 
-  assert(builderConfig.win?.icon === 'build/icon.ico', 'Windows icon must be set to build/icon.ico');
+  assert(builderConfig.win?.icon === 'public/icon.ico', 'Windows icon must be set to public/icon.ico');
   assert(
     builderConfig.nsis?.artifactName === 'LocalMarket-POS-Setup-${version}.${ext}',
     'NSIS installer must have distinct filename'
@@ -127,20 +127,20 @@ export async function runWindowsDesktopReadinessTests() {
     builderConfig.portable?.artifactName === 'LocalMarket-POS-Portable-${version}.${ext}',
     'Portable executable must have distinct filename'
   );
-  console.log('  ✔ electron-builder.json verified (assets included, distinct NSIS and Portable filenames)');
+  console.log('  ✔ electron-builder.json verified (assets included, distinct NSIS and Portable filenames, public/icon.ico)');
 
   // --- 6. Icon File Integrity ---
   console.log('[Desktop Test 6] Verifying authentic icon files exist...');
-  assert(fs.existsSync('build/icon.ico'), 'build/icon.ico must exist');
-  assert(fs.existsSync('build/icon.png'), 'build/icon.png must exist');
   assert(fs.existsSync('public/icon.png'), 'public/icon.png must exist');
   assert(fs.existsSync('public/icon.ico'), 'public/icon.ico must exist');
-  assert(fs.statSync('build/icon.ico').size > 0, 'build/icon.ico must be non-empty');
+  assert(fs.existsSync('public/icon-192.png'), 'public/icon-192.png must exist');
+  assert(fs.existsSync('public/icon-512.png'), 'public/icon-512.png must exist');
+  assert(fs.statSync('public/icon.ico').size > 0, 'public/icon.ico must be non-empty');
   assert(fs.statSync('public/icon.png').size > 0, 'public/icon.png must be non-empty');
-  console.log('  ✔ All required PNG and ICO icon assets verified');
+  console.log('  ✔ All required public/ PNG and ICO icon assets verified');
 
-  // --- 7. electron/main.ts Single-Instance Lock and Icon Audit ---
-  console.log('[Desktop Test 7] Auditing electron/main.ts source for single-instance & clean lifecycle...');
+  // --- 7. electron/main.ts Single-Instance Lock, Icon Audit & Port Conflict Handling ---
+  console.log('[Desktop Test 7] Auditing electron/main.ts source for single-instance, startup error handling & clean lifecycle...');
   const electronMainSrc = fs.readFileSync('electron/main.ts', 'utf8');
   assert(
     electronMainSrc.includes('app.requestSingleInstanceLock()'),
@@ -158,7 +158,27 @@ export async function runWindowsDesktopReadinessTests() {
     electronMainSrc.includes('embeddedServer.close()'),
     'electron/main.ts must gracefully close embedded server'
   );
-  console.log('  ✔ electron/main.ts single-instance and lifecycle invariants verified');
+  assert(
+    electronMainSrc.includes('dialog.showErrorBox'),
+    'electron/main.ts must display error dialog on startup failure'
+  );
+  assert(
+    electronMainSrc.includes('app.quit()'),
+    'electron/main.ts must exit safely if embedded server fails to start'
+  );
+
+  // --- 8. server.ts Strict Port 3000 Invariant in Electron Mode ---
+  console.log('[Desktop Test 8] Auditing server.ts for strict port 3000 binding and origin stability...');
+  const serverSrc = fs.readFileSync('server.ts', 'utf8');
+  assert(
+    serverSrc.includes('[Electron Server Conflict]'),
+    'server.ts must reject with actionable conflict message when port is occupied in Electron mode'
+  );
+  assert(
+    !serverSrc.includes('binding to ephemeral port for Electron'),
+    'server.ts must NEVER bind to ephemeral port in Electron mode (would corrupt IndexedDB origin)'
+  );
+  console.log('  ✔ server.ts strict port 3000 and IndexedDB origin invariant verified');
 
   console.log('====================================================');
   console.log('   ALL WINDOWS DESKTOP READINESS TESTS PASSED!      ');

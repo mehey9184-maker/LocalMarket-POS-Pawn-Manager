@@ -2083,12 +2083,9 @@ async function startServer(desiredPort?: number, desiredHost?: string) {
 
     server.on("error", (err: any) => {
       if (err.code === "EADDRINUSE" && isElectron) {
-        console.warn(`Port ${PORT} in use, binding to ephemeral port for Electron...`);
-        const fallback = app.listen(0, "127.0.0.1", () => {
-          const actualPort = (fallback.address() as any)?.port;
-          console.log(`LocalMarket Server running on fallback http://127.0.0.1:${actualPort}`);
-          resolve({ app, server: fallback, port: actualPort, host: "127.0.0.1" });
-        });
+        const conflictMsg = `Port ${PORT} is already in use by another application. LocalMarket Desktop requires stable port ${PORT} to maintain IndexedDB storage origin. Cannot start embedded server.`;
+        console.error(`[Electron Server Conflict] ${conflictMsg}`);
+        reject(new Error(conflictMsg));
       } else {
         console.error(`Server error on ${HOST}:${PORT}:`, err);
         reject(err);
