@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff7b00" />
+      <stop offset="100%" stop-color="#e65100" />
+    </linearGradient>
+    <linearGradient id="innerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f57c00" />
+      <stop offset="100%" stop-color="#ef6c00" />
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect width="512" height="512" rx="112" ry="112" fill="url(#orangeGrad)" />
+  
+  <!-- Location pin shape in white -->
+  <path d="M256 64 C175.5 64 110 129.5 110 210 C110 295 256 448 256 448 C256 448 402 295 402 210 C402 129.5 336.5 64 256 64 Z" fill="#ffffff" />
+  
+  <!-- Inner orange circle -->
+  <circle cx="256" cy="210" r="88" fill="url(#innerGrad)" />
+  
+  <!-- Connected-node triangle design -->
+  <g stroke="#ffffff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Triangle edges -->
+    <line x1="256" y1="150" x2="200" y2="235" />
+    <line x1="256" y1="150" x2="312" y2="235" />
+    <line x1="200" y1="235" x2="312" y2="235" />
+    <!-- Bottom connecting lines -->
+    <line x1="200" y1="235" x2="256" y2="270" />
+    <line x1="312" y1="235" x2="256" y2="270" />
+  </g>
+  <!-- Nodes (circles) -->
+  <g fill="#ffffff">
+    <circle cx="256" cy="150" r="12" />
+    <circle cx="200" cy="235" r="12" />
+    <circle cx="312" cy="235" r="12" />
+    <circle cx="256" cy="270" r="12" />
+  </g>
+</svg>
