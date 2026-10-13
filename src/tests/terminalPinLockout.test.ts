@@ -3,6 +3,7 @@
  */
 
 import { authApi } from '../services/supabaseApi';
+import { saveSupabaseCredentials, clearSupabaseCredentials } from '../services/supabase';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -21,6 +22,8 @@ export async function runTerminalPinLockoutTests() {
   console.log('=== RUNNING TERMINAL PIN LOCKOUT UX & SERVER AUTHORITY TESTS ===');
 
   const originalFetch = globalThis.fetch;
+  const originalEnvUrl = process.env.VITE_SUPABASE_URL;
+  const originalEnvKey = process.env.VITE_SUPABASE_ANON_KEY;
 
   try {
     // ---------------------------------------------------------
@@ -137,18 +140,48 @@ export async function runTerminalPinLockoutTests() {
     // ---------------------------------------------------------
     // Test G: Successful PIN Authentication
     // ---------------------------------------------------------
+    // Provide isolated dummy test configuration so getSupabase() initializes deterministically in test runners without .env
+    const dummyUrl = 'https://mock-isolated-test.supabase.co';
+    const dummyAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-anon-key-token-with-sufficient-length-12345';
+    saveSupabaseCredentials(dummyUrl, dummyAnonKey);
+
     const validDummyJwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE5OTk5OTk5OTksInN1YiI6InVzci0xMjMifQ.mock-signature';
-    globalThis.fetch = (async () => {
-      return new Response(
-        JSON.stringify({
-          success: true,
-          session: { access_token: validDummyJwt, refresh_token: 'mock-refresh-token', user: { id: 'usr-123' } },
-        }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
+    globalThis.fetch = (async (input: any) => {
+      const url = typeof input === 'string' ? input : (input?.url || '');
+      // Handle the privileged login POST request
+      if (url.includes('/api/auth/login-with-pin')) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            session: {
+              access_token: validDummyJwt,
+              refresh_token: 'mock-refresh-token',
+              user: { id: 'usr-123', email: 'cashier@localmarket.test' },
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      // Handle the Supabase Auth /user identity verification request triggered after setSession
+      if (url.includes('/auth/v1/user') || url.includes('/user')) {
+        return new Response(
+          JSON.stringify({
+            id: 'usr-123',
+            email: 'cashier@localmarket.test',
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }) as any;
 
     const successRes = await authApi.loginWithPin('CASH01', '200000');
@@ -157,6 +190,17 @@ export async function runTerminalPinLockoutTests() {
 
   } finally {
     globalThis.fetch = originalFetch;
+    if (originalEnvUrl !== undefined) {
+      process.env.VITE_SUPABASE_URL = originalEnvUrl;
+    } else {
+      delete process.env.VITE_SUPABASE_URL;
+    }
+    if (originalEnvKey !== undefined) {
+      process.env.VITE_SUPABASE_ANON_KEY = originalEnvKey;
+    } else {
+      delete process.env.VITE_SUPABASE_ANON_KEY;
+    }
+    clearSupabaseCredentials();
   }
 
   console.log('=== ALL TERMINAL PIN LOCKOUT UX & SERVER AUTHORITY TESTS PASSED ===');

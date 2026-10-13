@@ -197,8 +197,12 @@ export const clearSupabaseCredentials = (): void => {
   if (typeof window !== 'undefined') {
     localStorage.removeItem('lm_supabase_url');
     localStorage.removeItem('lm_supabase_anon_key');
-    clientInstance = null;
   }
+  if (typeof process !== 'undefined' && process.env) {
+    delete process.env.VITE_SUPABASE_URL;
+    delete process.env.VITE_SUPABASE_ANON_KEY;
+  }
+  clientInstance = null;
 };
 
 export const getSupabaseConfig = () => {
