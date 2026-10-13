@@ -11,6 +11,11 @@ function assert(condition: boolean, message: string) {
   console.log(`[PASS] ${message}`);
 }
 
+function readSourceFile(relativePath: string): string {
+  const absolutePath = path.resolve(relativePath);
+  return fs.readFileSync(absolutePath, 'utf-8').replace(/\r\n/g, '\n');
+}
+
 // Emulate AuthContext hasPermission logic
 function evaluatePermission(
   role: UserRole,
@@ -131,7 +136,7 @@ export function runOwnerShopSettingsAndFixedRolesTests() {
   // 5. UI SHOP SETTINGS ISOLATION VERIFICATION
   // =========================================================================
   console.log('\n--- 5. UI Shop Profile & Settings Isolation ---');
-  const cashierProfileCode = fs.readFileSync(path.resolve('src/components/screens/CashierProfile.tsx'), 'utf-8');
+  const cashierProfileCode = readSourceFile('src/components/screens/CashierProfile.tsx');
   assert(
     cashierProfileCode.includes("{ id: 'shop', label: 'Shop Profile', icon: Building2, show: isOwner }"),
     'CashierProfile.tsx sidebar strictly restricts Shop Profile to isOwner'
@@ -141,7 +146,7 @@ export function runOwnerShopSettingsAndFixedRolesTests() {
     'CashierProfile.tsx main content strictly gates shop form rendering with isOwner'
   );
 
-  const hubCode = fs.readFileSync(path.resolve('src/components/profile/ShopProfileAndOfflineHub.tsx'), 'utf-8');
+  const hubCode = readSourceFile('src/components/profile/ShopProfileAndOfflineHub.tsx');
   assert(
     !hubCode.includes('Edit Store Info'),
     'ShopProfileAndOfflineHub.tsx contains no duplicate Edit Store Info button (single home in CashierProfile)'
@@ -155,7 +160,7 @@ export function runOwnerShopSettingsAndFixedRolesTests() {
   // 6. SCREEN REMOUNT & STATE PRESERVATION VERIFICATION
   // =========================================================================
   console.log('\n--- 6. Screen State Preservation & Gated Keyboard Effects ---');
-  const appCode = fs.readFileSync(path.resolve('src/App.tsx'), 'utf-8');
+  const appCode = readSourceFile('src/App.tsx');
   assert(
     appCode.includes("activeTab === 'sell' ? 'flex flex-col lg:flex-row overflow-hidden' : 'hidden'"),
     'App.tsx preserves Sell screen state without remounting on tab changes'
@@ -169,7 +174,7 @@ export function runOwnerShopSettingsAndFixedRolesTests() {
     'App.tsx preserves Buy/Pawn transaction workflow without remounting'
   );
 
-  const sellCode = fs.readFileSync(path.resolve('src/components/screens/Sell.tsx'), 'utf-8');
+  const sellCode = readSourceFile('src/components/screens/Sell.tsx');
   assert(
     sellCode.includes("if (activeTab !== 'sell') return;"),
     'Sell.tsx keydown listener is strictly gated and inert when user is on another tab'
@@ -183,7 +188,7 @@ export function runOwnerShopSettingsAndFixedRolesTests() {
   // 7. ELIMINATED REDUNDANT AUTH GETSESSION CALLS
   // =========================================================================
   console.log('\n--- 7. Eliminated Redundant Auth Refresh on Visibility/Focus ---');
-  const authContextCode = fs.readFileSync(path.resolve('src/context/AuthContext.tsx'), 'utf-8');
+  const authContextCode = readSourceFile('src/context/AuthContext.tsx');
   assert(
     !authContextCode.includes('handleVisibilityChange'),
     'AuthContext.tsx has completely eliminated redundant visibilitychange session polling'
