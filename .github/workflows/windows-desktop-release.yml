@@ -7,6 +7,9 @@ on:
     branches: [ master, main ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   release:
     runs-on: windows-latest
@@ -34,14 +37,10 @@ jobs:
 
       - name: Package Windows Desktop App
         run: npx electron-builder --windows --publish never
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Release Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-release-artifacts
-          path: |
-            release/*.exe
-            release/*.zip
-            release/win-unpacked/**/*
+          path: release/*.exe
+          if-no-files-found: error
