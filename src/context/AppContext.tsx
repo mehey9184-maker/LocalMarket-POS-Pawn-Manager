@@ -164,7 +164,7 @@ interface AppContextType {
   supabaseUser: any | null;
   currentUserProfile: ProfileRow | null;
   supabaseLogs: SystemLogRow[];
-  syncShopItemsWithSupabase: (forceFull?: boolean) => Promise<void>;
+  syncShopItemsWithSupabase: (forceFull?: boolean, silent?: boolean) => Promise<void>;
   fetchSupabaseLogs: () => Promise<void>;
   logSystemEvent: (eventType: string, details?: any, severity?: 'info' | 'warning' | 'audit' | 'critical', sapsRef?: string) => Promise<void>;
   
@@ -411,12 +411,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (updates.currency !== undefined) payload.currency = updates.currency;
         if (updates.receipt_header !== undefined) payload.receipt_header = updates.receipt_header;
         if (updates.receipt_footer !== undefined) payload.receipt_footer = updates.receipt_footer;
+        
+        // Persist metadata and logo_url to Supabase shop_profiles
+        if (updates.metadata !== undefined) {
+          payload.metadata = updates.metadata;
+        } else if (updates.logo_url !== undefined) {
+          payload.metadata = {
+            ...(shopProfile.metadata || {}),
+            logo_url: updates.logo_url
+          };
+        }
+        if (payload.metadata && updates.logo_url && !payload.metadata.logo_url) {
+          payload.metadata.logo_url = updates.logo_url;
+        }
 
         const updated = await shopProfilesApi.updateShopProfile(targetShopId, payload);
         if (updated) {
           // Server update confirmed authoritative: persist to state and local cache
-          setShopProfile(next);
-          localStorage.setItem(`lm_shop_profile_${targetShopId}`, JSON.stringify(next));
+          const finalLogoUrl = next.logo_url || (next.metadata as any)?.logo_url || '';
+          const finalNext: ShopProfile = {
+            ...next,
+            logo_url: finalLogoUrl,
+            metadata: next.metadata || (updated as any).metadata || {}
+          };
+          setShopProfile(finalNext);
+          localStorage.setItem(`lm_shop_profile_${targetShopId}`, JSON.stringify(finalNext));
+          if (finalLogoUrl) {
+            localStorage.setItem(`shop_logo_local_${targetShopId}`, finalLogoUrl);
+          }
           showToast('Store Profile Updated', 'Persisted to server database.', 'success');
           return { success: true, persistence: 'cloud' };
         } else {
@@ -431,6 +453,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Update local state/cache for offline operational continuity
     setShopProfile(next);
     localStorage.setItem(`lm_shop_profile_${targetShopId}`, JSON.stringify(next));
+    if (next.logo_url) {
+      localStorage.setItem(`shop_logo_local_${targetShopId}`, next.logo_url);
+    }
 
     // 3. Durable pending sync record created in Dexie syncLogs outbox
     await queueSyncAction('shopProfile', targetShopId, 'update', updates);
@@ -438,6 +463,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Offline Mode', 'Store profile saved locally and queued for server sync.', 'amber');
     return { success: true, persistence: 'local', syncQueued: true };
   }, [shopProfile, currentUserProfile, queueSyncAction, showToast]);
+
+  const syncShopItemsWithSupabase = useCallback(async (forceFull = false, silent = false): Promise<void> => {
+    try {
+      if (!isSupabaseConfigured()) {
+        if (!silent) {
+          showToast('Supabase Offline', 'Cloud database connection is not configured.', 'info');
+        }
+        return;
+      }
+      const targetShopId = currentUserProfile?.shop_id || shopProfile.id;
+      if (!targetShopId) {
+        if (!silent) {
+          showToast('Sync Error', 'No active shop branch identified for inventory synchronization.', 'error');
+        }
+        return;
+      }
+
+      const items = await shopItemsApi.getItems({ shopId: targetShopId });
+      if (items && items.length > 0) {
+        // Collect IDs of pending local inventory mutations from outbox to prevent overwriting in-flight work
+        const pendingLogs = await db.syncLogs
+          .where('status')
+          .anyOf('pending', 'syncing', 'failed')
+          .and(l => l.shopId === targetShopId && l.entityType === 'inventory')
+          .toArray();
+        const pendingIds = new Set(pendingLogs.map(l => l.entityId));
+
+        // Get existing local items to preserve local-only photos
+        const existingLocalItems = await db.inventory.where('shopId').equals(targetShopId).toArray();
+        const existingLocalMap = new Map(existingLocalItems.map(i => [i.id, i]));
+
+        const mapped = items
+          .map(shopItemsApi.mapRowToInventoryItem)
+          .filter(item => !pendingIds.has(item.id))
+          .map(item => {
+            const local = existingLocalMap.get(item.id);
+            // Local-first image preservation: if local item has a photo and cloud has none, preserve local photo
+            if (!item.imageUrl && local?.imageUrl) {
+              return { ...item, imageUrl: local.imageUrl };
+            }
+            return item;
+          });
+
+        if (mapped.length > 0) {
+          await db.inventory.bulkPut(mapped);
+        }
+
+        if (!silent) {
+          showToast('Inventory Synced', `Synchronized ${mapped.length} catalog items from Supabase.`, 'success');
+        }
+      } else {
+        if (!silent) {
+          showToast('Inventory Synced', 'Store catalog is up to date.', 'info');
+        }
+      }
+    } catch (err: any) {
+      console.warn('[AppContext] syncShopItemsWithSupabase error:', err);
+      if (!silent) {
+        showToast('Sync Error', err?.message || 'Failed to pull inventory from cloud.', 'error');
+      }
+    }
+  }, [currentUserProfile?.shop_id, shopProfile.id, showToast]);
 
   // Auth Effects: Server profile & business rules are authoritative when available
   // Conflict Safety:
@@ -462,6 +549,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const hasPendingProfile = pendingLogs.some(l => l.entityType === 'shopProfile');
 
           const serverRules = (shop as any).business_rules as BusinessRules;
+          const logoUrl = (shop.metadata as any)?.logo_url || (shop as any).logo_url || '';
           const mappedShop: ShopProfile = {
             id: shop.id,
             shop_code: shop.shop_code,
@@ -479,6 +567,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             currency: shop.currency || 'ZAR',
             receipt_header: shop.receipt_header || '',
             receipt_footer: shop.receipt_footer || '',
+            logo_url: logoUrl,
+            metadata: shop.metadata || {},
             businessRules: serverRules
           };
 
@@ -486,6 +576,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!hasPendingProfile) {
             setShopProfile(mappedShop);
             localStorage.setItem(`lm_shop_profile_${shopId}`, JSON.stringify(mappedShop));
+            if (logoUrl) {
+              localStorage.setItem(`shop_logo_local_${shopId}`, logoUrl);
+            }
           } else {
             console.log('[AppContext] Preserving pending local shopProfile mutation during server hydration');
           }
@@ -503,8 +596,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
       });
+
+      // Hydrate existing inventory items from Supabase cloud into local Dexie store
+      syncShopItemsWithSupabase(false, true);
     }
-  }, [currentUserProfile?.shop_id]);
+  }, [currentUserProfile?.shop_id, syncShopItemsWithSupabase]);
 
   const logSystemEvent = useCallback(async (
     eventType: string,
@@ -683,24 +779,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pawnLoans,
         sapsRegister,
         salesHistory,
-        syncShopItemsWithSupabase: async () => {
-          try {
-            if (!isSupabaseConfigured()) {
-              showToast('Supabase Offline', 'Cloud database connection is not configured.', 'info');
-              return;
-            }
-            const items = await shopItemsApi.getItems({ shopId: shopProfile.id });
-            if (items && items.length > 0) {
-              const mapped = items.map(shopItemsApi.mapRowToInventoryItem);
-              await db.inventory.bulkPut(mapped);
-              showToast('Inventory Synced', `Synchronized ${mapped.length} catalog items from Supabase.`, 'success');
-            } else {
-              showToast('Inventory Synced', 'Store catalog is up to date.', 'info');
-            }
-          } catch (err: any) {
-            showToast('Sync Error', err?.message || 'Failed to pull inventory from cloud.', 'error');
-          }
-        },
+        syncShopItemsWithSupabase,
         fetchSupabaseLogs: async () => {
           try {
             if (!isSupabaseConfigured()) return;
@@ -745,7 +824,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         slowSyncProgress: null,
         triggerManualSlowSync: async () => {
           await triggerSync();
-          showToast('Sync Triggered', 'Replicating pending items to Supabase', 'info');
+          await syncShopItemsWithSupabase(false, false);
+          showToast('Sync Triggered', 'Replicating pending items and refreshing cloud inventory', 'info');
         },
         exportDeviceBackup: async () => {
           try {

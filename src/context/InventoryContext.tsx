@@ -30,6 +30,7 @@ interface InventoryContextType {
   priceChangeLogs: SystemLogRow[];
   fetchPriceChangeLogs: () => Promise<void>;
   getPriceChangeHistory: (itemId: string) => PriceChangeRecord[];
+  refreshInventory: () => Promise<void>;
 }
 
 export const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -53,6 +54,45 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     fetchPriceChangeLogs();
   }, [fetchPriceChangeLogs]);
+
+  const refreshInventory = useCallback(async () => {
+    if (!shopId || !isSupabaseConfigured() || !isOnline) return;
+    try {
+      const items = await shopItemsApi.getItems({ shopId });
+      if (items && items.length > 0) {
+        const pendingLogs = await db.syncLogs
+          .where('status')
+          .anyOf('pending', 'syncing', 'failed')
+          .and(l => l.shopId === shopId && l.entityType === 'inventory')
+          .toArray();
+        const pendingIds = new Set(pendingLogs.map(l => l.entityId));
+
+        const existing = await db.inventory.where('shopId').equals(shopId).toArray();
+        const existingMap = new Map(existing.map(i => [i.id, i]));
+
+        const toPut = items
+          .map(shopItemsApi.mapRowToInventoryItem)
+          .filter(item => !pendingIds.has(item.id))
+          .map(item => {
+            const local = existingMap.get(item.id);
+            if (!item.imageUrl && local?.imageUrl) {
+              return { ...item, imageUrl: local.imageUrl };
+            }
+            return item;
+          });
+
+        if (toPut.length > 0) {
+          await db.inventory.bulkPut(toPut);
+        }
+      }
+    } catch (err) {
+      console.warn('[InventoryContext] Cloud inventory hydration note:', err);
+    }
+  }, [shopId, isOnline]);
+
+  useEffect(() => {
+    refreshInventory();
+  }, [refreshInventory]);
 
   const getPriceChangeHistory = useCallback((itemId: string): PriceChangeRecord[] => {
     return priceChangeLogs
@@ -196,7 +236,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       getInventoryByStatus,
       priceChangeLogs,
       fetchPriceChangeLogs,
-      getPriceChangeHistory
+      getPriceChangeHistory,
+      refreshInventory
     }}>
       {children}
     </InventoryContext.Provider>

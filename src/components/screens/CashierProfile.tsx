@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   User, 
@@ -119,6 +119,30 @@ export const CashierProfile: React.FC = () => {
   const [isSavingShop, setIsSavingShop] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isSavingShop) {
+      const resolvedLogo = shopProfile.logo_url || (shopProfile.metadata as any)?.logo_url || (shopProfile.id ? localStorage.getItem(`shop_logo_local_${shopProfile.id}`) : '') || '';
+      setShopForm(prev => ({
+        ...prev,
+        shop_name: shopProfile.shop_name || prev.shop_name,
+        trading_name: shopProfile.trading_name || prev.trading_name,
+        phone: shopProfile.phone || prev.phone,
+        email: shopProfile.email || prev.email,
+        address: shopProfile.address || prev.address,
+        city: shopProfile.city || prev.city,
+        province: shopProfile.province || prev.province || 'Gauteng',
+        postal_code: shopProfile.postal_code || prev.postal_code,
+        saps_dealer_license: shopProfile.saps_dealer_license || prev.saps_dealer_license,
+        vat_number: shopProfile.vat_number || prev.vat_number,
+        registration_number: shopProfile.registration_number || prev.registration_number,
+        logo_url: resolvedLogo || prev.logo_url
+      }));
+      if (!logoFile && resolvedLogo) {
+        setLogoPreview(resolvedLogo);
+      }
+    }
+  }, [shopProfile, isSavingShop, logoFile]);
 
   // Derive metrics for the current cashier
   const metrics = useMemo(() => {
