@@ -87,6 +87,14 @@ export const AuthPage: React.FC = () => {
       return;
     }
 
+    if (!authApi.isConfigured()) {
+      const configMsg = 'Supabase database credentials are not configured for this build.';
+      showToast('Configuration Error', configMsg, 'error');
+      setErrors({ email: 'Database is not configured. Missing Supabase credentials.' });
+      focusAndScrollErrorField(document.getElementById('email'));
+      return;
+    }
+
     setLoading(true);
     setErrors({});
 
@@ -117,22 +125,48 @@ export const AuthPage: React.FC = () => {
     } catch (err: any) {
       console.error('[Auth] Authentication Failure:', err);
 
-      const isInvalidCredentials = String(err?.message || '')
-        .toLowerCase()
-        .includes('invalid login credentials');
+      const errLower = String(err?.message || '').toLowerCase();
+      const isUnconfigured = !authApi.isConfigured() ||
+        errLower.includes('supabase is not configured') ||
+        errLower.includes('supabase credentials') ||
+        errLower.includes('supabase client is not initialized') ||
+        errLower.includes('not configured');
 
+      const isInvalidCredentials = errLower.includes('invalid login credentials');
+      const isEmailNotConfirmed = errLower.includes('email not confirmed');
+      const isUserAlreadyExists = errLower.includes('user already registered') || errLower.includes('already exists');
+
+      let errorTitle = 'Access Denied';
       let errorMessage = err.message || 'Failed to authenticate operator terminal';
-      let fieldError = 'Invalid credentials or inactive profile';
+      let fieldError = 'Authentication failed. Please verify credentials.';
 
-      if (isInvalidCredentials && isSystemGeneratedStaffEmail(normalizedEmail)) {
+      if (isUnconfigured) {
+        errorTitle = 'Configuration Error';
+        errorMessage = 'Supabase database credentials are not configured for this build.';
+        fieldError = 'Database is not configured. Missing Supabase credentials.';
+      } else if (isInvalidCredentials && isSystemGeneratedStaffEmail(normalizedEmail)) {
         errorMessage = 'This looks like a staff PIN account. Please use "Switch Account" and sign in with your 6-digit PIN instead of this screen.';
         fieldError = 'Staff accounts sign in with a PIN, not on this screen';
       } else if (isInvalidCredentials) {
         errorMessage = 'Incorrect email or password.';
         fieldError = 'Incorrect email or password';
+      } else if (isEmailNotConfirmed) {
+        errorTitle = 'Verification Required';
+        errorMessage = 'Email address has not been verified yet. Please check your inbox.';
+        fieldError = 'Email not verified yet';
+      } else if (isUserAlreadyExists) {
+        errorTitle = 'Account Exists';
+        errorMessage = 'An account with this email already exists. Please sign in instead.';
+        fieldError = 'Account already exists. Please sign in';
+      } else if (errLower.includes('failed to fetch') || errLower.includes('networkerror')) {
+        errorTitle = 'Connection Error';
+        errorMessage = 'Unable to reach the database. Please check your network connection.';
+        fieldError = 'Network connection failed';
+      } else if (err?.message) {
+        fieldError = err.message;
       }
 
-      showToast('Access Denied', errorMessage, 'error');
+      showToast(errorTitle, errorMessage, 'error');
       setErrors(prev => ({ ...prev, email: fieldError }));
       focusAndScrollErrorField(document.getElementById('email'));
     } finally {
@@ -265,6 +299,23 @@ export const AuthPage: React.FC = () => {
                   : 'Owners sign in with their email. Staff use their account PIN.'}
               </p>
             </div>
+
+            {/* Missing Configuration Notice */}
+            {!authApi.isConfigured() && (
+              <div 
+                data-testid="supabase-unconfigured-banner"
+                role="alert" 
+                className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-stone-800 text-xs space-y-1.5 animate-auth-fade"
+              >
+                <div className="flex items-center gap-2 font-semibold text-amber-900">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Database Configuration Required</span>
+                </div>
+                <p className="text-stone-600 leading-relaxed pl-6 text-[11px]">
+                  This desktop installation requires Supabase credentials (<code className="bg-amber-100/70 text-amber-900 px-1 py-0.5 rounded font-mono">VITE_SUPABASE_URL</code> and <code className="bg-amber-100/70 text-amber-900 px-1 py-0.5 rounded font-mono">VITE_SUPABASE_ANON_KEY</code>) to connect to your cloud database.
+                </p>
+              </div>
+            )}
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-4.5" noValidate>

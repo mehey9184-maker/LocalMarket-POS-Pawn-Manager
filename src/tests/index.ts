@@ -36,6 +36,7 @@ import { runPhase2jSecurityAndReservedStockTests } from './phase2jSecurityAndRes
 import { runStaffPermissionsAndDualCredentialSecurityTests } from './staffPermissionsAndDualCredentialSecurity.test';
 import { runWorkerFrictionPassTests } from './workerFrictionPass.test';
 import { runWindowsDesktopReadinessTests } from './windowsDesktopReadiness.test';
+import { runAuthConfigurationAndErrorHandlingTests } from './authConfigurationAndErrorHandling.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -78,6 +79,7 @@ export async function runAllTests() {
   runStaffPermissionsAndDualCredentialSecurityTests();
   await runWorkerFrictionPassTests();
   await runWindowsDesktopReadinessTests();
+  await runAuthConfigurationAndErrorHandlingTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');
