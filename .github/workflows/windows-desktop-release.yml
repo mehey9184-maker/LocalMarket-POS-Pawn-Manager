@@ -13,6 +13,7 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    environment: Production
 
     steps:
       - name: Checkout repository
@@ -30,9 +31,25 @@ jobs:
       - name: Run Test Suite
         run: npx tsx src/tests/index.ts
 
+      - name: Validate Production Supabase Secrets
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        shell: bash
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ]; then
+            echo "::error::VITE_SUPABASE_URL is missing or blank in the Production environment secrets."
+            exit 1
+          fi
+          if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "::error::VITE_SUPABASE_ANON_KEY is missing or blank in the Production environment secrets."
+            exit 1
+          fi
+          echo "Production Supabase configuration secrets verified present."
+
       - name: Build Application & Electron
         env:
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           npm run build

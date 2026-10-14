@@ -194,27 +194,52 @@ export async function runAuthConfigurationAndErrorHandlingTests() {
     );
     console.log('  ✔ AuthPage.tsx source invariants audited and verified');
 
-    // --- 5. Windows Workflow Environment Invariants ---
+    // --- 5. Windows Workflow Production Environment & Secrets Invariants ---
     console.log('[Auth Test 5] Auditing .github/workflows/windows-desktop-release.yml...');
     const workflowSrc = readSourceFile('.github/workflows/windows-desktop-release.yml');
 
+    assert(
+      workflowSrc.includes('environment: Production'),
+      'Workflow release job must target the "Production" environment'
+    );
     assert(
       workflowSrc.includes('Build Application & Electron'),
       'Workflow must contain "Build Application & Electron" step'
     );
     assert(
-      workflowSrc.includes('VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}'),
-      'Workflow must pass VITE_SUPABASE_URL from vars.VITE_SUPABASE_URL'
+      workflowSrc.includes('VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}'),
+      'Workflow must pass VITE_SUPABASE_URL from secrets.VITE_SUPABASE_URL'
+    );
+    assert(
+      !workflowSrc.includes('vars.VITE_SUPABASE_URL'),
+      'Workflow must NOT reference vars.VITE_SUPABASE_URL (must reuse existing Production environment secrets)'
     );
     assert(
       workflowSrc.includes('VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}'),
       'Workflow must pass VITE_SUPABASE_ANON_KEY from secrets.VITE_SUPABASE_ANON_KEY'
     );
     assert(
+      workflowSrc.includes('VITE_SUPABASE_URL is missing or blank') &&
+      workflowSrc.includes('VITE_SUPABASE_ANON_KEY is missing or blank'),
+      'Workflow must include pre-build validation that refuses to build if secrets are missing or blank'
+    );
+    assert(
+      !workflowSrc.includes('echo $VITE_SUPABASE_URL') &&
+      !workflowSrc.includes('echo $VITE_SUPABASE_ANON_KEY') &&
+      !workflowSrc.includes('echo "${VITE_SUPABASE_URL}"'),
+      'Workflow must NEVER print secret values into logs'
+    );
+    assert(
+      !workflowSrc.includes('SUPABASE_SERVICE_ROLE_KEY') &&
+      !workflowSrc.includes('B2_') &&
+      !workflowSrc.includes('BACKBLAZE'),
+      'Workflow must NOT inject privileged service role key or Backblaze credentials into desktop build'
+    );
+    assert(
       !workflowSrc.includes('https://') || !workflowSrc.includes('supabase.co'),
       'Workflow must NOT contain any hardcoded Supabase project URLs'
     );
-    console.log('  ✔ Workflow securely passes environment variables without hardcoded secrets');
+    console.log('  ✔ Workflow targets Production environment, maps secrets, and validates pre-build presence');
 
   } finally {
     globalThis.fetch = originalFetch;
