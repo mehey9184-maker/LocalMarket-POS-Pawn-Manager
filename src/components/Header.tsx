@@ -388,17 +388,21 @@ export const Header: React.FC<HeaderProps> = () => {
           onClick={() => setActiveTab('home')}
           className="flex items-center gap-3 shrink-0 group text-left cursor-pointer"
         >
-          {shopProfile?.logo_url || (shopProfile?.metadata as any)?.logo_url || (shopProfile?.id ? localStorage.getItem(`shop_logo_local_${shopProfile.id}`) : null) ? (
-            <img 
-              src={shopProfile.logo_url || (shopProfile.metadata as any)?.logo_url || localStorage.getItem(`shop_logo_local_${shopProfile.id}`) || ''} 
-              alt={shopProfile.shop_name} 
-              className="w-9 h-9 rounded-xl object-contain bg-white border border-gray-200 p-0.5 shadow-xs" 
-            />
-          ) : (
-            <div className="w-9 h-9 rounded-xl bg-[#C85A32] flex items-center justify-center text-white font-bold text-sm tracking-wide shadow-xs group-hover:bg-[#A94725] transition-colors">
-              LM
-            </div>
-          )}
+          {(() => {
+            const rawLogo = shopProfile?.logo_url || (shopProfile?.metadata as any)?.logo_url;
+            const logo = typeof rawLogo === 'string' && rawLogo.trim() !== '' ? rawLogo : null;
+            return logo ? (
+              <img 
+                src={logo} 
+                alt={shopProfile.shop_name} 
+                className="w-9 h-9 rounded-xl object-contain bg-white border border-gray-200 p-0.5 shadow-xs" 
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-xl bg-[#C85A32] flex items-center justify-center text-white font-bold text-sm tracking-wide shadow-xs group-hover:bg-[#A94725] transition-colors">
+                LM
+              </div>
+            );
+          })()}
           <div className="flex flex-col text-left">
             <span className="text-sm font-bold text-gray-900 font-headline tracking-tight leading-none">
               {shopProfile.shop_name}

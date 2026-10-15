@@ -96,6 +96,9 @@ export const CashierProfile: React.FC = () => {
   };
 
   // Shop Profile Editor Form State
+  const rawInitialLogo = shopProfile.logo_url || (shopProfile.metadata as any)?.logo_url || '';
+  const initialCloudLogo = typeof rawInitialLogo === 'string' && !rawInitialLogo.startsWith('data:image/') ? rawInitialLogo : '';
+
   const [shopForm, setShopForm] = useState({
     shop_name: shopProfile.shop_name || '',
     shop_code: shopProfile.shop_code || '',
@@ -109,12 +112,10 @@ export const CashierProfile: React.FC = () => {
     saps_dealer_license: shopProfile.saps_dealer_license || '',
     vat_number: shopProfile.vat_number || '',
     registration_number: shopProfile.registration_number || '',
-    logo_url: shopProfile.logo_url || (shopProfile.metadata as any)?.logo_url || ''
+    logo_url: initialCloudLogo
   });
 
-  const [logoPreview, setLogoPreview] = useState<string | null>(
-    shopProfile.logo_url || (shopProfile.metadata as any)?.logo_url || null
-  );
+  const [logoPreview, setLogoPreview] = useState<string | null>(initialCloudLogo || null);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [isSavingShop, setIsSavingShop] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
@@ -122,7 +123,8 @@ export const CashierProfile: React.FC = () => {
 
   useEffect(() => {
     if (!isSavingShop) {
-      const resolvedLogo = shopProfile.logo_url || (shopProfile.metadata as any)?.logo_url || (shopProfile.id ? localStorage.getItem(`shop_logo_local_${shopProfile.id}`) : '') || '';
+      const rawLogo = shopProfile.logo_url || (shopProfile.metadata as any)?.logo_url || '';
+      const resolvedLogo = typeof rawLogo === 'string' && !rawLogo.startsWith('data:image/') ? rawLogo : '';
       setShopForm(prev => ({
         ...prev,
         shop_name: shopProfile.shop_name || prev.shop_name,
@@ -136,10 +138,10 @@ export const CashierProfile: React.FC = () => {
         saps_dealer_license: shopProfile.saps_dealer_license || prev.saps_dealer_license,
         vat_number: shopProfile.vat_number || prev.vat_number,
         registration_number: shopProfile.registration_number || prev.registration_number,
-        logo_url: resolvedLogo || prev.logo_url
+        logo_url: resolvedLogo || ''
       }));
-      if (!logoFile && resolvedLogo) {
-        setLogoPreview(resolvedLogo);
+      if (!logoFile) {
+        setLogoPreview(resolvedLogo || null);
       }
     }
   }, [shopProfile, isSavingShop, logoFile]);
@@ -340,11 +342,8 @@ export const CashierProfile: React.FC = () => {
 
         // 2. Real async logo preparation if needed (without fake timers)
         let finalLogoUrl = shopForm.logo_url;
+        let cloudUploadFailed = false;
         if (hasNewLogo && logoPreview && logoFile) {
-          try {
-            localStorage.setItem(`shop_logo_local_${shopProfile.id}`, logoPreview);
-          } catch {}
-
           try {
             const uploadRes = await storageService.uploadLogoImage(logoPreview, shopProfile.id, logoFile.name);
             if (
@@ -353,22 +352,35 @@ export const CashierProfile: React.FC = () => {
               !uploadRes.storageKey?.startsWith('local/')
             ) {
               finalLogoUrl = uploadRes.imageUrl;
+            } else {
+              cloudUploadFailed = true;
             }
           } catch (uploadErr) {
-            console.warn('Logo upload warning (preserved locally):', uploadErr);
+            console.warn('Logo cloud upload failed:', uploadErr);
+            cloudUploadFailed = true;
           }
         }
 
         // 3. Real persistence step
         runner.startStep('save');
+        const cleanLogo = (finalLogoUrl && !finalLogoUrl.startsWith('data:image/')) 
+          ? finalLogoUrl 
+          : (shopProfile.logo_url && !shopProfile.logo_url.startsWith('data:image/')) 
+            ? shopProfile.logo_url 
+            : '';
+
         const res = await updateShopProfile({
           ...shopForm,
-          logo_url: finalLogoUrl?.startsWith('data:image/') ? (shopProfile.logo_url || '') : finalLogoUrl,
+          logo_url: cleanLogo,
           metadata: {
             ...(shopProfile.metadata as any || {}),
-            ...(finalLogoUrl && !finalLogoUrl.startsWith('data:image/') ? { logo_url: finalLogoUrl } : {})
+            ...(cleanLogo ? { logo_url: cleanLogo } : {})
           }
         });
+
+        if (cloudUploadFailed) {
+          showToast('Cloud Logo Warning', 'Logo could not be uploaded to cloud storage. Please check connectivity and upload again.', 'amber');
+        }
 
         if (!res.success) {
           throw new Error(res.error || 'Failed to save shop profile.');
@@ -628,6 +640,23 @@ export const CashierProfile: React.FC = () => {
                           <span>{logoPreview ? 'Change Shop Logo' : 'Upload Brand Logo'}</span>
                         </button>
                         <p className="text-xs text-stone-400">Supported: PNG, JPG, WebP under 5MB. Rendered on receipts, contracts &amp; headers.</p>
+                        {(() => {
+                          const hasCloudLogo = Boolean(
+                            (shopProfile.logo_url && !shopProfile.logo_url.startsWith('data:image/')) ||
+                            ((shopProfile.metadata as any)?.logo_url && !(shopProfile.metadata as any).logo_url.startsWith('data:image/'))
+                          );
+                          return hasCloudLogo ? (
+                            <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl w-fit">
+                              <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span>Cloud-backed logo verified and active across all store devices.</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl w-fit">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span>This branch has no saved cloud logo. Please upload and save once to synchronize across devices.</span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>

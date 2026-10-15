@@ -260,14 +260,17 @@ export async function runCloudInventoryAndLogoHydrationTests() {
       'AppContext.tsx must cache shop logo to localStorage for fast local offline boot'
     );
 
-    // Inventory hydration in AppContext
+    // Consolidated Inventory hydration ownership in InventoryContext
+    const inventoryContextSrc = readSourceFile('src/context/InventoryContext.tsx');
     assert(
-      appContextSrc.includes('syncShopItemsWithSupabase(false, true)'),
-      'AppContext.tsx must automatically invoke syncShopItemsWithSupabase on login/profile load'
+      inventoryContextSrc.includes('refreshInventory') &&
+      inventoryContextSrc.includes('shopItemsApi.getItems'),
+      'InventoryContext.tsx must be the authoritative owner of automatic cloud inventory hydration'
     );
     assert(
+      appContextSrc.includes('syncShopItemsWithSupabase') &&
       appContextSrc.includes('shopItemsApi.getItems({ shopId: targetShopId })'),
-      'AppContext.tsx syncShopItemsWithSupabase must query items by targetShopId'
+      'AppContext.tsx syncShopItemsWithSupabase must query items by targetShopId for manual triggers'
     );
     assert(
       appContextSrc.includes('!item.imageUrl && local?.imageUrl'),

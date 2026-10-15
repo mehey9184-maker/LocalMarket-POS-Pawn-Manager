@@ -22,7 +22,8 @@ import {
   AlertTriangle,
   ClipboardList,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  RefreshCw
 } from 'lucide-react';
 
 interface InspectorVisit {
@@ -111,9 +112,9 @@ const SapsEntryRow: React.FC<{
 
 export const SapsRegister: React.FC = () => {
   const { showToast, isPoliceInspectionMode, setIsPoliceInspectionMode, activeCustomer, shopProfile } = useApp();
-  const { sapsEntries, cancelSapsEntry, exportSapsCsv } = useSaps();
+  const { sapsEntries, cancelSapsEntry, exportSapsCsv, refreshSaps, syncStatus } = useSaps();
   const { customers } = useCustomers();
-  const { isAtLeastManager } = useAuth();
+  const { isAtLeastManager, shopId } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'Pawn' | 'Buy' | 'Forfeit'>('all');
@@ -267,6 +268,32 @@ export const SapsRegister: React.FC = () => {
         ))}
       </div>
 
+      {!shopId && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-800 shrink-0">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>No shop branch assigned to this profile. Please switch to an authorized branch to view SAPS registers.</span>
+          </div>
+        </div>
+      )}
+
+      {syncStatus.error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between text-xs text-red-800 shrink-0">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>Cloud sync note: {syncStatus.error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => refreshSaps()}
+            className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold flex items-center gap-1.5 transition text-xs cursor-pointer"
+          >
+            <RefreshCw className="w-3 h-3" />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
       {/* TABLE */}
       <div className="flex-1 min-h-0 bg-white border border-gray-200 rounded-2xl overflow-hidden flex flex-col shadow-xs">
         <div className="bg-[#F8F9FA] text-gray-500 font-mono uppercase text-[10px] tracking-widest border-b border-gray-200 flex px-4 shrink-0">
@@ -278,10 +305,18 @@ export const SapsRegister: React.FC = () => {
           <div className="w-24 py-3 px-4 text-right">Audit</div>
         </div>
         <div className="flex-1 min-h-0 relative">
-          {filteredEntries.length === 0 ? (
+          {syncStatus.isLoading && sapsEntries.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-gray-500">
+              <RefreshCw className="w-8 h-8 text-[#C85A32] animate-spin mb-2" />
+              <p className="font-bold text-xs text-gray-800">Restoring SAPS Register</p>
+              <p className="text-[11px] text-gray-400 mt-1">Hydrating Form 21 records from Supabase cloud...</p>
+            </div>
+          ) : filteredEntries.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400">
               <ClipboardList className="w-10 h-10 mb-2 opacity-30 text-gray-300" />
-              <p className="text-xs font-mono text-gray-500">No compliance records found</p>
+              <p className="text-xs font-mono text-gray-500">
+                {searchQuery ? `No compliance records matching "${searchQuery}"` : 'No compliance records found'}
+              </p>
             </div>
           ) : (
             <AutoSizer>

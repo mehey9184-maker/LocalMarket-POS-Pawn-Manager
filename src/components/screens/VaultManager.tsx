@@ -31,13 +31,14 @@ import {
   Hash,
   User,
   Phone,
-  FileText
+  FileText,
+  RefreshCw
 } from 'lucide-react';
 import { OnboardingOverlay } from '../common/OnboardingOverlay';
 
 export const VaultManager: React.FC = () => {
   const { showToast, businessRules, selectedVaultLoan, setSelectedVaultLoan } = useApp();
-  const { verifyManagerPin, isManager, isAtLeastSeniorCashier } = useAuth();
+  const { verifyManagerPin, isManager, isAtLeastSeniorCashier, shopId } = useAuth();
   const { inventory } = useInventory();
   const { 
     loans, 
@@ -48,7 +49,9 @@ export const VaultManager: React.FC = () => {
     batchTransferOverdue,
     batchApproveForfeitures,
     redeemLoan,
-    extendLoan
+    extendLoan,
+    refreshLoans,
+    syncStatus: loanSyncStatus
   } = useLoans();
 
   // Active Vault is the practical default first view
@@ -578,6 +581,32 @@ export const VaultManager: React.FC = () => {
         </div>
       </div>
 
+      {!shopId && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-800 shrink-0">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>No shop branch assigned to this profile. Please switch to an authorized branch to view vault collateral.</span>
+          </div>
+        </div>
+      )}
+
+      {loanSyncStatus.error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between text-xs text-red-800 shrink-0">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>Cloud sync note: {loanSyncStatus.error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => refreshLoans()}
+            className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold flex items-center gap-1.5 transition text-xs cursor-pointer"
+          >
+            <RefreshCw className="w-3 h-3" />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
       {/* Main List with Virtualization */}
       <div className="flex-1 min-h-0 bg-stone-50/30 rounded-xl border border-stone-200 overflow-hidden relative">
         <AutoSizer
@@ -621,12 +650,20 @@ export const VaultManager: React.FC = () => {
           }}
         />
 
-        {(activeTab === 'storage' && filteredActiveStorage.length === 0) && (
+        {loanSyncStatus.isLoading && loans.length === 0 ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-stone-100/50">
+            <RefreshCw className="w-8 h-8 text-[#C85A32] animate-spin mb-2" />
+            <p className="font-bold text-stone-800 text-sm">Restoring Vault Collateral Records</p>
+            <p className="text-xs text-stone-500 mt-1">Hydrating pawn loans from Supabase cloud...</p>
+          </div>
+        ) : (activeTab === 'storage' && filteredActiveStorage.length === 0) && (
           <div className="absolute inset-0 flex items-center justify-center p-8 text-center bg-stone-100/50">
             <div>
               <Archive className="w-8 h-8 text-stone-400 mx-auto mb-2" />
               <p className="font-bold text-stone-800 text-sm">No Active Vault Items Found</p>
-              <p className="text-xs text-stone-500 mt-1">Collateral currently secured in the vault will appear here.</p>
+              <p className="text-xs text-stone-500 mt-1">
+                {searchFilter ? `No collateral matches "${searchFilter}"` : 'Collateral currently secured in the vault will appear here.'}
+              </p>
             </div>
           </div>
         )}

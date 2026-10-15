@@ -17,10 +17,10 @@ import { authApi, shopItemsApi, logsApi, shopProfilesApi } from '../services/sup
 import { ProfileRow, SystemLogRow } from '../types/supabase';
 import { DEFAULT_BUSINESS_RULES } from '../utils/pricingRules';
 import { useInventory } from './InventoryContext';
-import { useLoans } from './LoanContext';
-import { useCustomers } from './CustomerContext';
+import { useLoans, LoanSyncStatus } from './LoanContext';
+import { useCustomers, CustomerSyncStatus } from './CustomerContext';
 import { useSales } from './SalesContext';
-import { useSaps } from './SapsContext';
+import { useSaps, SapsSyncStatus } from './SapsContext';
 import { useSync } from './SyncContext';
 import { useAuth } from './AuthContext';
 import { db } from '../db';
@@ -203,6 +203,14 @@ interface AppContextType {
   sapsRegister: SapsEntry[];
   salesHistory: SaleTransaction[];
 
+  // Cloud Hydration & Synchronization
+  refreshCustomers: () => Promise<void>;
+  customerSyncStatus: CustomerSyncStatus;
+  refreshLoans: () => Promise<void>;
+  loanSyncStatus: LoanSyncStatus;
+  refreshSaps: () => Promise<void>;
+  sapsSyncStatus: SapsSyncStatus;
+
   // General
   resetToDefaultData: () => void;
 }
@@ -310,11 +318,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     extendLoan, 
     transferOverdueToFloor, 
     batchTransferOverdue, 
-    archiveLoan 
+    archiveLoan,
+    refreshLoans,
+    syncStatus: loanSyncStatus
   } = useLoans();
-  const { customers } = useCustomers();
+  const { 
+    customers,
+    refreshCustomers,
+    syncStatus: customerSyncStatus
+  } = useCustomers();
   const { salesHistory, completeAtomicCheckout, requestRefund, approveRefund } = useSales();
-  const { sapsEntries: sapsRegister, exportSapsCsv } = useSaps();
+  const { 
+    sapsEntries: sapsRegister, 
+    exportSapsCsv,
+    refreshSaps,
+    syncStatus: sapsSyncStatus
+  } = useSaps();
   const { syncStatus, triggerSync, queueSyncAction } = useSync();
 
   const total = useMemo(() => {
@@ -413,17 +432,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (updates.receipt_footer !== undefined) payload.receipt_footer = updates.receipt_footer;
         
         // Persist metadata and logo_url to Supabase shop_profiles
-        if (updates.metadata !== undefined) {
-          payload.metadata = updates.metadata;
-        } else if (updates.logo_url !== undefined) {
-          payload.metadata = {
-            ...(shopProfile.metadata || {}),
-            logo_url: updates.logo_url
-          };
+        // Strict policy: Never put base64 image data in cloud metadata
+        let metadataPayload: Record<string, any> = {
+          ...(typeof shopProfile.metadata === 'object' && shopProfile.metadata !== null ? shopProfile.metadata : {}),
+          ...(typeof updates.metadata === 'object' && updates.metadata !== null ? updates.metadata : {})
+        };
+        if (updates.logo_url !== undefined) {
+          if (updates.logo_url && !updates.logo_url.startsWith('data:image/')) {
+            metadataPayload.logo_url = updates.logo_url;
+          } else if (!updates.logo_url) {
+            delete metadataPayload.logo_url;
+          }
         }
-        if (payload.metadata && updates.logo_url && !payload.metadata.logo_url) {
-          payload.metadata.logo_url = updates.logo_url;
+        if (typeof metadataPayload.logo_url === 'string' && metadataPayload.logo_url.startsWith('data:image/')) {
+          delete metadataPayload.logo_url;
         }
+        payload.metadata = metadataPayload;
 
         const updated = await shopProfilesApi.updateShopProfile(targetShopId, payload);
         if (updated) {
@@ -534,73 +558,86 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // - Conflict resolution model: Terminal offline changes queue in the outbox and replay upon reconnect
   //   (last-write-wins at commit time via audited RPC). When no pending mutations exist, fresh server state rules.
   useEffect(() => {
-    if (currentUserProfile?.shop_id) {
-      shopProfilesApi.getShopById(currentUserProfile.shop_id).then(async (shop) => {
-        if (shop) {
-          const shopId = currentUserProfile.shop_id!;
-          // Check for pending/syncing/failed outbox records
-          const pendingLogs = await db.syncLogs
-            .where('status')
-            .anyOf('pending', 'syncing', 'failed')
-            .and(l => l.shopId === shopId)
-            .toArray();
+    let isCancelled = false;
+    const currentShopId = currentUserProfile?.shop_id;
 
-          const hasPendingRules = pendingLogs.some(l => l.entityType === 'rules');
-          const hasPendingProfile = pendingLogs.some(l => l.entityType === 'shopProfile');
-
-          const serverRules = (shop as any).business_rules as BusinessRules;
-          const logoUrl = (shop.metadata as any)?.logo_url || (shop as any).logo_url || '';
-          const mappedShop: ShopProfile = {
-            id: shop.id,
-            shop_code: shop.shop_code,
-            shop_name: shop.shop_name,
-            trading_name: shop.trading_name || '',
-            registration_number: shop.registration_number || '',
-            vat_number: shop.vat_number || '',
-            saps_dealer_license: shop.saps_dealer_license || '',
-            phone: shop.phone || '',
-            email: shop.email || '',
-            address: shop.address || '',
-            city: shop.city || '',
-            province: shop.province || '',
-            postal_code: shop.postal_code || '',
-            currency: shop.currency || 'ZAR',
-            receipt_header: shop.receipt_header || '',
-            receipt_footer: shop.receipt_footer || '',
-            logo_url: logoUrl,
-            metadata: shop.metadata || {},
-            businessRules: serverRules
-          };
-
-          // Only hydrate store profile from server if no pending local mutations are waiting to replay
-          if (!hasPendingProfile) {
-            setShopProfile(mappedShop);
-            localStorage.setItem(`lm_shop_profile_${shopId}`, JSON.stringify(mappedShop));
-            if (logoUrl) {
-              localStorage.setItem(`shop_logo_local_${shopId}`, logoUrl);
-            }
-          } else {
-            console.log('[AppContext] Preserving pending local shopProfile mutation during server hydration');
-          }
-          
-          // Only hydrate business rules from server if no pending local mutations are waiting to replay
-          if (serverRules && !hasPendingRules) {
-            const authoritativeRules: BusinessRules = {
-              ...DEFAULT_BUSINESS_RULES,
-              ...serverRules
-            };
-            setBusinessRules(authoritativeRules);
-            localStorage.setItem(`lm_business_rules_${shopId}`, JSON.stringify(authoritativeRules));
-          } else if (hasPendingRules) {
-            console.log('[AppContext] Preserving pending local businessRules mutation during server hydration');
-          }
-        }
-      });
-
-      // Hydrate existing inventory items from Supabase cloud into local Dexie store
-      syncShopItemsWithSupabase(false, true);
+    if (!currentShopId) {
+      setShopProfile(INITIAL_SHOP_PROFILE);
+      setBusinessRules(DEFAULT_BUSINESS_RULES);
+      return;
     }
-  }, [currentUserProfile?.shop_id, syncShopItemsWithSupabase]);
+
+    shopProfilesApi.getShopById(currentShopId).then(async (shop) => {
+      if (isCancelled || currentUserProfile?.shop_id !== currentShopId) return;
+      if (shop) {
+        // Check for pending/syncing/failed outbox records
+        const pendingLogs = await db.syncLogs
+          .where('status')
+          .anyOf('pending', 'syncing', 'failed')
+          .and(l => l.shopId === currentShopId)
+          .toArray();
+
+        if (isCancelled || currentUserProfile?.shop_id !== currentShopId) return;
+
+        const hasPendingRules = pendingLogs.some(l => l.entityType === 'rules');
+        const hasPendingProfile = pendingLogs.some(l => l.entityType === 'shopProfile');
+
+        const serverRules = (shop as any).business_rules as BusinessRules;
+        const rawLogo = (shop.metadata as any)?.logo_url || (shop as any).logo_url || '';
+        const cleanLogoUrl = typeof rawLogo === 'string' && !rawLogo.startsWith('data:image/') ? rawLogo : '';
+        const mappedShop: ShopProfile = {
+          id: shop.id,
+          shop_code: shop.shop_code,
+          shop_name: shop.shop_name,
+          trading_name: shop.trading_name || '',
+          registration_number: shop.registration_number || '',
+          vat_number: shop.vat_number || '',
+          saps_dealer_license: shop.saps_dealer_license || '',
+          phone: shop.phone || '',
+          email: shop.email || '',
+          address: shop.address || '',
+          city: shop.city || '',
+          province: shop.province || '',
+          postal_code: shop.postal_code || '',
+          currency: shop.currency || 'ZAR',
+          receipt_header: shop.receipt_header || '',
+          receipt_footer: shop.receipt_footer || '',
+          logo_url: cleanLogoUrl,
+          metadata: shop.metadata || {},
+          businessRules: serverRules
+        };
+
+        // Only hydrate store profile from server if no pending local mutations are waiting to replay
+        if (!hasPendingProfile) {
+          setShopProfile(mappedShop);
+          localStorage.setItem(`lm_shop_profile_${currentShopId}`, JSON.stringify(mappedShop));
+          if (cleanLogoUrl) {
+            localStorage.setItem(`shop_logo_local_${currentShopId}`, cleanLogoUrl);
+          } else {
+            localStorage.removeItem(`shop_logo_local_${currentShopId}`);
+          }
+        } else {
+          console.log('[AppContext] Preserving pending local shopProfile mutation during server hydration');
+        }
+        
+        // Only hydrate business rules from server if no pending local mutations are waiting to replay
+        if (serverRules && !hasPendingRules) {
+          const authoritativeRules: BusinessRules = {
+            ...DEFAULT_BUSINESS_RULES,
+            ...serverRules
+          };
+          setBusinessRules(authoritativeRules);
+          localStorage.setItem(`lm_business_rules_${currentShopId}`, JSON.stringify(authoritativeRules));
+        } else if (hasPendingRules) {
+          console.log('[AppContext] Preserving pending local businessRules mutation during server hydration');
+        }
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentUserProfile?.shop_id]);
 
   const logSystemEvent = useCallback(async (
     eventType: string,
@@ -779,6 +816,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pawnLoans,
         sapsRegister,
         salesHistory,
+        refreshCustomers,
+        customerSyncStatus,
+        refreshLoans,
+        loanSyncStatus,
+        refreshSaps,
+        sapsSyncStatus,
         syncShopItemsWithSupabase,
         fetchSupabaseLogs: async () => {
           try {

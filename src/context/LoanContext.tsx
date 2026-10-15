@@ -1,12 +1,19 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { PawnLoan, LoanStatus } from '../types';
 import Fuse from 'fuse.js';
 import { useSync } from './SyncContext';
 import { useInventory } from './InventoryContext';
-
 import { useAuth } from './AuthContext';
+import { isSupabaseConfigured } from '../services/supabase';
+import { pawnLoansApi } from '../services/supabaseApi';
+
+export interface LoanSyncStatus {
+  isLoading: boolean;
+  error: string | null;
+  lastSyncedAt: string | null;
+}
 
 interface LoanContextType {
   loans: PawnLoan[];
@@ -24,15 +31,83 @@ interface LoanContextType {
   rejectForfeiture: (id: string) => Promise<{ success: boolean; error?: string }>;
   batchTransferOverdue: () => Promise<{ success: boolean; count: number; error?: string }>;
   batchApproveForfeitures: (ids: string[]) => Promise<{ success: boolean; count: number; error?: string }>;
+  refreshLoans: () => Promise<void>;
+  syncStatus: LoanSyncStatus;
 }
 
 export const LoanContext = createContext<LoanContextType | undefined>(undefined);
 
 export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { queueSyncAction } = useSync();
+  const { queueSyncAction, isOnline } = useSync();
   const { updateItem } = useInventory();
   const { shopId, isAtLeastManager, isAtLeastSeniorCashier } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
+  const [isHydrating, setIsHydrating] = useState(false);
+  const [hydrationError, setHydrationError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const activeShopIdRef = useRef<string | null>(shopId);
+
+  useEffect(() => {
+    activeShopIdRef.current = shopId;
+  }, [shopId]);
+
+  const refreshLoans = useCallback(async () => {
+    if (!shopId) {
+      setHydrationError('No active shop context assigned.');
+      return;
+    }
+    if (!isSupabaseConfigured() || !isOnline) {
+      return;
+    }
+    setIsHydrating(true);
+    setHydrationError(null);
+    try {
+      const rows = await pawnLoansApi.getLoans({ shopId });
+      if (activeShopIdRef.current !== shopId) return;
+
+      if (rows && rows.length > 0) {
+        // Collect IDs of pending local mutations from outbox (both 'loans' and 'pawnIntake')
+        const pendingLogs = await db.syncLogs
+          .where('status')
+          .anyOf('pending', 'syncing', 'failed')
+          .and(l => l.shopId === shopId && (l.entityType === 'loans' || (l.entityType as string) === 'loan' || l.entityType === 'pawnIntake'))
+          .toArray();
+        const pendingIds = new Set<string>();
+        for (const l of pendingLogs) {
+          if (l.entityId) pendingIds.add(l.entityId);
+          if (l.payload?.loanId) pendingIds.add(l.payload.loanId);
+          if (l.payload?.id) pendingIds.add(l.payload.id);
+          if (l.payload?.loan?.id) pendingIds.add(l.payload.loan.id);
+        }
+
+        const mapped = rows
+          .map(pawnLoansApi.mapRowToLoan)
+          .filter(loan => !pendingIds.has(loan.id));
+
+        if (mapped.length > 0) {
+          await db.loans.bulkPut(mapped);
+        }
+      }
+      setLastSyncedAt(new Date().toISOString());
+    } catch (err: any) {
+      console.warn('[LoanContext] Cloud loan hydration note:', err);
+      setHydrationError(err?.message || 'Failed to pull pawn loans from cloud.');
+    } finally {
+      if (activeShopIdRef.current === shopId) {
+        setIsHydrating(false);
+      }
+    }
+  }, [shopId, isOnline]);
+
+  useEffect(() => {
+    if (shopId) {
+      refreshLoans();
+    } else {
+      setHydrationError(null);
+      setIsHydrating(false);
+    }
+  }, [shopId, refreshLoans]);
+
 
   const rawLoans = useLiveQuery(
     () => shopId ? db.loans.where('shopId').equals(shopId).sortBy('expiryDate') : Promise.resolve([] as PawnLoan[]),
@@ -313,7 +388,13 @@ export const LoanProvider: React.FC<{ children: React.ReactNode }> = ({ children
       rejectForfeiture,
       batchApproveForfeitures,
       transferOverdueToFloor,
-      batchTransferOverdue
+      batchTransferOverdue,
+      refreshLoans,
+      syncStatus: {
+        isLoading: isHydrating,
+        error: hydrationError,
+        lastSyncedAt
+      }
     }}>
       {children}
     </LoanContext.Provider>

@@ -1,11 +1,18 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { SapsEntry } from '../types';
 import Fuse from 'fuse.js';
 import { useSync } from './SyncContext';
-
 import { useAuth } from './AuthContext';
+import { isSupabaseConfigured } from '../services/supabase';
+import { sapsApi } from '../services/supabaseApi';
+
+export interface SapsSyncStatus {
+  isLoading: boolean;
+  error: string | null;
+  lastSyncedAt: string | null;
+}
 
 interface SapsContextType {
   sapsEntries: SapsEntry[];
@@ -16,14 +23,92 @@ interface SapsContextType {
   getSapsEntry: (id: string) => Promise<SapsEntry | undefined>;
   cancelSapsEntry: (id: string, reason: string) => Promise<void>;
   exportSapsCsv: () => void;
+  refreshSaps: () => Promise<void>;
+  syncStatus: SapsSyncStatus;
 }
 
 const SapsContext = createContext<SapsContextType | undefined>(undefined);
 
 export const SapsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { queueSyncAction } = useSync();
+  const { queueSyncAction, isOnline } = useSync();
   const { shopId } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
+  const [isHydrating, setIsHydrating] = useState(false);
+  const [hydrationError, setHydrationError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const activeShopIdRef = useRef<string | null>(shopId);
+
+  useEffect(() => {
+    activeShopIdRef.current = shopId;
+  }, [shopId]);
+
+  const refreshSaps = useCallback(async () => {
+    if (!shopId) {
+      setHydrationError('No active shop context assigned.');
+      return;
+    }
+    if (!isSupabaseConfigured() || !isOnline) {
+      return;
+    }
+    setIsHydrating(true);
+    setHydrationError(null);
+    try {
+      const rows = await sapsApi.getEntries({ shopId });
+      // Protect against shop switching: late response from previous shop must never be saved
+      if (activeShopIdRef.current !== shopId) return;
+
+      if (rows && rows.length > 0) {
+        // Collect IDs of pending local mutations from outbox to prevent overwriting in-flight work
+        const pendingLogs = await db.syncLogs
+          .where('status')
+          .anyOf('pending', 'syncing', 'failed')
+          .and(l => l.shopId === shopId && (
+            l.entityType === 'saps' || 
+            (l.entityType as string) === 'sapsEntry' ||
+            l.entityType === 'buyAcquisition' ||
+            l.entityType === 'pawnIntake'
+          ))
+          .toArray();
+
+        const pendingIds = new Set<string>();
+        for (const l of pendingLogs) {
+          if (l.entityType === 'saps' || (l.entityType as string) === 'sapsEntry') {
+            if (l.entityId) pendingIds.add(l.entityId);
+          }
+          if (l.payload?.sapsEntryId) pendingIds.add(l.payload.sapsEntryId);
+          if (l.payload?.sapsEntry?.id) pendingIds.add(l.payload.sapsEntry.id);
+          if (l.payload?.id && (l.entityType === 'saps' || (l.entityType as string) === 'sapsEntry')) {
+            pendingIds.add(l.payload.id);
+          }
+        }
+
+        const mapped = rows
+          .map(sapsApi.mapRowToEntry)
+          .filter(entry => !pendingIds.has(entry.id));
+
+        if (mapped.length > 0) {
+          await db.saps.bulkPut(mapped);
+        }
+      }
+      setLastSyncedAt(new Date().toISOString());
+    } catch (err: any) {
+      console.warn('[SapsContext] Cloud SAPS hydration note:', err);
+      setHydrationError(err?.message || 'Failed to pull SAPS register entries from cloud.');
+    } finally {
+      if (activeShopIdRef.current === shopId) {
+        setIsHydrating(false);
+      }
+    }
+  }, [shopId, isOnline]);
+
+  useEffect(() => {
+    if (shopId) {
+      refreshSaps();
+    } else {
+      setHydrationError(null);
+      setIsHydrating(false);
+    }
+  }, [shopId, refreshSaps]);
 
   const sapsEntries = useLiveQuery(
     () => shopId ? db.saps.where('shopId').equals(shopId).reverse().sortBy('timestamp') : Promise.resolve([] as SapsEntry[]),
@@ -112,7 +197,13 @@ export const SapsProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addSapsEntry,
       cancelSapsEntry,
       getSapsEntry,
-      exportSapsCsv
+      exportSapsCsv,
+      refreshSaps,
+      syncStatus: {
+        isLoading: isHydrating,
+        error: hydrationError,
+        lastSyncedAt
+      }
     }}>
       {children}
     </SapsContext.Provider>

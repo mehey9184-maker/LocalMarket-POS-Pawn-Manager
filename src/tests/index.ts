@@ -38,6 +38,7 @@ import { runWorkerFrictionPassTests } from './workerFrictionPass.test';
 import { runWindowsDesktopReadinessTests } from './windowsDesktopReadiness.test';
 import { runAuthConfigurationAndErrorHandlingTests } from './authConfigurationAndErrorHandling.test';
 import { runCloudInventoryAndLogoHydrationTests } from './cloudInventoryAndLogoHydration.test';
+import { runCustomerLoanSapsHydrationTests } from './customerLoanSapsHydration.test';
 
 export async function runAllTests() {
   console.log('====================================================');
@@ -82,6 +83,7 @@ export async function runAllTests() {
   await runWindowsDesktopReadinessTests();
   await runAuthConfigurationAndErrorHandlingTests();
   await runCloudInventoryAndLogoHydrationTests();
+  await runCustomerLoanSapsHydrationTests();
   console.log('====================================================');
   console.log('   ALL UNIT TESTS EXECUTED WITH ZERO ERRORS       ');
   console.log('====================================================');

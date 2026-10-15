@@ -14,14 +14,17 @@ import {
   ExternalLink,
   Store,
   UserCheck,
-  Receipt
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { LoansLedger } from './LoansLedger';
 import { OutrightBuysLedger } from './OutrightBuysLedger';
 import { SapsRegister } from './SapsRegister';
+import { useAuth } from '../../context/AuthContext';
 
 export const Customers: React.FC = () => {
-  const { customers, pawnLoans, setActiveCustomer, setActiveTab } = useApp();
+  const { customers, pawnLoans, setActiveCustomer, setActiveTab, refreshCustomers, customerSyncStatus } = useApp();
+  const { shopId } = useAuth();
   const { sellers } = useSellers();
   const [mode, setMode] = useState<'list' | 'sellers' | 'loans' | 'buys' | 'saps'>('list');
   const [search, setSearch] = useState('');
@@ -98,65 +101,107 @@ export const Customers: React.FC = () => {
                 />
               </div>
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 lg:p-8 no-scrollbar">
-              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-5">
-                {filteredCustomers.map(customer => {
-                  const activePawns = pawnLoans.filter(l => l.customerIdNumber === customer.idNumber && l.status === 'Active').length;
-                  return (
-                    <motion.div
-                      key={customer.id}
-                      layout
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="bg-white border border-gray-200 rounded-2xl p-5 hover:border-[#C85A32] hover:shadow-md transition-all group cursor-pointer flex flex-col justify-between"
-                      onClick={() => { setActiveCustomer(customer); setActiveTab('buy-pawn'); }}
-                    >
-                      <div>
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center font-bold text-lg group-hover:scale-105 transition-transform">
-                              {customer.fullName.charAt(0)}
-                            </div>
-                            <div>
-                              <h3 className="text-sm font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">{customer.fullName}</h3>
-                              <p className="text-xs text-gray-500 font-mono mt-0.5">{customer.idNumber}</p>
-                            </div>
-                          </div>
-                          <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold border border-blue-200">
-                            Pawn Client
-                          </span>
-                        </div>
 
-                        <div className="grid grid-cols-2 gap-3 mb-4">
-                          <div className="p-3 bg-[#F8F9FA] rounded-xl border border-gray-100">
-                            <span className="text-[10px] text-gray-400 font-semibold uppercase block mb-0.5">Active Pledges</span>
-                            <div className="flex items-center gap-1.5">
-                              <History className="w-3.5 h-3.5 text-blue-600" />
-                              <span className="text-xs font-bold text-gray-800">{activePawns}</span>
-                            </div>
-                          </div>
-                          <div className="p-3 bg-[#F8F9FA] rounded-xl border border-gray-100">
-                            <span className="text-[10px] text-gray-400 font-semibold uppercase block mb-0.5">Compliance</span>
-                            <div className="flex items-center gap-1.5">
-                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                              <span className="text-xs font-bold text-emerald-700">Verified</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs text-gray-500 pt-3 border-t border-gray-100">
-                        <span className="font-mono text-[11px]">{customer.mobile}</span>
-                        <div className="flex items-center gap-1 text-[#C85A32] font-semibold text-xs group-hover:translate-x-0.5 transition-transform">
-                          <span>Open Profile</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
+            {!shopId && (
+              <div className="p-4 mx-6 lg:mx-8 mt-5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between text-xs text-amber-800 shrink-0">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>No shop branch assigned to this profile. Please switch to an authorized shop branch.</span>
+                </div>
               </div>
+            )}
+
+            {customerSyncStatus.error && (
+              <div className="p-4 mx-6 lg:mx-8 mt-5 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-between text-xs text-red-800 shrink-0">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>Cloud sync note: {customerSyncStatus.error}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => refreshCustomers()}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry</span>
+                </button>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto p-6 lg:p-8 no-scrollbar">
+              {customerSyncStatus.isLoading && customers.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center p-8 text-center text-gray-500">
+                  <RefreshCw className="w-8 h-8 text-[#C85A32] animate-spin mb-3" />
+                  <p className="font-bold text-sm text-gray-800">Restoring Customer Directory</p>
+                  <p className="text-xs text-gray-500 mt-1">Hydrating pawn client records from Supabase cloud...</p>
+                </div>
+              ) : filteredCustomers.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center p-8 text-center text-gray-400">
+                  <UserCheck className="w-12 h-12 text-gray-300 mb-3" />
+                  <p className="font-bold text-sm text-gray-700">No Customers Found</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {search ? `No customer matches "${search}"` : 'No pawn clients registered for this shop branch yet.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-5">
+                  {filteredCustomers.map(customer => {
+                    const activePawns = pawnLoans.filter(l => l.customerIdNumber === customer.idNumber && l.status === 'Active').length;
+                    return (
+                      <motion.div
+                        key={customer.id}
+                        layout
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="bg-white border border-gray-200 rounded-2xl p-5 hover:border-[#C85A32] hover:shadow-md transition-all group cursor-pointer flex flex-col justify-between"
+                        onClick={() => { setActiveCustomer(customer); setActiveTab('buy-pawn'); }}
+                      >
+                        <div>
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-12 h-12 rounded-xl bg-[#FDF0EA] text-[#C85A32] flex items-center justify-center font-bold text-lg group-hover:scale-105 transition-transform">
+                                {customer.fullName.charAt(0)}
+                              </div>
+                              <div>
+                                <h3 className="text-sm font-bold text-gray-900 group-hover:text-[#C85A32] transition-colors">{customer.fullName}</h3>
+                                <p className="text-xs text-gray-500 font-mono mt-0.5">{customer.idNumber}</p>
+                              </div>
+                            </div>
+                            <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold border border-blue-200">
+                              Pawn Client
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 mb-4">
+                            <div className="p-3 bg-[#F8F9FA] rounded-xl border border-gray-100">
+                              <span className="text-[10px] text-gray-400 font-semibold uppercase block mb-0.5">Active Pledges</span>
+                              <div className="flex items-center gap-1.5">
+                                <History className="w-3.5 h-3.5 text-blue-600" />
+                                <span className="text-xs font-bold text-gray-800">{activePawns}</span>
+                              </div>
+                            </div>
+                            <div className="p-3 bg-[#F8F9FA] rounded-xl border border-gray-100">
+                              <span className="text-[10px] text-gray-400 font-semibold uppercase block mb-0.5">Compliance</span>
+                              <div className="flex items-center gap-1.5">
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                <span className="text-xs font-bold text-emerald-700">Verified</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs text-gray-500 pt-3 border-t border-gray-100">
+                          <span className="font-mono text-[11px]">{customer.mobile}</span>
+                          <div className="flex items-center gap-1 text-[#C85A32] font-semibold text-xs group-hover:translate-x-0.5 transition-transform">
+                            <span>Open Profile</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
