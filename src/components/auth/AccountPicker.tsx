@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { authApi } from '../../services/supabaseApi';
-import { ProfileRow } from '../../types/supabase';
+import { ProfileRow, UserRole } from '../../types/supabase';
+import { isPermanentManagerRole } from '../../utils/authRoles';
 import { Loader2, ArrowLeft, Key, ShieldCheck, Lock, X, Calendar, Eye, EyeOff, LockKeyhole } from 'lucide-react';
 
 // Helper to get wall-clock components in shop timezone
@@ -381,7 +382,7 @@ export function canDismissAccountPicker(params: CanDismissAccountPickerParams): 
 export function getPermittedTabsForUser(
   hasPermission: (p: any) => boolean,
   isAtLeastSeniorCashier: boolean,
-  isAtLeastManager: boolean = false
+  managerRoleOrAuthorized: boolean | UserRole | string | null = false
 ): any[] {
   const tabs: any[] = ['home'];
   if (hasPermission('sales')) tabs.push('sell');
@@ -394,7 +395,10 @@ export function getPermittedTabsForUser(
     tabs.push('saps');
     tabs.push('customers');
   }
-  if (isAtLeastManager) {
+  const isAuthorized = typeof managerRoleOrAuthorized === 'boolean'
+    ? managerRoleOrAuthorized
+    : isPermanentManagerRole(managerRoleOrAuthorized);
+  if (isAuthorized) {
     tabs.push('analysis');
   }
   tabs.push('profile');
@@ -511,7 +515,7 @@ export const AccountPicker: React.FC = () => {
   }, [isAccountPickerOpen, setIsAccountPickerOpen, isSwitchingAccount, isIdleLocked]);
 
   const completeUnlockAndRouting = (staffProfile: ProfileRow) => {
-    const isManagerRole = staffProfile.role === 'owner' || staffProfile.role === 'admin' || staffProfile.role === 'manager';
+    const isManagerRole = isPermanentManagerRole(staffProfile.role);
     const permittedTabs = getPermittedTabsForUser(hasPermission, isAtLeastSeniorCashier, isManagerRole);
     const destTab = resolvePostUnlockTab({
       lockedProfileId,

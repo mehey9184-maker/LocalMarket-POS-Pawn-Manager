@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp, NavTab } from '../context/AppContext';
 import { useSellers } from '../context/SellerContext';
 import { useAuth } from '../context/AuthContext';
+import { isPermanentManagerRole } from '../utils/authRoles';
 import { normalizeScannerInput } from '../utils/scannerNormalizer';
 import { InventoryItem, PawnLoan } from '../types';
 import { 
@@ -206,7 +207,7 @@ export const Header: React.FC<HeaderProps> = () => {
     failedSyncCount = 0,
   } = useApp();
 
-  const { profile, setIsAccountPickerOpen, hasPermission, isAtLeastSeniorCashier, isAtLeastManager } = useAuth();
+  const { profile, setIsAccountPickerOpen, hasPermission, isAtLeastSeniorCashier } = useAuth();
   const { sellers } = useSellers();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -374,13 +375,13 @@ export const Header: React.FC<HeaderProps> = () => {
       tabs.push({ id: 'customers', label: 'Customers' });
     }
 
-    // Analysis is restricted exclusively to Manager, Owner, Admin
-    if (isAtLeastManager) {
+    // Analysis is restricted exclusively to permanent Manager, Owner, Admin roles
+    if (isPermanentManagerRole(profile?.role)) {
       tabs.push({ id: 'analysis', label: 'Analysis' });
     }
     
     return tabs;
-  }, [hasPermission, isAtLeastSeniorCashier, isAtLeastManager]);
+  }, [hasPermission, isAtLeastSeniorCashier, profile?.role]);
 
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center justify-between gap-6 shrink-0 sticky top-0 z-40 shadow-xs">

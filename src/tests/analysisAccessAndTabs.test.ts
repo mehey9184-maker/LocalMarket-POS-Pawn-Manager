@@ -7,6 +7,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { UserRole } from '../types/supabase';
+import { isPermanentManagerRole, canAccessAnalysis } from '../utils/authRoles';
 import { getPermittedTabsForUser, resolvePostUnlockTab } from '../components/auth/AccountPicker';
 import {
   getShopTodayDateString,
@@ -29,90 +30,153 @@ export async function runAnalysisAccessAndTabsTests() {
   console.log('====================================================');
 
   // =========================================================================
-  // 1. ROLE MATRIX & MANAGEMENT ACCESS CONTROLS
+  // 1. ROLE MATRIX & MANAGEMENT ACCESS CONTROLS (Pure Role Helper)
   // =========================================================================
   console.log('\n--- 1. Role Authorization Predicates ---');
 
-  // Manager: Authorized
+  // 1a. Pure role helper: isPermanentManagerRole
   assert.strictEqual(
-    evaluateIsAtLeastManager('manager'),
+    isPermanentManagerRole('manager'),
     true,
-    'Manager must be authorized (isAtLeastManager = true)'
+    'Manager must be authorized (isPermanentManagerRole = true)'
   );
-
-  // Owner: Authorized
   assert.strictEqual(
-    evaluateIsAtLeastManager('owner'),
+    isPermanentManagerRole('owner'),
     true,
-    'Owner must be authorized (isAtLeastManager = true)'
+    'Owner must be authorized (isPermanentManagerRole = true)'
   );
-
-  // Admin: Authorized
   assert.strictEqual(
-    evaluateIsAtLeastManager('admin'),
+    isPermanentManagerRole('admin'),
     true,
-    'Admin must be authorized (isAtLeastManager = true)'
+    'Admin must be authorized (isPermanentManagerRole = true)'
   );
-
-  // Senior Cashier: Unauthorized
   assert.strictEqual(
-    evaluateIsAtLeastManager('senior_cashier'),
+    isPermanentManagerRole('senior_cashier'),
     false,
-    'Senior Cashier must NOT be authorized (isAtLeastManager = false)'
+    'Senior Cashier must NOT be authorized (isPermanentManagerRole = false)'
   );
-
-  // Standard Cashier: Unauthorized
   assert.strictEqual(
-    evaluateIsAtLeastManager('cashier'),
+    isPermanentManagerRole('cashier'),
     false,
-    'Cashier must NOT be authorized (isAtLeastManager = false)'
+    'Cashier must NOT be authorized (isPermanentManagerRole = false)'
   );
-
-  // Unauthenticated / Loading (role is null or undefined): Unauthorized
   assert.strictEqual(
-    evaluateIsAtLeastManager(null),
+    isPermanentManagerRole(null),
     false,
-    'Unauthenticated state must default to unauthorized'
+    'Unauthenticated state (null) must default to unauthorized'
   );
   assert.strictEqual(
-    evaluateIsAtLeastManager(undefined),
+    isPermanentManagerRole(undefined),
     false,
     'Undefined profile role must default to unauthorized'
   );
+
+  // 1b. Temporary elevation defense:
+  // A cashier or senior cashier with temporary manager elevation MUST NEVER gain Analysis access
+  assert.strictEqual(
+    evaluateIsAtLeastManager('cashier', true),
+    true,
+    'Operational check with temporary elevation is true for cashier overrides'
+  );
+  assert.strictEqual(
+    isPermanentManagerRole('cashier'),
+    false,
+    'Cashier with active temporary manager elevation must NOT gain Analysis access'
+  );
+  assert.strictEqual(
+    canAccessAnalysis('cashier', true),
+    false,
+    'canAccessAnalysis helper strictly ignores temporary manager elevation for Cashier'
+  );
+
+  assert.strictEqual(
+    evaluateIsAtLeastManager('senior_cashier', true),
+    true,
+    'Operational check with temporary elevation is true for senior cashier overrides'
+  );
+  assert.strictEqual(
+    isPermanentManagerRole('senior_cashier'),
+    false,
+    'Senior Cashier with active temporary manager elevation must NOT gain Analysis access'
+  );
+  assert.strictEqual(
+    canAccessAnalysis('senior_cashier', true),
+    false,
+    'canAccessAnalysis helper strictly ignores temporary manager elevation for Senior Cashier'
+  );
+
+  // 1c. Baseline evaluateIsAtLeastManager (for general operational permissions)
+  assert.strictEqual(evaluateIsAtLeastManager('manager'), true);
+  assert.strictEqual(evaluateIsAtLeastManager('owner'), true);
+  assert.strictEqual(evaluateIsAtLeastManager('admin'), true);
+  assert.strictEqual(evaluateIsAtLeastManager('senior_cashier'), false);
+  assert.strictEqual(evaluateIsAtLeastManager('cashier'), false);
+  assert.strictEqual(evaluateIsAtLeastManager(null), false);
+  assert.strictEqual(evaluateIsAtLeastManager(undefined), false);
 
   // =========================================================================
   // 2. PERMITTED TABS & NAVIGATION ENTRY VISIBILITY
   // =========================================================================
   console.log('\n--- 2. Navigation Tab Visibility & Permitted Tabs ---');
 
-  const cashierPermitted = getPermittedTabsForUser(() => true, false, false);
+  const cashierPermitted = getPermittedTabsForUser(() => true, false, 'cashier');
   assert.strictEqual(
     cashierPermitted.includes('analysis'),
     false,
     'Cashier permitted tabs must not include analysis'
   );
 
-  const seniorCashierPermitted = getPermittedTabsForUser(() => true, true, false);
+  const seniorCashierPermitted = getPermittedTabsForUser(() => true, true, 'senior_cashier');
   assert.strictEqual(
     seniorCashierPermitted.includes('analysis'),
     false,
     'Senior Cashier permitted tabs must not include analysis'
   );
 
-  const managerPermitted = getPermittedTabsForUser(() => true, true, true);
+  const managerPermitted = getPermittedTabsForUser(() => true, true, 'manager');
   assert.strictEqual(
     managerPermitted.includes('analysis'),
     true,
     'Manager permitted tabs must include analysis'
   );
 
-  // Verify Header.tsx enforces isAtLeastManager on Analysis tab
+  const ownerPermitted = getPermittedTabsForUser(() => true, true, 'owner');
+  assert.strictEqual(
+    ownerPermitted.includes('analysis'),
+    true,
+    'Owner permitted tabs must include analysis'
+  );
+
+  const adminPermitted = getPermittedTabsForUser(() => true, true, 'admin');
+  assert.strictEqual(
+    adminPermitted.includes('analysis'),
+    true,
+    'Admin permitted tabs must include analysis'
+  );
+
+  // Backwards compatibility with boolean flag
+  assert.strictEqual(
+    getPermittedTabsForUser(() => true, false, false).includes('analysis'),
+    false,
+    'getPermittedTabsForUser with boolean false must not include analysis'
+  );
+  assert.strictEqual(
+    getPermittedTabsForUser(() => true, true, true).includes('analysis'),
+    true,
+    'getPermittedTabsForUser with boolean true must include analysis'
+  );
+
+  // Helper to normalize CRLF to LF for cross-platform Windows / Linux assertions
+  const normalizeLf = (str: string) => str.replace(/\r\n/g, '\n');
+
+  // Verify Header.tsx enforces isPermanentManagerRole on Analysis tab
   const headerPath = path.join(process.cwd(), 'src/components/Header.tsx');
-  const headerSrc = fs.readFileSync(headerPath, 'utf8');
+  const headerSrc = normalizeLf(fs.readFileSync(headerPath, 'utf8'));
 
   assert(
-    headerSrc.includes("if (isAtLeastManager)") && headerSrc.includes("tabs.push({ id: 'analysis', label: 'Analysis' })"),
-    'Header.tsx must gate the Analysis nav tab with isAtLeastManager'
+    headerSrc.includes("if (isPermanentManagerRole(profile?.role))") &&
+      headerSrc.includes("tabs.push({ id: 'analysis', label: 'Analysis' })"),
+    'Header.tsx must gate the Analysis nav tab with isPermanentManagerRole'
   );
 
   // =========================================================================
@@ -121,26 +185,36 @@ export async function runAnalysisAccessAndTabsTests() {
   console.log('\n--- 3. Direct Navigation & Viewport Guards ---');
 
   const appPath = path.join(process.cwd(), 'src/App.tsx');
-  const appSrc = fs.readFileSync(appPath, 'utf8');
+  const appSrc = normalizeLf(fs.readFileSync(appPath, 'utf8'));
 
   // Verify App.tsx redirects activeTab === 'analysis' if unauthorized
   assert(
-    appSrc.includes("activeTab === 'analysis' && !isAtLeastManager"),
+    appSrc.includes("activeTab === 'analysis' && !isAnalysisAuthorized"),
     'App.tsx must redirect activeTab === "analysis" when staff is not authorized'
   );
 
   // Verify App.tsx conditionally mounts Analysis component
   assert(
-    appSrc.includes("{isAtLeastManager ? <Analysis /> : null}"),
+    appSrc.includes("{isAnalysisAuthorized ? <Analysis /> : null}"),
     'App.tsx must not mount Analysis component for unauthorized roles'
   );
 
-  // Verify Analysis.tsx has internal defense-in-depth early returns
+  // Verify Analysis.tsx has internal defense-in-depth early returns and separate workspace
   const analysisPath = path.join(process.cwd(), 'src/components/screens/Analysis.tsx');
-  const analysisSrc = fs.readFileSync(analysisPath, 'utf8');
+  const analysisSrc = normalizeLf(fs.readFileSync(analysisPath, 'utf8'));
 
   assert(
-    analysisSrc.includes("if (authLoading || isProfileLoading || isSwitchingAccount || !isAtLeastManager) {\n    return null;\n  }"),
+    analysisSrc.includes("const AnalysisWorkspace: React.FC"),
+    'Analysis.tsx must separate workspace component to guarantee stable hook execution'
+  );
+
+  assert(
+    analysisSrc.includes("export const Analysis: React.FC"),
+    'Analysis.tsx must provide gate wrapper component'
+  );
+
+  assert(
+    analysisSrc.includes("if (authLoading || isProfileLoading || isSwitchingAccount || !isAuthorized) {\n    return null;\n  }"),
     'Analysis.tsx must return null immediately when unauthorized or loading'
   );
 

@@ -6,6 +6,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
+import { isPermanentManagerRole } from '../../utils/authRoles';
 import { useSales } from '../../context/SalesContext';
 import { useInventory } from '../../context/InventoryContext';
 import { useLoans } from '../../context/LoanContext';
@@ -53,16 +54,8 @@ const TABS: TabItem[] = [
   { id: 'loans', label: 'Pawn & Loans', icon: Clock }
 ];
 
-export const Analysis: React.FC = () => {
+const AnalysisWorkspace: React.FC = () => {
   const { setActiveTab, shopProfile } = useApp();
-  const {
-    profile,
-    isAtLeastManager,
-    isProfileLoading,
-    isSwitchingAccount,
-    isLoading: authLoading
-  } = useAuth();
-
   const { salesHistory } = useSales();
   const { inventory } = useInventory();
   const { loans } = useLoans();
@@ -82,26 +75,7 @@ export const Analysis: React.FC = () => {
   const timezone = (shopProfile as any)?.timezone || DEFAULT_SHOP_TIMEZONE;
 
   // ---------------------------------------------------------------------------
-  // 1. ACCESS ENFORCEMENT & HARD NAVIGATION GUARD
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    // Never redirect while auth or profile is resolving, or during an account switch
-    if (authLoading || isProfileLoading || isSwitchingAccount) return;
-
-    // Hard guard: Cashier and Senior Cashier must not access Analysis
-    if (!isAtLeastManager) {
-      const isStandardCashier = profile?.role === 'cashier';
-      setActiveTab(isStandardCashier ? 'sell' : 'home');
-    }
-  }, [isAtLeastManager, authLoading, isProfileLoading, isSwitchingAccount, profile?.role, setActiveTab]);
-
-  // Prevent any DOM rendering or metric leakage to unauthorized roles
-  if (authLoading || isProfileLoading || isSwitchingAccount || !isAtLeastManager) {
-    return null;
-  }
-
-  // ---------------------------------------------------------------------------
-  // 2. HORIZONTAL TAB SCROLL MANAGEMENT
+  // 1. HORIZONTAL TAB SCROLL MANAGEMENT
   // ---------------------------------------------------------------------------
   const updateScrollState = useCallback(() => {
     const el = scrollContainerRef.current;
@@ -1120,4 +1094,37 @@ export const Analysis: React.FC = () => {
       </div>
     </div>
   );
+};
+
+export const Analysis: React.FC = () => {
+  const { setActiveTab } = useApp();
+  const {
+    profile,
+    isProfileLoading,
+    isSwitchingAccount,
+    isLoading: authLoading
+  } = useAuth();
+
+  const isAuthorized = isPermanentManagerRole(profile?.role);
+
+  // ---------------------------------------------------------------------------
+  // ACCESS ENFORCEMENT & HARD NAVIGATION GUARD
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    // Never redirect while auth or profile is resolving, or during an account switch
+    if (authLoading || isProfileLoading || isSwitchingAccount) return;
+
+    // Hard guard: Cashier and Senior Cashier must not access Analysis
+    if (!isAuthorized) {
+      const isStandardCashier = profile?.role === 'cashier';
+      setActiveTab(isStandardCashier ? 'sell' : 'home');
+    }
+  }, [isAuthorized, authLoading, isProfileLoading, isSwitchingAccount, profile?.role, setActiveTab]);
+
+  // Prevent any DOM rendering or metric leakage to unauthorized roles
+  if (authLoading || isProfileLoading || isSwitchingAccount || !isAuthorized) {
+    return null;
+  }
+
+  return <AnalysisWorkspace />;
 };

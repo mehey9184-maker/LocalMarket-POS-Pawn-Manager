@@ -3,6 +3,9 @@ import { authApi, profilesApi, staffApi } from '../services/supabaseApi';
 import { apiPost } from '../utils/apiClient';
 import { ProfileRow, UserRole } from '../types/supabase';
 import { Permissions, getEffectivePermissions } from '../types';
+import { isPermanentManagerRole, isAnalysisAuthorizedRole, canAccessAnalysis } from '../utils/authRoles';
+
+export { isPermanentManagerRole, isAnalysisAuthorizedRole, canAccessAnalysis };
 
 export type SwitchState = 'idle' | 'authenticating' | 'loading_profile' | 'acquiring_terminal' | 'ready' | 'error';
 
