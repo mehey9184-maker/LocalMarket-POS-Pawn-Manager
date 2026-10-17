@@ -39,6 +39,32 @@ import {
   ArrowRight
 } from 'lucide-react';
 
+import { ItemStatus, PaymentMethod } from '../../types';
+
+export function normalizePaymentMethodLabel(method: PaymentMethod | string | undefined | null): string {
+  if (!method) return 'Unknown';
+  const clean = method.toLowerCase().trim();
+  if (clean === 'cash') return 'Cash';
+  if (clean === 'card') return 'Card';
+  if (clean === 'eft') return 'EFT';
+  if (clean === 'snapscan') return 'SnapScan';
+  return method.charAt(0).toUpperCase() + method.slice(1);
+}
+
+export const ALL_ITEM_STATUSES: ItemStatus[] = [
+  'Retail Floor',
+  'Vault Hold',
+  'Forfeited',
+  'Pending Forfeit',
+  'Reserved',
+  'Flagged',
+  'Sold',
+  'Redeemed',
+  'Returned',
+  'Reversed',
+  'InStock'
+];
+
 export type AnalysisSection = 'overview' | 'sales' | 'stock' | 'loans';
 
 interface TabItem {
@@ -141,19 +167,19 @@ const AnalysisWorkspace: React.FC = () => {
     const allTimeCount = salesHistory.length;
     const avgBasket = allTimeCount > 0 ? allTimeRevenue / allTimeCount : 0;
 
-    // Payment method breakdown (All Time)
+    // Payment method breakdown (All Time) - normalized standard methods from PaymentMethod in src/types.ts
     const byTender: Record<string, { count: number; total: number }> = {
       Cash: { count: 0, total: 0 },
       Card: { count: 0, total: 0 },
       EFT: { count: 0, total: 0 },
-      Split: { count: 0, total: 0 }
+      SnapScan: { count: 0, total: 0 }
     };
 
     salesHistory.forEach(s => {
-      const method = s.tenderMethod || 'Cash';
-      if (!byTender[method]) byTender[method] = { count: 0, total: 0 };
-      byTender[method].count += 1;
-      byTender[method].total += (s.total || 0);
+      const label = normalizePaymentMethodLabel(s.tenderMethod);
+      if (!byTender[label]) byTender[label] = { count: 0, total: 0 };
+      byTender[label].count += 1;
+      byTender[label].total += (s.total || 0);
     });
 
     return {
@@ -231,18 +257,15 @@ const AnalysisWorkspace: React.FC = () => {
 
   // D. Stock & Inventory Calculations
   const stockMetrics = useMemo(() => {
-    const byStatus: Record<string, { count: number; retailTotal: number; costTotal: number; withCostCount: number }> = {
-      'Retail Floor': { count: 0, retailTotal: 0, costTotal: 0, withCostCount: 0 },
-      'Vault Hold': { count: 0, retailTotal: 0, costTotal: 0, withCostCount: 0 },
-      'Forfeited': { count: 0, retailTotal: 0, costTotal: 0, withCostCount: 0 },
-      'Reserved': { count: 0, retailTotal: 0, costTotal: 0, withCostCount: 0 },
-      'Sold': { count: 0, retailTotal: 0, costTotal: 0, withCostCount: 0 }
-    };
+    const byStatus: Record<string, { count: number; retailTotal: number; costTotal: number; withCostCount: number }> = {};
+    ALL_ITEM_STATUSES.forEach(status => {
+      byStatus[status] = { count: 0, retailTotal: 0, costTotal: 0, withCostCount: 0 };
+    });
 
     const byCategory: Record<string, { count: number; retailTotal: number }> = {};
 
     inventory.forEach(i => {
-      const statusKey = i.status in byStatus ? i.status : 'Retail Floor';
+      const statusKey = i.status || 'Unknown';
       if (!byStatus[statusKey]) {
         byStatus[statusKey] = { count: 0, retailTotal: 0, costTotal: 0, withCostCount: 0 };
       }
@@ -253,6 +276,7 @@ const AnalysisWorkspace: React.FC = () => {
         byStatus[statusKey].withCostCount += 1;
       }
 
+      // Category metrics strictly include items genuinely marked as Retail Floor
       if (i.status === 'Retail Floor') {
         const cat = i.category || 'General Goods';
         if (!byCategory[cat]) byCategory[cat] = { count: 0, retailTotal: 0 };
@@ -422,7 +446,7 @@ const AnalysisWorkspace: React.FC = () => {
                   <div className="flex items-center justify-between text-emerald-800 text-xs font-semibold">
                     <span className="flex items-center gap-1.5">
                       <ArrowUpRight className="w-4 h-4 text-emerald-600" />
-                      Sales Revenue Today
+                      Gross Sales Revenue (Pre-Refund)
                     </span>
                     <span className="text-[11px] font-mono text-emerald-700 bg-emerald-100/70 px-1.5 py-0.5 rounded">
                       {salesTotals.todayCount} {salesTotals.todayCount === 1 ? 'sale' : 'sales'}
@@ -432,7 +456,7 @@ const AnalysisWorkspace: React.FC = () => {
                     {formatRand(salesTotals.todayRevenue)}
                   </div>
                   <p className="text-[11px] text-gray-500 mt-1">
-                    Gross intake from completed customer sales.
+                    Gross intake from completed customer sales (pre-refund; refund deductions not included).
                   </p>
                 </div>
 
@@ -483,7 +507,7 @@ const AnalysisWorkspace: React.FC = () => {
                     Financial Distinction & Calculation Policy
                   </p>
                   <p className="text-[11px] text-gray-500 leading-relaxed">
-                    Sales revenue represents gross counter payments received. Stock purchase spend and pawn principal represent cash disbursed to clients. Profit is not labeled or estimated on gross cash movements, as it requires finalized item cost reconciliation, staff overhead, and completed refund adjustments.
+                    Gross recorded sales figures are pre-refund; refund adjustments are not deducted. Keep revenue, stock purchase outlay, pawn principal advanced and projected contractual fees distinct. Projected contractual fees represent uncollected potential earnings upon redemption and must not be treated as realized revenue. Inventory retail tag values reflect asking prices, not profit. Profit calculations require completed cost reconciliation, staff overhead, and finalized refund adjustments.
                   </p>
                 </div>
               </div>
@@ -529,7 +553,7 @@ const AnalysisWorkspace: React.FC = () => {
                   {loanMetrics.overdue.length} overdue
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">
-                  Term expired &gt; 30 days
+                  Past agreed expiry date
                 </div>
               </div>
 
@@ -602,32 +626,32 @@ const AnalysisWorkspace: React.FC = () => {
             {/* SALES SUMMARY METRICS */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-xs">
-                <span className="text-xs font-medium text-gray-500">Total Recorded Revenue</span>
+                <span className="text-xs font-medium text-gray-500">Total Gross Recorded Sales (Pre-Refund)</span>
                 <div className="text-2xl font-bold font-mono text-gray-900 mt-1">
                   {formatRand(salesTotals.allTimeRevenue)}
                 </div>
                 <p className="text-[11px] text-gray-500 mt-1">
-                  Across {salesTotals.allTimeCount} completed transactions
+                  Across {salesTotals.allTimeCount} completed transactions before refund deductions
                 </p>
               </div>
 
               <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-xs">
-                <span className="text-xs font-medium text-gray-500">Today's Revenue ({todayYmd})</span>
+                <span className="text-xs font-medium text-gray-500">Today's Gross Sales (Pre-Refund)</span>
                 <div className="text-2xl font-bold font-mono text-emerald-600 mt-1">
                   {formatRand(salesTotals.todayRevenue)}
                 </div>
                 <p className="text-[11px] text-gray-500 mt-1">
-                  {salesTotals.todayCount} transactions closed today
+                  {salesTotals.todayCount} completed transactions recorded today ({todayYmd})
                 </p>
               </div>
 
               <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-xs">
-                <span className="text-xs font-medium text-gray-500">Average Transaction Size</span>
+                <span className="text-xs font-medium text-gray-500">Average Transaction Size (Pre-Refund)</span>
                 <div className="text-2xl font-bold font-mono text-gray-900 mt-1">
                   {formatRand(salesTotals.avgBasket)}
                 </div>
                 <p className="text-[11px] text-gray-500 mt-1">
-                  Mean counter receipt value
+                  Mean counter receipt value (pre-refund)
                 </p>
               </div>
             </div>
@@ -789,6 +813,38 @@ const AnalysisWorkspace: React.FC = () => {
               </div>
             </div>
 
+            {/* INVENTORY STATUS BREAKDOWN (ALL VALID STATUSES) */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 font-headline">
+                    Inventory Status Breakdown
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Comprehensive catalog audit across all valid operational and statutory statuses.
+                  </p>
+                </div>
+                <div className="text-xs text-gray-500 font-mono">
+                  {stockMetrics.totalItems} total catalog records
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-1">
+                {ALL_ITEM_STATUSES.map(status => {
+                  const stats = stockMetrics.byStatus[status] || { count: 0, retailTotal: 0 };
+                  return (
+                    <div key={status} className="bg-gray-50/80 rounded-xl p-3 border border-gray-100 flex flex-col justify-between">
+                      <span className="text-[11px] font-medium text-gray-600 truncate">{status}</span>
+                      <div className="mt-1 flex items-baseline justify-between gap-1">
+                        <span className="text-base font-bold font-mono text-gray-900">{stats.count}</span>
+                        <span className="text-[10px] text-gray-400 font-mono">{formatRand(stats.retailTotal)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* FINANCIAL VALUATION TRANSPARENCY */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-xs space-y-4">
               <div>
@@ -796,7 +852,7 @@ const AnalysisWorkspace: React.FC = () => {
                   Floor Stock Valuation & Recorded Cost Basis
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Detailed comparison between retail price tag value and verified acquisition cost basis.
+                  Detailed comparison between retail price tag value and verified acquisition cost basis. Shelf asking prices do not represent profit.
                 </p>
               </div>
 
@@ -833,8 +889,8 @@ const AnalysisWorkspace: React.FC = () => {
               </div>
 
               <div className="text-xs text-gray-500 bg-[#FDF0EA]/50 border border-orange-200/50 rounded-xl p-3">
-                <span className="font-semibold text-[#C85A32]">Cost Accuracy Note: </span>
-                Items added as existing opening stock or consignments without an explicit purchase amount are excluded from cost basis totals to maintain financial integrity.
+                <span className="font-semibold text-[#C85A32]">Cost Accuracy & Valuation Note: </span>
+                Items added without an explicit purchase amount are excluded from cost basis totals to maintain financial integrity. Total retail values reflect asking prices, not realized revenue or profit.
               </div>
             </div>
 

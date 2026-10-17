@@ -160,8 +160,8 @@ export async function runWorkerFrictionPassTests() {
   );
 
   // 3.2 resolvePostUnlockTab rules
-  const cashierPermittedTabs = getPermittedTabsForUser((p) => p === 'sales' || p === 'inventory', false);
-  const managerPermittedTabs = getPermittedTabsForUser(() => true, true);
+  const cashierPermittedTabs = getPermittedTabsForUser((p) => p === 'sales' || p === 'inventory', false, 'cashier');
+  const managerPermittedTabs = getPermittedTabsForUser(() => true, true, 'manager');
 
   // 3.2a Same user unlocks on permitted tab -> preserves tab
   const sameUserPreservesTab = resolvePostUnlockTab({

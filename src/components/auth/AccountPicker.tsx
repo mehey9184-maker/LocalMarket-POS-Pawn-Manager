@@ -382,7 +382,7 @@ export function canDismissAccountPicker(params: CanDismissAccountPickerParams): 
 export function getPermittedTabsForUser(
   hasPermission: (p: any) => boolean,
   isAtLeastSeniorCashier: boolean,
-  managerRoleOrAuthorized: boolean | UserRole | string | null = false
+  role?: UserRole | string | null | boolean
 ): any[] {
   const tabs: any[] = ['home'];
   if (hasPermission('sales')) tabs.push('sell');
@@ -395,9 +395,7 @@ export function getPermittedTabsForUser(
     tabs.push('saps');
     tabs.push('customers');
   }
-  const isAuthorized = typeof managerRoleOrAuthorized === 'boolean'
-    ? managerRoleOrAuthorized
-    : isPermanentManagerRole(managerRoleOrAuthorized);
+  const isAuthorized = typeof role === 'boolean' ? role : isPermanentManagerRole(role);
   if (isAuthorized) {
     tabs.push('analysis');
   }
@@ -515,8 +513,7 @@ export const AccountPicker: React.FC = () => {
   }, [isAccountPickerOpen, setIsAccountPickerOpen, isSwitchingAccount, isIdleLocked]);
 
   const completeUnlockAndRouting = (staffProfile: ProfileRow) => {
-    const isManagerRole = isPermanentManagerRole(staffProfile.role);
-    const permittedTabs = getPermittedTabsForUser(hasPermission, isAtLeastSeniorCashier, isManagerRole);
+    const permittedTabs = getPermittedTabsForUser(hasPermission, isAtLeastSeniorCashier, staffProfile.role);
     const destTab = resolvePostUnlockTab({
       lockedProfileId,
       unlockedProfileId: staffProfile.id,
