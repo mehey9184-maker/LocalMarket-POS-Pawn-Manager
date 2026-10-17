@@ -80,6 +80,42 @@ const TABS: TabItem[] = [
   { id: 'loans', label: 'Pawn & Loans', icon: Clock }
 ];
 
+export function computeStockMetrics(inventoryItems: Array<{ status?: string; retailPrice?: number; costBasis?: number; category?: string }>) {
+  const byStatus: Record<string, { count: number; retailTotal: number; costTotal: number; withCostCount: number }> = {};
+  ALL_ITEM_STATUSES.forEach(status => {
+    byStatus[status] = { count: 0, retailTotal: 0, costTotal: 0, withCostCount: 0 };
+  });
+
+  const byCategory: Record<string, { count: number; retailTotal: number }> = {};
+
+  inventoryItems.forEach(i => {
+    const statusKey = i.status && ALL_ITEM_STATUSES.includes(i.status as ItemStatus) ? i.status : (i.status || 'Retail Floor');
+    if (!byStatus[statusKey]) {
+      byStatus[statusKey] = { count: 0, retailTotal: 0, costTotal: 0, withCostCount: 0 };
+    }
+    byStatus[statusKey].count += 1;
+    byStatus[statusKey].retailTotal += (i.retailPrice || 0);
+    if (i.costBasis != null && !isNaN(i.costBasis) && i.costBasis > 0) {
+      byStatus[statusKey].costTotal += i.costBasis;
+      byStatus[statusKey].withCostCount += 1;
+    }
+
+    // Category metrics strictly include items genuinely marked as Retail Floor
+    if (i.status === 'Retail Floor') {
+      const cat = i.category || 'General Goods';
+      if (!byCategory[cat]) byCategory[cat] = { count: 0, retailTotal: 0 };
+      byCategory[cat].count += 1;
+      byCategory[cat].retailTotal += (i.retailPrice || 0);
+    }
+  });
+
+  return {
+    byStatus,
+    byCategory,
+    totalItems: inventoryItems.length
+  };
+}
+
 const AnalysisWorkspace: React.FC = () => {
   const { setActiveTab, shopProfile } = useApp();
   const { salesHistory } = useSales();
@@ -257,39 +293,7 @@ const AnalysisWorkspace: React.FC = () => {
 
   // D. Stock & Inventory Calculations
   const stockMetrics = useMemo(() => {
-    const byStatus: Record<string, { count: number; retailTotal: number; costTotal: number; withCostCount: number }> = {};
-    ALL_ITEM_STATUSES.forEach(status => {
-      byStatus[status] = { count: 0, retailTotal: 0, costTotal: 0, withCostCount: 0 };
-    });
-
-    const byCategory: Record<string, { count: number; retailTotal: number }> = {};
-
-    inventory.forEach(i => {
-      const statusKey = i.status || 'Unknown';
-      if (!byStatus[statusKey]) {
-        byStatus[statusKey] = { count: 0, retailTotal: 0, costTotal: 0, withCostCount: 0 };
-      }
-      byStatus[statusKey].count += 1;
-      byStatus[statusKey].retailTotal += (i.retailPrice || 0);
-      if (i.costBasis != null && !isNaN(i.costBasis) && i.costBasis > 0) {
-        byStatus[statusKey].costTotal += i.costBasis;
-        byStatus[statusKey].withCostCount += 1;
-      }
-
-      // Category metrics strictly include items genuinely marked as Retail Floor
-      if (i.status === 'Retail Floor') {
-        const cat = i.category || 'General Goods';
-        if (!byCategory[cat]) byCategory[cat] = { count: 0, retailTotal: 0 };
-        byCategory[cat].count += 1;
-        byCategory[cat].retailTotal += (i.retailPrice || 0);
-      }
-    });
-
-    return {
-      byStatus,
-      byCategory,
-      totalItems: inventory.length
-    };
+    return computeStockMetrics(inventory);
   }, [inventory]);
 
   // Filtered lists for table views

@@ -9,6 +9,7 @@ import path from 'node:path';
 import { UserRole } from '../types/supabase';
 import { isPermanentManagerRole, canAccessAnalysis } from '../utils/authRoles';
 import { getPermittedTabsForUser, resolvePostUnlockTab } from '../components/auth/AccountPicker';
+import { normalizePaymentMethodLabel, computeStockMetrics } from '../components/screens/Analysis';
 import {
   getShopTodayDateString,
   normalizeDateToShopYmd,
@@ -154,17 +155,6 @@ export async function runAnalysisAccessAndTabsTests() {
     'Admin permitted tabs must include analysis'
   );
 
-  // Backwards compatibility with boolean flag
-  assert.strictEqual(
-    getPermittedTabsForUser(() => true, false, false).includes('analysis'),
-    false,
-    'getPermittedTabsForUser with boolean false must not include analysis'
-  );
-  assert.strictEqual(
-    getPermittedTabsForUser(() => true, true, true).includes('analysis'),
-    true,
-    'getPermittedTabsForUser with boolean true must include analysis'
-  );
 
   // Helper to normalize CRLF to LF for cross-platform Windows / Linux assertions
   const normalizeLf = (str: string) => str.replace(/\r\n/g, '\n');
@@ -390,31 +380,60 @@ export async function runAnalysisAccessAndTabsTests() {
   // 8. PAYMENT METHOD & INVENTORY STATUS ACCURACY TESTS
   // =========================================================================
   console.log('\n--- 8. Payment Method & Inventory Status Accuracy ---');
-  
-  // Import helper from Analysis component or test it directly
-  function testNormalizePaymentMethod(method: string | undefined | null): string {
-    if (!method) return 'Unknown';
-    const clean = method.toLowerCase().trim();
-    if (clean === 'cash') return 'Cash';
-    if (clean === 'card') return 'Card';
-    if (clean === 'eft') return 'EFT';
-    if (clean === 'snapscan') return 'SnapScan';
-    return method.charAt(0).toUpperCase() + method.slice(1);
-  }
 
-  assert.strictEqual(testNormalizePaymentMethod('cash'), 'Cash');
-  assert.strictEqual(testNormalizePaymentMethod('CARD'), 'Card');
-  assert.strictEqual(testNormalizePaymentMethod('eft'), 'EFT');
-  assert.strictEqual(testNormalizePaymentMethod('snapscan'), 'SnapScan');
-  assert.strictEqual(testNormalizePaymentMethod('Redeemed'), 'Redeemed');
+  // Test production normalizePaymentMethodLabel directly
+  assert.strictEqual(normalizePaymentMethodLabel('cash'), 'Cash');
+  assert.strictEqual(normalizePaymentMethodLabel('CASH'), 'Cash');
+  assert.strictEqual(normalizePaymentMethodLabel('Cash'), 'Cash');
+  assert.strictEqual(normalizePaymentMethodLabel('card'), 'Card');
+  assert.strictEqual(normalizePaymentMethodLabel('CARD'), 'Card');
+  assert.strictEqual(normalizePaymentMethodLabel('Card'), 'Card');
+  assert.strictEqual(normalizePaymentMethodLabel('eft'), 'EFT');
+  assert.strictEqual(normalizePaymentMethodLabel('EFT'), 'EFT');
+  assert.strictEqual(normalizePaymentMethodLabel('snapscan'), 'SnapScan');
+  assert.strictEqual(normalizePaymentMethodLabel('SNAPSCAN'), 'SnapScan');
+  assert.strictEqual(normalizePaymentMethodLabel('SnapScan'), 'SnapScan');
+  assert.strictEqual(normalizePaymentMethodLabel(''), 'Unknown');
+  assert.strictEqual(normalizePaymentMethodLabel(null), 'Unknown');
+  assert.strictEqual(normalizePaymentMethodLabel(undefined), 'Unknown');
+  assert.strictEqual(normalizePaymentMethodLabel('crypto_pay'), 'Crypto_pay');
 
-  // Verify valid statuses handled
-  const testStatuses = ['Retail Floor', 'Vault Hold', 'Forfeited', 'Pending Forfeit', 'Reserved', 'Flagged', 'Sold', 'Redeemed', 'Returned', 'Reversed', 'InStock'];
-  assert(testStatuses.includes('Redeemed'), 'Must handle Redeemed inventory status');
-  assert(testStatuses.includes('Flagged'), 'Must handle Flagged inventory status');
-  assert(testStatuses.includes('Pending Forfeit'), 'Must handle Pending Forfeit inventory status');
-  assert(testStatuses.includes('Returned'), 'Must handle Returned inventory status');
-  assert(testStatuses.includes('Reversed'), 'Must handle Reversed inventory status');
+  // Test production computeStockMetrics inventory status classification logic
+  const mockInventory = [
+    { id: '1', status: 'Retail Floor', retailPrice: 100, costBasis: 40, category: 'Electronics' },
+    { id: '2', status: 'Retail Floor', retailPrice: 200, costBasis: 80, category: 'Tools' },
+    { id: '3', status: 'Vault Hold', retailPrice: 500, costBasis: 250, category: 'Tools' },
+    { id: '4', status: 'Redeemed', retailPrice: 300, costBasis: 150, category: 'Jewellery' },
+    { id: '5', status: 'Flagged', retailPrice: 150, costBasis: 75, category: 'General' },
+    { id: '6', status: 'Pending Forfeit', retailPrice: 400, costBasis: 200, category: 'Appliances' },
+    { id: '7', status: 'Returned', retailPrice: 250, costBasis: 100, category: 'Electronics' },
+    { id: '8', status: 'Reversed', retailPrice: 120, costBasis: 60, category: 'Tools' },
+    { id: '9', status: 'InStock', retailPrice: 220, costBasis: 110, category: 'General' }
+  ];
+
+  const stockResults = computeStockMetrics(mockInventory);
+
+  // Assert Retail Floor count, retailTotal, and costTotal are correct and exclusively include Retail Floor items
+  assert.strictEqual(stockResults.byStatus['Retail Floor'].count, 2, 'Retail Floor count must be exactly 2');
+  assert.strictEqual(stockResults.byStatus['Retail Floor'].retailTotal, 300, 'Retail Floor retail valuation must be 300');
+  assert.strictEqual(stockResults.byStatus['Retail Floor'].costTotal, 120, 'Retail Floor cost total must be 120');
+
+  // Assert non-floor statuses are tracked in their respective buckets and NOT silently counted as Retail Floor
+  assert.strictEqual(stockResults.byStatus['Vault Hold'].count, 1);
+  assert.strictEqual(stockResults.byStatus['Vault Hold'].retailTotal, 500);
+
+  assert.strictEqual(stockResults.byStatus['Redeemed'].count, 1);
+  assert.strictEqual(stockResults.byStatus['Redeemed'].retailTotal, 300);
+
+  assert.strictEqual(stockResults.byStatus['Flagged'].count, 1);
+  assert.strictEqual(stockResults.byStatus['Pending Forfeit'].count, 1);
+  assert.strictEqual(stockResults.byStatus['Returned'].count, 1);
+  assert.strictEqual(stockResults.byStatus['Reversed'].count, 1);
+  assert.strictEqual(stockResults.byStatus['InStock'].count, 1);
+
+  // Assert category metrics strictly include items genuinely marked as Retail Floor (note: item 7 is Returned Electronics, so only item 1 counts for Electronics category floor stock)
+  assert.strictEqual(stockResults.byCategory['Electronics'].count, 1, 'Category Electronics should only count genuine Retail Floor items');
+  assert.strictEqual(stockResults.byCategory['Electronics'].retailTotal, 100);
 
   console.log('\n====================================================');
   console.log('   ALL ANALYSIS ACCESS & TAB STRIP TESTS PASSED!    ');

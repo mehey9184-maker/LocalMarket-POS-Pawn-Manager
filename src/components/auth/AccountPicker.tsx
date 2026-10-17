@@ -382,7 +382,7 @@ export function canDismissAccountPicker(params: CanDismissAccountPickerParams): 
 export function getPermittedTabsForUser(
   hasPermission: (p: any) => boolean,
   isAtLeastSeniorCashier: boolean,
-  role?: UserRole | string | null | boolean
+  role?: UserRole | string | null | undefined
 ): any[] {
   const tabs: any[] = ['home'];
   if (hasPermission('sales')) tabs.push('sell');
@@ -395,8 +395,7 @@ export function getPermittedTabsForUser(
     tabs.push('saps');
     tabs.push('customers');
   }
-  const isAuthorized = typeof role === 'boolean' ? role : isPermanentManagerRole(role);
-  if (isAuthorized) {
+  if (isPermanentManagerRole(role)) {
     tabs.push('analysis');
   }
   tabs.push('profile');
