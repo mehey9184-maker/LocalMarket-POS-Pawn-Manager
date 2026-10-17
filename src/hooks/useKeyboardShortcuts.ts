@@ -54,7 +54,8 @@ export const useKeyboardShortcuts = (options?: KeyboardShortcutOptions) => {
             customers: 'Consolidated Records & Clients',
             profile: 'Cashier Profile & Performance',
             vault: 'Secure Vault Operations',
-            saps: 'SAPS Form 21 Statutory Register'
+            saps: 'SAPS Form 21 Statutory Register',
+            analysis: 'Management Analysis & Reporting'
           };
           showToast(`Switched Tab`, tabNames[targetTab], 'info');
           return;

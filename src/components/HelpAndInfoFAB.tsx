@@ -65,7 +65,8 @@ export const HelpAndInfoFAB: React.FC = () => {
     'inventory',
     'customers',
     'vault',
-    'saps'
+    'saps',
+    'analysis'
   ].includes(activeTab);
 
   if (!isVisible) return null;
@@ -142,6 +143,17 @@ export const HelpAndInfoFAB: React.FC = () => {
             'Records all buy/pawn transactions required under Section 21 of the Second-Hand Goods Act.',
             'Helps protect the business by keeping clean records for inspection audits.',
             'Filter by date range and view clear operational histories.'
+          ]
+        };
+      case 'analysis':
+        return {
+          title: 'Business Analysis',
+          description: 'Read-only management insights across sales, inventory, and pawn loan portfolios.',
+          tips: [
+            'Overview provides an executive summary of today’s store-level cash flows and active pledges.',
+            'Sales details revenue trends, payment distributions, and transaction history.',
+            'Stock provides floor vs vault valuations, status splits, and category distribution.',
+            'Pawn & Loans tracks capital advanced, projected monthly fees, and expiry status.'
           ]
         };
       default:

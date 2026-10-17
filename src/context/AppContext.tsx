@@ -27,7 +27,7 @@ import { db } from '../db';
 import { runMigration } from '../db/migration';
 import { exportDeviceBackupData, validateAndRestoreBackup } from '../utils/backupService';
 
-export type NavTab = 'landing' | 'auth' | 'shop-setup' | 'home' | 'sell' | 'buy-pawn' | 'inventory' | 'customers' | 'profile' | 'vault' | 'saps';
+export type NavTab = 'landing' | 'auth' | 'shop-setup' | 'home' | 'sell' | 'buy-pawn' | 'inventory' | 'customers' | 'profile' | 'vault' | 'saps' | 'analysis';
 
 export interface ShopProfile {
   id?: string;

@@ -206,7 +206,7 @@ export const Header: React.FC<HeaderProps> = () => {
     failedSyncCount = 0,
   } = useApp();
 
-  const { profile, setIsAccountPickerOpen, hasPermission, isAtLeastSeniorCashier } = useAuth();
+  const { profile, setIsAccountPickerOpen, hasPermission, isAtLeastSeniorCashier, isAtLeastManager } = useAuth();
   const { sellers } = useSellers();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -373,9 +373,14 @@ export const Header: React.FC<HeaderProps> = () => {
       tabs.push({ id: 'saps', label: 'SAPS Register' });
       tabs.push({ id: 'customers', label: 'Customers' });
     }
+
+    // Analysis is restricted exclusively to Manager, Owner, Admin
+    if (isAtLeastManager) {
+      tabs.push({ id: 'analysis', label: 'Analysis' });
+    }
     
     return tabs;
-  }, [hasPermission, isAtLeastSeniorCashier]);
+  }, [hasPermission, isAtLeastSeniorCashier, isAtLeastManager]);
 
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center justify-between gap-6 shrink-0 sticky top-0 z-40 shadow-xs">

@@ -15,6 +15,7 @@ import { Customers } from './components/screens/Customers';
 import { CashierProfile } from './components/screens/CashierProfile';
 import { VaultManager } from './components/screens/VaultManager';
 import { SapsRegister } from './components/screens/SapsRegister';
+import { Analysis } from './components/screens/Analysis';
 import { LandingPage } from './components/screens/LandingPage';
 import { AuthPage } from './components/screens/AuthPage';
 import { ShopSetup } from './components/screens/ShopSetup';
@@ -30,7 +31,7 @@ import { useIdleLock } from './hooks/useIdleLock';
 
 const MainLayout: React.FC = () => {
   const { activeTab, setActiveTab } = useApp();
-  const { user, profile, isLoading: authLoading, isProfileLoading, isSwitchingAccount, isIdleLocked } = useAuth();
+  const { user, profile, isLoading: authLoading, isProfileLoading, isSwitchingAccount, isIdleLocked, isAtLeastManager } = useAuth();
 
   // Inactivity lock timer (returns till to PIN/account picker on idle while preserving all worker drafts and work)
   useIdleLock();
@@ -40,6 +41,13 @@ const MainLayout: React.FC = () => {
     // Guard against routing during auth initialization, profile hydration, or account switching.
     // An already-configured shop must NEVER evaluate !hasShop while profile is still resolving.
     if (authLoading || (user && isProfileLoading) || isSwitchingAccount) return;
+
+    // Guard Analysis screen against direct or stale navigation for unauthorized staff
+    if (activeTab === 'analysis' && !isAtLeastManager) {
+      const isStandardCashier = profile?.role === 'cashier';
+      setActiveTab(isStandardCashier ? 'sell' : 'home');
+      return;
+    }
 
     const isEmailConfirmed = user?.email_confirmed_at || user?.confirmed_at;
     const hasShop = profile?.shop_id;
@@ -56,7 +64,7 @@ const MainLayout: React.FC = () => {
     } else if (!user && activeTab !== 'auth') {
       setActiveTab('auth');
     }
-  }, [user, authLoading, isProfileLoading, activeTab, setActiveTab, profile, isSwitchingAccount]);
+  }, [user, authLoading, isProfileLoading, activeTab, setActiveTab, profile, isSwitchingAccount, isAtLeastManager]);
 
   if (authLoading || (user && isProfileLoading)) {
     return (
@@ -92,6 +100,9 @@ const MainLayout: React.FC = () => {
           <div className={`flex-1 h-full w-full ${activeTab === 'saps' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><SapsRegister /></div>
           <div className={`flex-1 h-full w-full ${activeTab === 'customers' ? 'flex flex-col overflow-hidden' : 'hidden'}`}><Customers /></div>
           <div className={`flex-1 h-full w-full ${activeTab === 'profile' ? 'flex flex-col md:flex-row overflow-hidden' : 'hidden'}`}><CashierProfile /></div>
+          <div className={`flex-1 h-full w-full ${activeTab === 'analysis' ? 'flex flex-col overflow-hidden' : 'hidden'}`}>
+            {isAtLeastManager ? <Analysis /> : null}
+          </div>
         </main>
 
         {/* Hardware Scanner Camera Modal */}
