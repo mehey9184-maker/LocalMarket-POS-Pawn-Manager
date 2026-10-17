@@ -396,8 +396,4 @@ export async function runCustomerLoanSapsHydrationTests() {
   console.log('====================================================\n');
 }
 
-runCustomerLoanSapsHydrationTests().catch((err) => {
-  console.error('Customer, Loan & SAPS Hydration Tests Failed:', err);
-  process.exit(1);
-});
 
