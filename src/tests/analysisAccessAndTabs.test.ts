@@ -403,12 +403,18 @@ export async function runAnalysisAccessAndTabsTests() {
     { id: '1', status: 'Retail Floor', retailPrice: 100, costBasis: 40, category: 'Electronics' },
     { id: '2', status: 'Retail Floor', retailPrice: 200, costBasis: 80, category: 'Tools' },
     { id: '3', status: 'Vault Hold', retailPrice: 500, costBasis: 250, category: 'Tools' },
-    { id: '4', status: 'Redeemed', retailPrice: 300, costBasis: 150, category: 'Jewellery' },
-    { id: '5', status: 'Flagged', retailPrice: 150, costBasis: 75, category: 'General' },
-    { id: '6', status: 'Pending Forfeit', retailPrice: 400, costBasis: 200, category: 'Appliances' },
-    { id: '7', status: 'Returned', retailPrice: 250, costBasis: 100, category: 'Electronics' },
-    { id: '8', status: 'Reversed', retailPrice: 120, costBasis: 60, category: 'Tools' },
-    { id: '9', status: 'InStock', retailPrice: 220, costBasis: 110, category: 'General' }
+    { id: '4', status: 'Forfeited', retailPrice: 220, costBasis: 110, category: 'General' },
+    { id: '5', status: 'Pending Forfeit', retailPrice: 400, costBasis: 200, category: 'Appliances' },
+    { id: '6', status: 'Reserved', retailPrice: 180, costBasis: 90, category: 'General' },
+    { id: '7', status: 'Flagged', retailPrice: 150, costBasis: 75, category: 'General' },
+    { id: '8', status: 'Sold', retailPrice: 450, costBasis: 220, category: 'Electronics' },
+    { id: '9', status: 'Redeemed', retailPrice: 300, costBasis: 150, category: 'Jewellery' },
+    { id: '10', status: 'Returned', retailPrice: 250, costBasis: 100, category: 'Electronics' },
+    { id: '11', status: 'Reversed', retailPrice: 120, costBasis: 60, category: 'Tools' },
+    { id: '12', status: 'InStock', retailPrice: 220, costBasis: 110, category: 'General' },
+    { id: '13', status: undefined, retailPrice: 90, costBasis: 45, category: 'General' }, // missing status
+    { id: '14', status: '', retailPrice: 110, costBasis: 55, category: 'General' }, // empty status
+    { id: '15', status: 'SomeUnexpectedStatus', retailPrice: 130, costBasis: 65, category: 'General' } // unexpected status
   ];
 
   const stockResults = computeStockMetrics(mockInventory);
@@ -418,20 +424,23 @@ export async function runAnalysisAccessAndTabsTests() {
   assert.strictEqual(stockResults.byStatus['Retail Floor'].retailTotal, 300, 'Retail Floor retail valuation must be 300');
   assert.strictEqual(stockResults.byStatus['Retail Floor'].costTotal, 120, 'Retail Floor cost total must be 120');
 
+  // Assert missing, empty, and unexpected statuses are placed in Unknown and never Retail Floor
+  assert.strictEqual(stockResults.byStatus['Unknown'].count, 3, 'Missing, empty, and unexpected statuses must all be classified as Unknown');
+  assert.strictEqual(stockResults.byStatus['Unknown'].retailTotal, 330);
+
   // Assert non-floor statuses are tracked in their respective buckets and NOT silently counted as Retail Floor
   assert.strictEqual(stockResults.byStatus['Vault Hold'].count, 1);
-  assert.strictEqual(stockResults.byStatus['Vault Hold'].retailTotal, 500);
-
-  assert.strictEqual(stockResults.byStatus['Redeemed'].count, 1);
-  assert.strictEqual(stockResults.byStatus['Redeemed'].retailTotal, 300);
-
-  assert.strictEqual(stockResults.byStatus['Flagged'].count, 1);
+  assert.strictEqual(stockResults.byStatus['Forfeited'].count, 1);
   assert.strictEqual(stockResults.byStatus['Pending Forfeit'].count, 1);
+  assert.strictEqual(stockResults.byStatus['Reserved'].count, 1);
+  assert.strictEqual(stockResults.byStatus['Flagged'].count, 1);
+  assert.strictEqual(stockResults.byStatus['Sold'].count, 1);
+  assert.strictEqual(stockResults.byStatus['Redeemed'].count, 1);
   assert.strictEqual(stockResults.byStatus['Returned'].count, 1);
   assert.strictEqual(stockResults.byStatus['Reversed'].count, 1);
   assert.strictEqual(stockResults.byStatus['InStock'].count, 1);
 
-  // Assert category metrics strictly include items genuinely marked as Retail Floor (note: item 7 is Returned Electronics, so only item 1 counts for Electronics category floor stock)
+  // Assert category metrics strictly include items genuinely marked as Retail Floor
   assert.strictEqual(stockResults.byCategory['Electronics'].count, 1, 'Category Electronics should only count genuine Retail Floor items');
   assert.strictEqual(stockResults.byCategory['Electronics'].retailTotal, 100);
 

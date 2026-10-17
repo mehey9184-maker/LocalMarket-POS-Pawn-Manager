@@ -51,7 +51,7 @@ export function normalizePaymentMethodLabel(method: PaymentMethod | string | und
   return method.charAt(0).toUpperCase() + method.slice(1);
 }
 
-export const ALL_ITEM_STATUSES: ItemStatus[] = [
+export const ALL_ITEM_STATUSES: string[] = [
   'Retail Floor',
   'Vault Hold',
   'Forfeited',
@@ -62,7 +62,8 @@ export const ALL_ITEM_STATUSES: ItemStatus[] = [
   'Redeemed',
   'Returned',
   'Reversed',
-  'InStock'
+  'InStock',
+  'Unknown'
 ];
 
 export type AnalysisSection = 'overview' | 'sales' | 'stock' | 'loans';
@@ -89,7 +90,9 @@ export function computeStockMetrics(inventoryItems: Array<{ status?: string; ret
   const byCategory: Record<string, { count: number; retailTotal: number }> = {};
 
   inventoryItems.forEach(i => {
-    const statusKey = i.status && ALL_ITEM_STATUSES.includes(i.status as ItemStatus) ? i.status : (i.status || 'Retail Floor');
+    const rawStatus = i.status != null ? String(i.status).trim() : '';
+    const statusKey = rawStatus !== '' && ALL_ITEM_STATUSES.includes(rawStatus) ? rawStatus : 'Unknown';
+
     if (!byStatus[statusKey]) {
       byStatus[statusKey] = { count: 0, retailTotal: 0, costTotal: 0, withCostCount: 0 };
     }
